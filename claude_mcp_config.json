@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "madrox": {
+      "command": "uv",
+      "args": ["run", "python", "run_orchestrator.py"],
+      "env": {
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}",
+        "ORCHESTRATOR_PORT": "8001",
+        "MAX_INSTANCES": "10",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
