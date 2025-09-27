@@ -137,18 +137,22 @@ config = OrchestratorConfig(
    ```json
    {
      "mcpServers": {
-       "madrox": {
-         "command": "uv",
-         "args": ["run", "python", "run_orchestrator.py"],
-         "cwd": "/Users/nadavbarkai/dev/madrox",
-         "env": {
-           "ANTHROPIC_API_KEY": "your-api-key"
-         }
-       }
+      "madrox": {
+        "command": "uv",
+        "args": ["run", "python", "run_orchestrator.py"],
+        "cwd": "path/to/madrox",
+        "env": {
+          "ANTHROPIC_API_KEY": "your-api-key"
+        }
+      }
      }
    }
-   ```
-   Omit the `env` block entirely if you don't need a direct Anthropic API key.
+  ```
+  Omit the `env` block entirely if you don't need a direct Anthropic API key.
+  Replace the `command` value with the absolute path to `uv` on your machine
+  (run `command -v uv` in a shell to find it). Claude Desktop launches MCP
+  servers with a minimal `PATH`, so the explicit path prevents “No such file or
+  directory (os error 2)” when starting Madrox.
    If the FastAPI app is already running, you can instead use the HTTP transport:
    ```json
    {

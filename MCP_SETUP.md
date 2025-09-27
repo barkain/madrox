@@ -29,7 +29,7 @@ Add the Madrox server configuration (remove the `env` block if you don't need an
     "madrox": {
       "command": "uv",
       "args": ["run", "python", "run_orchestrator.py"],
-      "cwd": "/Users/nadavbarkai/dev/madrox",
+      "cwd": "path/to/madrox",
       "env": {
         "ANTHROPIC_API_KEY": "your-api-key-here"
       }
@@ -37,6 +37,11 @@ Add the Madrox server configuration (remove the `env` block if you don't need an
   }
 }
 ```
+
+> ℹ️ Run `command -v uv` in your terminal to confirm the exact path to the
+> binary and replace the `command` value above. Claude launches MCP servers
+> with a very short `PATH`, so the absolute path prevents “No such file or
+> directory (os error 2)” startup failures.
 
 ### Option B: Use Direct HTTP Connection
 
