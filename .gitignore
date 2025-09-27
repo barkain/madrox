@@ -48,6 +48,9 @@ htmlcov/
 .env.local
 .env.*.local
 
+# Local configuration
+claude_mcp_config.json
+
 # Logs
 *.log
 logs/
