@@ -1,15 +1,15 @@
 """Comprehensive test suite for Claude Orchestrator."""
 
 import asyncio
-import os
-import pytest
-import tempfile
-import uuid
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 # Add src to Python path for testing
 import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest  # type: ignore
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.orchestrator.instance_manager import InstanceManager
@@ -17,7 +17,6 @@ from src.orchestrator.simple_models import (
     InstanceRole,
     InstanceState,
     OrchestratorConfig,
-    SpawnInstanceRequest,
 )
 
 
@@ -73,7 +72,28 @@ class TestInstanceManager:
     @pytest.fixture
     def manager(self, config):
         """Create InstanceManager for testing."""
-        return InstanceManager(config)
+        # Mock subprocess.Popen for CLI processes
+        with patch('subprocess.Popen') as mock_popen:
+            mock_process = MagicMock()
+            mock_process.poll.return_value = None  # Process is running
+            mock_process.stdin = MagicMock()
+            mock_process.stdout = MagicMock()
+            mock_process.stderr = MagicMock()
+            mock_process.wait = MagicMock()
+            mock_process.terminate = MagicMock()
+            mock_process.kill = MagicMock()
+
+            # Mock stdout.readline to return ready response then end
+            responses = [
+                b'{"type":"message","content":"Ready"}\n',
+                b'{"type":"end"}\n',
+                b''
+            ]
+            mock_process.stdout.readline.side_effect = responses
+
+            mock_popen.return_value = mock_process
+
+            return InstanceManager(config)
 
     @pytest.mark.asyncio
     async def test_spawn_instance_basic(self, manager):
@@ -165,8 +185,8 @@ class TestInstanceManager:
         """Test message timeout handling."""
         instance_id = await manager.spawn_instance(name="test-instance")
 
-        # Mock the _wait_for_response to simulate timeout
-        with patch.object(manager, '_wait_for_response', side_effect=asyncio.TimeoutError()):
+        # Mock the _send_and_receive_message to simulate timeout
+        with patch.object(manager, "_send_and_receive_message", side_effect=TimeoutError()):
             response = await manager.send_to_instance(
                 instance_id=instance_id,
                 message="This will timeout",
@@ -189,8 +209,12 @@ class TestInstanceManager:
         """Test instance coordination."""
         # Spawn coordinator and participants
         coordinator_id = await manager.spawn_instance(name="coordinator", role="architect")
-        participant1_id = await manager.spawn_instance(name="participant1", role="frontend_developer")
-        participant2_id = await manager.spawn_instance(name="participant2", role="backend_developer")
+        participant1_id = await manager.spawn_instance(
+            name="participant1", role="frontend_developer"
+        )
+        participant2_id = await manager.spawn_instance(
+            name="participant2", role="backend_developer"
+        )
 
         task_id = await manager.coordinate_instances(
             coordinator_id=coordinator_id,
@@ -281,6 +305,7 @@ class TestInstanceManager:
 
         # Set last activity to very old timestamp to trigger timeout
         from datetime import UTC, datetime, timedelta
+
         old_time = datetime.now(UTC) - timedelta(hours=2)
         manager.instances[instance_id]["last_activity"] = old_time.isoformat()
 
@@ -301,8 +326,14 @@ class TestInstanceManager:
             assert isinstance(prompt, str)
 
         # Verify different roles have different prompts
-        assert prompts[InstanceRole.FRONTEND_DEVELOPER.value] != prompts[InstanceRole.BACKEND_DEVELOPER.value]
-        assert prompts[InstanceRole.TESTING_SPECIALIST.value] != prompts[InstanceRole.DOCUMENTATION_WRITER.value]
+        assert (
+            prompts[InstanceRole.FRONTEND_DEVELOPER.value]
+            != prompts[InstanceRole.BACKEND_DEVELOPER.value]
+        )
+        assert (
+            prompts[InstanceRole.TESTING_SPECIALIST.value]
+            != prompts[InstanceRole.DOCUMENTATION_WRITER.value]
+        )
 
     @pytest.mark.asyncio
     async def test_workspace_isolation(self, manager, temp_workspace):
@@ -354,9 +385,31 @@ class TestIntegration:
         )
 
     @pytest.fixture
-    def manager(self, config):
+    def manager(self, config, monkeypatch):
         """Create InstanceManager for testing."""
-        return InstanceManager(config.__dict__)
+        # Set ANTHROPIC_API_KEY environment variable for tests
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+
+        # Mock the Anthropic client
+        with patch("src.orchestrator.instance_manager.anthropic.AsyncAnthropic") as mock_client:
+            mock_anthropic = MagicMock()
+            mock_client.return_value = mock_anthropic
+
+            # Mock the messages.create method
+            mock_create = AsyncMock()
+            mock_anthropic.messages.create = mock_create
+
+            # Setup return values for API calls
+            mock_response = MagicMock()
+            mock_response.id = "msg_test_123"
+            mock_response.model = "claude-3-5-sonnet-20241022"
+            mock_response.content = [MagicMock(text="Integration test response")]
+            mock_response.usage.input_tokens = 10
+            mock_response.usage.output_tokens = 5
+            mock_response.stop_reason = "end_turn"
+            mock_create.return_value = mock_response
+
+            return InstanceManager(config.__dict__)
 
     @pytest.mark.asyncio
     async def test_full_orchestration_workflow(self, manager):
@@ -441,7 +494,7 @@ class TestIntegration:
             resource_limits={
                 "max_total_tokens": 100,
                 "max_cost": 0.01,
-            }
+            },
         )
 
         # Simulate token/cost usage

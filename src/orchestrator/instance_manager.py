@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import os
+import subprocess
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -21,8 +23,10 @@ class InstanceManager:
         """
         self.config = config
         self.instances: dict[str, dict[str, Any]] = {}
+        self.processes: dict[str, subprocess.Popen] = {}  # instance_id -> process
         self.message_queues: dict[str, asyncio.Queue] = {}
-        self.active_conversations: dict[str, str] = {}  # instance_id -> conversation_id
+        self.response_buffers: dict[str, str] = {}  # instance_id -> buffered response
+        self.message_history: dict[str, list[dict]] = {}  # instance_id -> message history
 
         # Resource tracking
         self.total_tokens_used = 0
@@ -137,20 +141,32 @@ class InstanceManager:
         instance["last_activity"] = datetime.now(UTC).isoformat()
 
         try:
-            # Send message to instance (mock implementation for now)
-            response = await self._send_message_to_claude(instance_id, message)
-
             if wait_for_response:
-                # Wait for response with timeout
+                # Send message and wait for response
                 try:
                     response_data = await asyncio.wait_for(
-                        self._wait_for_response(instance_id, response["message_id"]),
+                        self._send_and_receive_message(instance_id, message),
                         timeout=timeout_seconds
                     )
                     return response_data
                 except TimeoutError:
                     logger.warning(f"Timeout waiting for response from instance {instance_id}")
                     return None
+            else:
+                # Just add to message history without waiting
+                if instance_id not in self.message_history:
+                    self.message_history[instance_id] = []
+
+                self.message_history[instance_id].append({
+                    "role": "user",
+                    "content": message,
+                    "timestamp": datetime.now(UTC).isoformat()
+                })
+
+                # Queue message for async processing
+                await self.message_queues[instance_id].put(message)
+                return None
+
         finally:
             # Update instance state back to idle
             if instance["state"] == "busy":
@@ -177,19 +193,39 @@ class InstanceManager:
         if instance_id not in self.instances:
             raise ValueError(f"Instance {instance_id} not found")
 
-        # Mock implementation - in real implementation, this would fetch from message history
         instance = self.instances[instance_id]
 
-        return [
-            {
+        # Get message history for this instance
+        if instance_id not in self.message_history:
+            return []
+
+        messages = self.message_history[instance_id]
+
+        # Convert messages to output format
+        output_messages = []
+        for i, msg in enumerate(messages):
+            output_messages.append({
                 "instance_id": instance_id,
-                "timestamp": instance["last_activity"],
-                "type": "response",
-                "content": f"Sample output from {instance['name']}",
-                "tokens_used": 10,
-                "cost": 0.001
-            }
-        ]
+                "timestamp": instance["last_activity"],  # Would be better to track per-message
+                "type": "user" if msg["role"] == "user" else "response",
+                "content": msg["content"],
+                "message_index": i
+            })
+
+        # Apply since filter if provided
+        if since:
+            since_dt = datetime.fromisoformat(since)
+            # Note: In a real implementation, we'd track timestamps per message
+            # For now, we can only filter based on the last activity
+            last_activity = datetime.fromisoformat(instance["last_activity"])
+            if last_activity < since_dt:
+                return []
+
+        # Apply limit
+        if len(output_messages) > limit:
+            return output_messages[-limit:]
+
+        return output_messages
 
     async def coordinate_instances(
         self,
@@ -270,9 +306,13 @@ class InstanceManager:
             if instance_id in self.message_queues:
                 del self.message_queues[instance_id]
 
-            # Remove conversation
-            if instance_id in self.active_conversations:
-                del self.active_conversations[instance_id]
+            # Remove conversation history
+            if instance_id in self.message_history:
+                del self.message_history[instance_id]
+
+            # Remove process tracking (processes are spawned per message now)
+            if instance_id in self.processes:
+                del self.processes[instance_id]
 
             logger.info(f"Successfully terminated instance {instance_id}")
             return True
@@ -322,65 +362,156 @@ class InstanceManager:
         return role_prompts.get(role, role_prompts["general"])
 
     async def _initialize_instance(self, instance_id: str):
-        """Initialize a Claude instance."""
+        """Initialize a Claude CLI instance."""
         instance = self.instances[instance_id]
 
-        # Mock initialization - in real implementation, this would:
-        # 1. Create isolated environment
-        # 2. Start Claude conversation
-        # 3. Send initial system prompt
-        # 4. Verify instance is responsive
+        logger.info(f"Initializing Claude CLI instance {instance_id}")
 
-        logger.info(f"Initializing instance {instance_id}")
+        # Initialize message history
+        self.message_history[instance_id] = []
+        self.response_buffers[instance_id] = ""
 
-        # Simulate initialization delay
-        await asyncio.sleep(0.1)
+        # Workspace directory is already prepared during spawn
 
-        # Create conversation ID (mock)
-        conversation_id = f"conv_{uuid.uuid4()}"
-        instance["conversation_id"] = conversation_id
-        self.active_conversations[instance_id] = conversation_id
+        # Build the Claude CLI command for interactive mode
+        # Each message spawns a new claude process with the full conversation context
+        cmd = [
+            "claude"
+        ]
 
-    async def _send_message_to_claude(self, instance_id: str, message: str) -> dict[str, Any]:
-        """Send message to Claude instance."""
+        # Add allowed tools if specified
+        if "allowed_tools" in instance:
+            cmd.extend(["--allowed-tools"] + instance["allowed_tools"])
+
+        # Store the command template for this instance
+        instance["cmd_template"] = cmd
+
+        # Add the initial system prompt as context
+        system_prompt = instance["system_prompt"]
+        instance["context"] = f"You are a specialized Claude instance. {system_prompt}"
+
+        # Initialize without starting a process yet
+        # Processes will be started on-demand for each message
+        logger.info(f"Instance {instance_id} initialized (process will start on first message)")
+        instance["conversation_id"] = f"conv_{instance_id}"
+
+    async def _send_and_receive_message(self, instance_id: str, message: str) -> dict[str, Any]:
+        """Send message to Claude CLI instance and receive response."""
         instance = self.instances[instance_id]
 
-        # Mock implementation - in real implementation, this would use Claude API
-        message_id = str(uuid.uuid4())
+        # Record message in history
+        if instance_id not in self.message_history:
+            self.message_history[instance_id] = []
 
-        # Update usage statistics
-        tokens_used = len(message.split()) * 2  # Rough estimate
-        cost = tokens_used * 0.00001  # Mock cost calculation
+        self.message_history[instance_id].append({
+            "role": "user",
+            "content": message,
+            "timestamp": datetime.now(UTC).isoformat()
+        })
 
-        instance["total_tokens_used"] += tokens_used
-        instance["total_cost"] += cost
-        instance["request_count"] += 1
+        try:
+            # Build conversation context from history
+            context = instance.get("context", "")
+            conversation = "\n\n".join([
+                f"{msg['role'].upper()}: {msg['content']}"
+                for msg in self.message_history[instance_id][-5:]  # Last 5 messages for context
+            ])
 
-        self.total_tokens_used += tokens_used
-        self.total_cost += cost
+            # Construct the full prompt with context
+            full_prompt = f"{context}\n\n{conversation}\n\nPlease respond to the latest user message."
 
-        logger.debug(f"Sent message to instance {instance_id}: {message[:100]}...")
+            # Create a new process for this interaction
+            cmd = instance["cmd_template"] + [full_prompt]
 
-        return {
-            "message_id": message_id,
-            "tokens_used": tokens_used,
-            "cost": cost
-        }
+            # Pass current environment to subprocess so MCP servers work
+            env = os.environ.copy()
 
-    async def _wait_for_response(self, instance_id: str, message_id: str) -> dict[str, Any]:
-        """Wait for response from Claude instance."""
-        # Mock implementation - simulate processing time
-        await asyncio.sleep(0.5)
+            # Add any instance-specific environment variables
+            if "environment_vars" in instance:
+                env.update(instance["environment_vars"])
 
-        return {
-            "instance_id": instance_id,
-            "message_id": message_id,
-            "response": f"Mock response from instance {instance_id}",
-            "timestamp": datetime.now(UTC).isoformat(),
-            "tokens_used": 20,
-            "cost": 0.0002,
-            "processing_time_ms": 500
-        }
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=instance["workspace_dir"],
+                env=env,  # Pass environment to subprocess
+                text=True,
+                bufsize=-1
+            )
+
+            # Wait for the response
+            stdout, stderr = process.communicate(timeout=30)
+
+            if process.returncode != 0:
+                logger.error(f"Claude CLI failed: {stderr}")
+                raise RuntimeError(f"Claude CLI process failed: {stderr}")
+
+            response_text = stdout.strip()
+
+            if not response_text:
+                raise RuntimeError("No response received from Claude CLI")
+
+            # Add assistant response to history
+            self.message_history[instance_id].append({
+                "role": "assistant",
+                "content": response_text,
+                "timestamp": datetime.now(UTC).isoformat()
+            })
+
+            # Update usage statistics (estimates since CLI doesn't provide token counts)
+            estimated_tokens = len(message.split()) + len(response_text.split())
+            estimated_cost = estimated_tokens * 0.00001  # Rough estimate
+
+            instance["total_tokens_used"] += estimated_tokens
+            instance["total_cost"] += estimated_cost
+            instance["request_count"] += 1
+
+            self.total_tokens_used += estimated_tokens
+            self.total_cost += estimated_cost
+
+            logger.debug(f"Sent message to instance {instance_id}. Response length: {len(response_text)}")
+
+            return {
+                "instance_id": instance_id,
+                "message_id": str(uuid.uuid4()),
+                "response": response_text,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "tokens_used": estimated_tokens,
+                "cost": estimated_cost
+            }
+
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"Timeout waiting for response from instance {instance_id}")
+            raise RuntimeError("Claude CLI process timed out") from e
+        except Exception as e:
+            logger.error(f"Error communicating with Claude CLI: {e}")
+            raise RuntimeError(f"Failed to communicate with Claude CLI: {e}") from e
+
+
+    async def _process_queued_message(self, instance_id: str) -> dict[str, Any] | None:
+        """Process a queued message for an instance.
+
+        This method is used when messages are sent without waiting for response.
+        """
+        if instance_id not in self.message_queues:
+            return None
+
+        try:
+            # Get message from queue with a short timeout
+            message = await asyncio.wait_for(
+                self.message_queues[instance_id].get(),
+                timeout=1.0
+            )
+
+            # Process the message
+            return await self._send_and_receive_message(instance_id, message)
+
+        except TimeoutError:
+            return None
+        except Exception as e:
+            logger.error(f"Error processing queued message for instance {instance_id}: {e}")
+            return None
 
     async def _execute_coordination(self, coordination_task: dict[str, Any]):
         """Execute a coordination task."""
@@ -423,10 +554,10 @@ class InstanceManager:
             except Exception as e:
                 logger.warning(f"Failed to clean up workspace for {instance_id}: {e}")
 
-        # Close any active conversations
-        # (Mock implementation - real version would close Claude conversations)
-        if instance_id in self.active_conversations:
-            logger.debug(f"Closed conversation for instance {instance_id}")
+        # Clean up process tracking (processes are spawned per message now)
+        if instance_id in self.processes:
+            del self.processes[instance_id]
+            logger.debug(f"Cleaned up process tracking for instance {instance_id}")
 
     async def health_check(self):
         """Perform health check on all instances."""

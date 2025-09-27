@@ -51,11 +51,16 @@ uv run mypy src/
 
 ### Core Components
 
-**Madrox** is an MCP (Model Context Protocol) server that orchestrates multiple Claude instances. The architecture follows a manager-worker pattern where a central InstanceManager controls multiple isolated Claude instances.
+**Madrox** is an MCP (Model Context Protocol) server that orchestrates multiple Claude CLI instances as separate processes. The architecture follows a manager-worker pattern where a central InstanceManager spawns and controls multiple isolated Claude Code CLI processes.
 
 **Key Components:**
 
-1. **InstanceManager** (`src/orchestrator/instance_manager.py`) - Central orchestrator managing instance lifecycle, state transitions, message routing, and resource limits. Implements async patterns for concurrent instance management.
+1. **InstanceManager** (`src/orchestrator/instance_manager.py`) - Central orchestrator that:
+   - Spawns Claude Code CLI processes using `subprocess.Popen`
+   - Manages process lifecycle and state transitions
+   - Communicates via stdin/stdout using JSON streaming format
+   - Handles message routing and response buffering
+   - Tracks resource usage and enforces limits
 
 2. **MCP Server** (`src/orchestrator/server.py`) - FastAPI-based server exposing orchestration capabilities as MCP tools. Handles tool registration, request validation, and response formatting.
 
@@ -100,14 +105,23 @@ Each instance gets an isolated workspace directory:
 - Instance workspace: `{base}/{instance_id}/`
 - Automatic cleanup on termination
 
+### Claude CLI Process Communication
+
+Each Claude instance runs as a separate CLI process:
+- **Command**: `claude --print --output-format stream-json --input-format stream-json`
+- **Input**: JSON messages sent via stdin
+- **Output**: JSON responses read from stdout
+- **Protocol**: Stream-JSON format for bidirectional communication
+
 ### Message Flow
 
 1. Client sends request to MCP server
 2. Server validates and routes to InstanceManager
-3. InstanceManager dispatches to appropriate instance(s)
-4. Instances process in parallel (if multiple)
-5. Responses aggregated and returned
-6. Resource tracking updated
+3. InstanceManager sends JSON message to Claude CLI process via stdin
+4. Claude CLI processes the request and streams response via stdout
+5. InstanceManager parses JSON response and buffers output
+6. Responses aggregated and returned to client
+7. Resource tracking updated (estimated tokens based on word count)
 
 ### Coordination Patterns
 
@@ -119,18 +133,20 @@ Three coordination types supported:
 ## Configuration
 
 Environment variables:
-- `ANTHROPIC_API_KEY`: Required for Claude API access
 - `ORCHESTRATOR_PORT`: Server port (default: 8001)
 - `MAX_INSTANCES`: Concurrent instance limit (default: 10)
 - `WORKSPACE_DIR`: Base workspace path
 - `LOG_LEVEL`: Logging verbosity
+
+Note: ANTHROPIC_API_KEY is no longer required as the system now spawns Claude Code CLI processes that use the user's existing Claude authentication.
 
 ## Testing Strategy
 
 Tests use pytest with async support. Key test patterns:
 - Fixture-based setup with `manager` fixture
 - Async test methods with `@pytest.mark.asyncio`
-- Mock responses for API calls
+- Mock `subprocess.Popen` for CLI process simulation
+- Mock stdin/stdout communication with JSON responses
 - Resource limit enforcement validation
 - Concurrent operation testing
 
@@ -138,6 +154,9 @@ Tests use pytest with async support. Key test patterns:
 
 - Python 3.11+ required for modern syntax (datetime.UTC, type unions)
 - Heavy async/await usage - maintain async patterns
-- Resource cleanup critical - always terminate instances properly
+- Resource cleanup critical - always terminate CLI processes properly
 - Health checks run automatically - implement cleanup in new features
 - MCP protocol compliance required for Claude CLI integration
+- Each Claude instance runs as a separate OS process - ensure proper process management
+- JSON streaming format used for communication with Claude CLI
+- Process termination uses graceful shutdown (SIGTERM) with fallback to SIGKILL
