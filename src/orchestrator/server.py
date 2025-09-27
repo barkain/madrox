@@ -35,6 +35,7 @@ except ImportError:
         pass
 
 from .instance_manager import InstanceManager
+from .mcp_adapter import MCPAdapter
 from .simple_models import (
     CoordinationTask,
     InstanceRole,
@@ -56,7 +57,7 @@ class ClaudeOrchestratorServer:
             config: Configuration for the orchestrator
         """
         self.config = config
-        self.instance_manager = InstanceManager(config.__dict__)
+        self.instance_manager = InstanceManager(config.to_dict())
 
         # Initialize FastAPI app
         self.app = FastAPI(
@@ -73,6 +74,10 @@ class ClaudeOrchestratorServer:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+        # Mount MCP adapter before registering additional routes
+        self.mcp_adapter = MCPAdapter(self.instance_manager)
+        self.app.include_router(self.mcp_adapter.router)
 
         # Setup routes
         self._setup_routes()
@@ -95,6 +100,7 @@ class ClaudeOrchestratorServer:
                     "get_instance_output",
                     "coordinate_instances",
                     "terminate_instance",
+                    "get_instance_status",
                 ],
                 "active_instances": len(self.instance_manager.instances),
                 "server_time": datetime.utcnow().isoformat(),
@@ -206,6 +212,19 @@ class ClaudeOrchestratorServer:
                             "required": ["instance_id"],
                         },
                     },
+                    {
+                        "name": "get_instance_status",
+                        "description": "Get status for a single instance or all instances",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {
+                                "instance_id": {
+                                    "type": "string",
+                                    "description": "Optional instance ID (omit for all instances)",
+                                },
+                            },
+                        },
+                    },
                 ]
             }
 
@@ -226,6 +245,8 @@ class ClaudeOrchestratorServer:
                     return await self._coordinate_instances(**arguments)
                 elif tool_name == "terminate_instance":
                     return await self._terminate_instance(**arguments)
+                elif tool_name == "get_instance_status":
+                    return await self._get_instance_status(**arguments)
                 else:
                     raise HTTPException(status_code=400, detail=f"Unknown tool: {tool_name}")
 
@@ -384,6 +405,29 @@ class ClaudeOrchestratorServer:
                 "success": False,
                 "error": str(e),
                 "message": f"Failed to get output: {e}",
+            }
+
+    async def _get_instance_status(
+        self,
+        instance_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get status for a single instance or all instances."""
+        logger.info("Fetching instance status", extra={"instance_id": instance_id})
+
+        try:
+            status = self.instance_manager.get_instance_status(instance_id)
+            return {
+                "success": True,
+                "status": status,
+                "message": "Retrieved instance status",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get instance status: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to fetch instance status: {e}",
             }
 
     async def _coordinate_instances(

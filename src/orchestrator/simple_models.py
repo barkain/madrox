@@ -193,3 +193,25 @@ class OrchestratorConfig:
         self.log_level = log_level
         self.enable_metrics = enable_metrics
         self.metrics_port = metrics_port
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a plain dict representation suitable for consumers.
+
+        This mirrors pydantic's model_dump used elsewhere but avoids the dependency.
+        """
+        return {
+            "server_host": self.server_host,
+            "server_port": self.server_port,
+            "anthropic_api_key": self.anthropic_api_key,
+            "default_model": self.default_model,
+            "max_concurrent_instances": self.max_concurrent_instances,
+            "max_tokens_per_instance": self.max_tokens_per_instance,
+            "max_total_cost": self.max_total_cost,
+            "instance_timeout_minutes": self.instance_timeout_minutes,
+            "workspace_base_dir": self.workspace_base_dir,
+            "enable_isolation": self.enable_isolation,
+            "database_url": self.database_url,
+            "log_level": self.log_level,
+            "enable_metrics": self.enable_metrics,
+            "metrics_port": self.metrics_port,
+        }

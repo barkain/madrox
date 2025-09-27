@@ -42,12 +42,13 @@ cd src/orchestrator
 uv sync --all-groups
 ```
 
-3. Set environment variables:
+3. Set environment variables (API key optional if you're using Claude Desktop/CLI with a subscription):
 ```bash
-export ANTHROPIC_API_KEY="your-api-key-here"
 export ORCHESTRATOR_PORT=8001
 export WORKSPACE_DIR="/tmp/claude_orchestrator"
 ```
+
+If you do need direct API access, also set `ANTHROPIC_API_KEY="your-api-key-here"`.
 
 ### Running the Server
 
@@ -91,7 +92,7 @@ This demo shows a complete workflow building a task management app with 3 specia
 ## 🔧 Configuration
 
 ### Environment Variables
-- `ANTHROPIC_API_KEY` - Your Anthropic API key
+- `ANTHROPIC_API_KEY` - Your Anthropic API key (optional if you use Claude subscription clients)
 - `ORCHESTRATOR_HOST` - Server host (default: localhost)
 - `ORCHESTRATOR_PORT` - Server port (default: 8001)
 - `MAX_INSTANCES` - Maximum concurrent instances (default: 10)
@@ -128,23 +129,89 @@ config = OrchestratorConfig(
 
 ## 🔗 MCP Protocol Integration
 
-### Claude CLI Registration
-The server automatically provides MCP protocol endpoints:
+### Claude Desktop / Claude for macOS & Windows
+1. Open the Claude desktop configuration file:
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+2. Add a new entry under `mcpServers`:
+   ```json
+   {
+     "mcpServers": {
+       "madrox": {
+         "command": "uv",
+         "args": ["run", "python", "run_orchestrator.py"],
+         "cwd": "/Users/nadavbarkai/dev/madrox",
+         "env": {
+           "ANTHROPIC_API_KEY": "your-api-key"
+         }
+       }
+     }
+   }
+   ```
+   Omit the `env` block entirely if you don't need a direct Anthropic API key.
+   If the FastAPI app is already running, you can instead use the HTTP transport:
+   ```json
+   {
+     "mcpServers": {
+       "madrox": {
+         "url": "http://localhost:8001",
+         "transport": "http"
+       }
+     }
+   }
+   ```
+3. Save the file and restart Claude so it loads the new server.
+
+### Claude Code (VS Code Extension)
+1. In VS Code run the command palette action `Claude: Edit Connection Settings`.
+2. Add the same `mcpServers.madrox` block (either `command/args` or `url/transport`).
+3. Save the file; use `Claude: Reload Connections` if the tools do not appear immediately.
+
+### Claude Code CLI
+Use the CLI helper to register the server:
+```bash
+# Default: use claude-sonnet-4-20250514 (no API key required for Claude subscribers)
+claude mcp add madrox http://localhost:8001/mcp --transport http --model sonnet
+
+# Optional: pick an alternate supported model
+claude mcp add madrox http://localhost:8001/mcp --transport http --model opus
+claude mcp add madrox http://localhost:8001/mcp --transport http --model haiku
+
+# Need raw API access? add your key when registering (still defaults to sonnet)
+claude mcp add -e ANTHROPIC_API_KEY=your-api-key madrox \
+  http://localhost:8001/mcp --transport http --model sonnet
+
+# Verify registration
+claude mcp list
+```
+
+The `--model` option accepts only `sonnet`, `opus`, or `haiku`, which expand to the following Anthropic model IDs:
+
+| Choice | Anthropic model id            |
+|--------|-------------------------------|
+| sonnet | `claude-sonnet-4-20250514`    |
+| opus   | `claude-opus-4-1-20250805`    |
+| haiku  | `claude-3-5-haiku-20241022`   |
+
+If you omit `--model`, the CLI defaults to `sonnet`.
+
+For direct chats without MCP, you can launch the Claude CLI with a specific model:
+
+```bash
+claude --model claude-sonnet-4-20250514
+claude --model claude-opus-4-1-20250805
+claude --model claude-3-5-haiku-20241022
+```
+
+Restart any active `claude` session so the new MCP tools are available.
+
+### HTTP Endpoints
+The server also exposes friendly REST endpoints that mirror the MCP tools:
 - `/tools` - List available orchestration tools
 - `/tools/execute` - Execute orchestration commands
 - `/health` - Health check endpoint
 - `/instances` - List all instances
 - `/instances/{id}` - Get specific instance details
-
-### Usage with Claude CLI
-```bash
-# The server provides these tools to Claude:
-# - spawn_claude
-# - send_to_instance
-# - get_instance_output
-# - coordinate_instances
-# - terminate_instance
-```
 
 ## 📋 Usage Examples
 

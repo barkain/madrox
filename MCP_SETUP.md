@@ -21,7 +21,7 @@ Edit your Claude Desktop configuration file:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-Add the Madrox server configuration:
+Add the Madrox server configuration (remove the `env` block if you don't need an Anthropic API key):
 
 ```json
 {
@@ -40,20 +40,51 @@ Add the Madrox server configuration:
 
 ### Option B: Use Direct HTTP Connection
 
-Since the server is already running, you can also configure it as an HTTP MCP server:
+Since the server is already running, you can also configure it as an HTTP MCP server (the MCP adapter is mounted at `/mcp`). Claude subscribers typically do **not** need an API key for this mode.
 
 ```json
 {
   "mcpServers": {
     "madrox": {
-      "url": "http://localhost:8001",
+      "url": "http://localhost:8001/mcp",
       "transport": "http"
     }
   }
 }
 ```
 
-## 3. Available MCP Tools
+## 3. Pick Your Claude Model
+
+When registering the server with the Claude CLI, choose one of the supported models:
+
+```bash
+# Default (sonnet)
+claude mcp add madrox http://localhost:8001/mcp --transport http --model sonnet
+
+# Alternate options
+claude mcp add madrox http://localhost:8001/mcp --transport http --model opus
+claude mcp add madrox http://localhost:8001/mcp --transport http --model haiku
+```
+
+These map to the Anthropic model IDs:
+
+| Choice | Anthropic model id          |
+|--------|-----------------------------|
+| sonnet | `claude-sonnet-4-20250514`  |
+| opus   | `claude-opus-4-1-20250805`  |
+| haiku  | `claude-3-5-haiku-20241022` |
+
+If you need raw API access, add `-e ANTHROPIC_API_KEY=your-api-key` before the server name in the commands above.
+
+For ad-hoc conversations outside MCP you can launch the CLI directly:
+
+```bash
+claude --model claude-sonnet-4-20250514
+claude --model claude-opus-4-1-20250805
+claude --model claude-3-5-haiku-20241022
+```
+
+## 4. Available MCP Tools
 
 Once configured, you'll have access to these tools in Claude:
 
@@ -68,7 +99,7 @@ Once configured, you'll have access to these tools in Claude:
 
 - **`terminate_instance`** - Clean up instances when done
 
-## 4. Testing the Integration
+## 5. Testing the Integration
 
 In a new Claude Code chat, you can test the integration:
 
@@ -82,14 +113,14 @@ Or try orchestrating multiple instances:
 Use the madrox server to coordinate an architect and backend developer to design a REST API.
 ```
 
-## 5. Monitoring
+## 6. Monitoring
 
 You can monitor the server:
 - Check server logs in the terminal where it's running
 - Use the test script: `uv run python test_mcp_server.py`
 - Check health endpoint: `curl http://localhost:8001/health`
 
-## 6. Stopping the Server
+## 7. Stopping the Server
 
 To stop the server, use:
 ```bash
@@ -104,14 +135,14 @@ kill 49198
 
 1. **Server not starting**: Check if port 8001 is already in use
 2. **API key issues**: Ensure ANTHROPIC_API_KEY is set in your environment
-3. **Connection refused**: Make sure the server is running (`uv run python run_orchestrator.py`)
+3. **Connection refused**: Make sure the server is running (`uv run python run_orchestrator.py`) and that your HTTP configuration points to `/mcp`. Confirm you used one of the allowed model choices (`sonnet`, `opus`, or `haiku`).
 4. **MCP tools not showing**: Restart Claude Desktop after updating config
 
 ## Current Status
 
-✅ Server is running on http://localhost:8001
+✅ Server is running on http://localhost:8001 (MCP adapter at /mcp)
 ✅ All health checks passing
-✅ MCP tools are available and functional
+✅ MCP tools are available and functional (tested with `sonnet`, `opus`, and `haiku` models)
 ✅ Test instance spawn/terminate working
 
 The server is ready for use with Claude Code!
