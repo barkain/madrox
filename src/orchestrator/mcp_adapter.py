@@ -77,7 +77,7 @@ class MCPAdapter:
                                         "instance_id": {"type": "string"},
                                         "message": {"type": "string"},
                                         "wait_for_response": {"type": "boolean", "default": False, "description": "Set to true to wait for response"},
-                                        "timeout_seconds": {"type": "integer", "default": 30}
+                                        "timeout_seconds": {"type": "integer", "default": 180, "description": "Timeout in seconds (default 180)"}
                                     },
                                     "required": ["instance_id", "message"]
                                 }
@@ -182,17 +182,31 @@ class MCPAdapter:
                             instance_id=tool_args["instance_id"],
                             message=tool_args["message"],
                             wait_for_response=tool_args.get("wait_for_response", False),  # Default to False
-                            timeout_seconds=tool_args.get("timeout_seconds", 30),
+                            timeout_seconds=tool_args.get("timeout_seconds", 180),  # Default to 180 seconds
                         )
 
                         # Handle response based on whether we waited or not
-                        if isinstance(response, dict) and "job_id" in response:
-                            # Non-blocking: return job info
+                        if isinstance(response, dict) and "status" in response:
+                            if response["status"] == "timeout":
+                                # Timeout with job tracking
+                                text = (
+                                    f"Request timed out but is still processing.\n"
+                                    f"Job ID: {response['job_id']}\n"
+                                    f"Estimated wait: {response.get('estimated_wait_seconds', 30)} seconds\n"
+                                    f"Use get_job_status with job_id to check progress"
+                                )
+                            elif response["status"] == "pending":
+                                # Non-blocking job created
+                                text = f"Message sent (job_id: {response['job_id']}, status: {response['status']})"
+                            else:
+                                # Other status response
+                                text = f"Response: {response}"
+
                             result = {
                                 "content": [
                                     {
                                         "type": "text",
-                                        "text": f"Message sent (job_id: {response['job_id']}, status: {response['status']})"
+                                        "text": text
                                     }
                                 ]
                             }
@@ -202,17 +216,17 @@ class MCPAdapter:
                                 "content": [
                                     {
                                         "type": "text",
-                                        "text": response.get("response", "Message sent") if response else "Message sent"
+                                        "text": response.get("response", str(response))
                                     }
                                 ]
                             }
                         else:
-                            # No response (timeout or error)
+                            # No response
                             result = {
                                 "content": [
                                     {
                                         "type": "text",
-                                        "text": "Message sent (no response received)"
+                                        "text": "Message sent but no response received"
                                     }
                                 ]
                             }

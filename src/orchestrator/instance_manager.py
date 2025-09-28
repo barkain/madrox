@@ -157,9 +157,39 @@ class InstanceManager:
                         timeout=timeout_seconds
                     )
                     return response_data
-                except TimeoutError:
+                except asyncio.TimeoutError:
+                    # On timeout, create a job for tracking and return partial status
                     logger.warning(f"Timeout waiting for response from instance {instance_id}")
-                    return None
+
+                    # Create a job to track the ongoing work
+                    job_id = str(uuid.uuid4())
+                    timestamp = datetime.now(UTC).isoformat()
+
+                    self.jobs[job_id] = {
+                        "job_id": job_id,
+                        "instance_id": instance_id,
+                        "message": message,
+                        "status": "processing",
+                        "created_at": timestamp,
+                        "updated_at": timestamp,
+                        "result": None,
+                        "error": None,
+                        "estimated_completion_seconds": 30  # Estimate additional time needed
+                    }
+
+                    # Continue processing in background
+                    asyncio.create_task(
+                        self._continue_processing(job_id, instance_id, timeout_seconds)
+                    )
+
+                    return {
+                        "status": "timeout",
+                        "job_id": job_id,
+                        "message": f"Request is still processing. Check status with job_id: {job_id}",
+                        "estimated_wait_seconds": 30,
+                        "instance_state": instance["state"],
+                        "retry_recommended": True
+                    }
             else:
                 # Create job for async processing
                 job_id = str(uuid.uuid4())
@@ -199,6 +229,40 @@ class InstanceManager:
             # Only update back to idle if we were waiting for response
             if wait_for_response and instance["state"] == "busy":
                 instance["state"] = "idle"
+
+    async def _continue_processing(
+        self,
+        job_id: str,
+        instance_id: str,
+        additional_timeout: int = 60
+    ):
+        """Continue processing a job that timed out initially."""
+        try:
+            # Wait a bit more for the response
+            await asyncio.sleep(additional_timeout)
+
+            # Check if we have a response in the buffer
+            if instance_id in self.response_buffers and self.response_buffers[instance_id]:
+                response_data = {"content": self.response_buffers[instance_id]}
+                self.response_buffers[instance_id] = ""  # Clear buffer
+
+                # Update job with result
+                self.jobs[job_id]["status"] = "completed"
+                self.jobs[job_id]["result"] = response_data
+                self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
+
+                logger.info(f"Job {job_id} completed after extended wait")
+            else:
+                # Still no response, mark as requiring retry
+                self.jobs[job_id]["status"] = "needs_retry"
+                self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
+                self.jobs[job_id]["estimated_completion_seconds"] = 60
+
+        except Exception as e:
+            self.jobs[job_id]["status"] = "failed"
+            self.jobs[job_id]["error"] = str(e)
+            self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
+            logger.error(f"Error continuing job {job_id}: {e}")
 
     async def _process_job_async(
         self,
@@ -240,10 +304,12 @@ class InstanceManager:
             logger.info(f"Completed job {job_id} for instance {instance_id}")
 
         except asyncio.TimeoutError:
-            self.jobs[job_id]["status"] = "timeout"
-            self.jobs[job_id]["error"] = f"Timeout after {timeout_seconds} seconds"
+            # Don't mark as failed on timeout - keep processing
+            self.jobs[job_id]["status"] = "processing_slow"
+            self.jobs[job_id]["error"] = None
             self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
-            logger.warning(f"Job {job_id} timed out after {timeout_seconds} seconds")
+            self.jobs[job_id]["estimated_completion_seconds"] = 30
+            logger.warning(f"Job {job_id} taking longer than {timeout_seconds} seconds, continuing in background")
 
         except Exception as e:
             self.jobs[job_id]["status"] = "failed"
