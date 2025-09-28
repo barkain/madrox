@@ -29,7 +29,7 @@ class TestOrchestratorConfig:
 
         assert config.server_host == "localhost"
         assert config.server_port == 8001
-        assert config.default_model == "claude-3-5-sonnet-20241022"
+        assert config.default_model == "claude-4-sonnet-20250514"
         assert config.max_concurrent_instances == 10
         assert config.instance_timeout_minutes == 60
         assert config.workspace_base_dir == "/tmp/claude_orchestrator"
@@ -402,7 +402,7 @@ class TestIntegration:
             # Setup return values for API calls
             mock_response = MagicMock()
             mock_response.id = "msg_test_123"
-            mock_response.model = "claude-3-5-sonnet-20241022"
+            mock_response.model = "claude-4-sonnet-20250514"
             mock_response.content = [MagicMock(text="Integration test response")]
             mock_response.usage.input_tokens = 10
             mock_response.usage.output_tokens = 5

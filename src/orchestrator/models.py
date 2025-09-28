@@ -48,7 +48,7 @@ class ClaudeInstance(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String, nullable=False)
     role = Column(String, nullable=False)
-    model = Column(String, nullable=False, default="claude-3-5-sonnet-20241022")
+    model = Column(String, nullable=False, default="claude-4-sonnet-20250514")
     state = Column(String, nullable=False, default=InstanceState.INITIALIZING.value)
 
     # Instance configuration
@@ -99,7 +99,7 @@ class OrchestratorConfig(BaseModel):
 
     # Claude API settings
     anthropic_api_key: str
-    default_model: str = "claude-3-5-sonnet-20241022"
+    default_model: str = "claude-4-sonnet-20250514"
     max_concurrent_instances: int = 10
 
     # Resource limits
@@ -126,7 +126,7 @@ class SpawnInstanceRequest(BaseModel):
     name: str = Field(..., description="Human-readable name for the instance")
     role: InstanceRole = Field(InstanceRole.GENERAL, description="Predefined role")
     system_prompt: Optional[str] = Field(None, description="Custom system prompt")
-    model: str = Field("claude-3-5-sonnet-20241022", description="Claude model to use")
+    model: str = Field("claude-4-sonnet-20250514", description="Claude model to use")
 
     # Configuration
     max_tokens: int = Field(4096, description="Max tokens per request")
