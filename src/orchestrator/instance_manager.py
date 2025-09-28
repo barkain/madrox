@@ -9,6 +9,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from .pty_instance import PTYInstance
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,6 +26,7 @@ class InstanceManager:
         self.config = config
         self.instances: dict[str, dict[str, Any]] = {}
         self.processes: dict[str, subprocess.Popen] = {}  # instance_id -> process
+        self.pty_instances: dict[str, PTYInstance] = {}  # instance_id -> PTY instance
         self.message_queues: dict[str, asyncio.Queue] = {}
         self.response_buffers: dict[str, str] = {}  # instance_id -> buffered response
         self.message_history: dict[str, list[dict]] = {}  # instance_id -> message history
@@ -47,6 +50,7 @@ class InstanceManager:
         system_prompt: str | None = None,
         model: str = "claude-4-sonnet-20250514",
         bypass_isolation: bool = False,
+        use_pty: bool = False,  # Back to subprocess for reliability
         **kwargs
     ) -> str:
         """Spawn a new Claude instance.
@@ -97,6 +101,7 @@ class InstanceManager:
             "parent_instance_id": kwargs.get("parent_instance_id"),
             "error_message": None,
             "retry_count": 0,
+            "use_pty": use_pty,
         }
 
         self.instances[instance_id] = instance
@@ -104,9 +109,13 @@ class InstanceManager:
 
         # Start the instance
         try:
-            await self._initialize_instance(instance_id)
+            if use_pty:
+                await self._initialize_pty_instance(instance_id)
+            else:
+                await self._initialize_instance(instance_id)
             instance["state"] = "running"
-            logger.info(f"Successfully spawned Claude instance {instance_id} ({name}) with role {role}")
+            mode = "PTY" if use_pty else "subprocess"
+            logger.info(f"Successfully spawned Claude instance {instance_id} ({name}) with role {role} using {mode}")
         except Exception as e:
             instance["state"] = "error"
             instance["error_message"] = str(e)
@@ -151,16 +160,19 @@ class InstanceManager:
             if wait_for_response:
                 # Send message and wait for response
                 try:
-                    response_data = await asyncio.wait_for(
-                        self._send_and_receive_message(
-                            instance_id,
-                            message,
-                            process_timeout=timeout_seconds,
-                        ),
-                        timeout=timeout_seconds
-                    )
+                    if instance.get("use_pty", False):
+                        response_data = await self._send_pty_message(instance_id, message, timeout_seconds)
+                    else:
+                        response_data = await asyncio.wait_for(
+                            self._send_and_receive_message(
+                                instance_id,
+                                message,
+                                process_timeout=timeout_seconds,
+                            ),
+                            timeout=timeout_seconds
+                        )
                     return response_data
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # On timeout, create a job for tracking and return partial status
                     logger.warning(f"Timeout waiting for response from instance {instance_id}")
 
@@ -342,14 +354,18 @@ class InstanceManager:
             self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
 
             # Send message and wait for response
-            response_data = await asyncio.wait_for(
-                self._send_and_receive_message(
-                    instance_id,
-                    message,
-                    process_timeout=timeout_seconds,
-                ),
-                timeout=timeout_seconds
-            )
+            instance = self.instances[instance_id]
+            if instance.get("use_pty", False):
+                response_data = await self._send_pty_message(instance_id, message, timeout_seconds)
+            else:
+                response_data = await asyncio.wait_for(
+                    self._send_and_receive_message(
+                        instance_id,
+                        message,
+                        process_timeout=timeout_seconds,
+                    ),
+                    timeout=timeout_seconds
+                )
 
             # Update job with result
             self.jobs[job_id]["status"] = "completed"
@@ -367,7 +383,7 @@ class InstanceManager:
 
             logger.info(f"Completed job {job_id} for instance {instance_id}")
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Don't mark as failed on timeout - keep processing
             self.jobs[job_id]["status"] = "processing_slow"
             self.jobs[job_id]["error"] = None
@@ -540,6 +556,11 @@ class InstanceManager:
             # Clean up instance resources
             await self._cleanup_instance(instance_id)
 
+            # Clean up PTY instance if exists
+            if instance_id in self.pty_instances:
+                await self.pty_instances[instance_id].cleanup()
+                del self.pty_instances[instance_id]
+
             # Update instance state
             instance["state"] = "terminated"
             instance["terminated_at"] = datetime.now(UTC).isoformat()
@@ -657,6 +678,104 @@ class InstanceManager:
         # Processes will be started on-demand for each message
         logger.info(f"Instance {instance_id} initialized (process will start on first message)")
         instance["conversation_id"] = f"conv_{instance_id}"
+
+    async def _initialize_pty_instance(self, instance_id: str):
+        """Initialize a PTY-based Claude CLI instance."""
+        instance = self.instances[instance_id]
+
+        logger.info(f"Initializing PTY Claude CLI instance {instance_id}")
+
+        # Initialize message history
+        self.message_history[instance_id] = []
+        self.response_buffers[instance_id] = ""
+
+        # Add the context for PTY instances
+        system_prompt = instance["system_prompt"]
+        workspace_path = instance["workspace_dir"]
+
+        if instance.get("bypass_isolation", False):
+            # Full filesystem access
+            instance["context"] = (
+                f"You are a specialized Claude instance. {system_prompt}\n\n"
+                f"IMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
+                f"Your workspace directory is at: {workspace_path}\n"
+                f"Your current working directory will be: {Path.cwd()}\n"
+                f"You can write files to any absolute path or relative to the current directory."
+            )
+        else:
+            # Isolated workspace
+            instance["context"] = (
+                f"You are a specialized Claude instance. {system_prompt}\n\n"
+                f"IMPORTANT: You have a workspace directory at: {workspace_path}\n"
+                f"You can read and write files within this directory. When asked to write files, "
+                f"write them to your workspace directory unless specifically asked to write elsewhere. "
+                f"Your current working directory is: {workspace_path}"
+            )
+
+        # Create PTY instance
+        pty_instance = PTYInstance(instance_id, instance)
+
+        # Start the PTY session
+        await pty_instance.start()
+
+        # Store PTY instance
+        self.pty_instances[instance_id] = pty_instance
+
+        logger.info(f"PTY instance {instance_id} initialized successfully")
+        instance["conversation_id"] = f"conv_{instance_id}"
+
+    async def _send_pty_message(self, instance_id: str, message: str, timeout: int) -> dict[str, Any]:
+        """Send message to PTY instance and get response."""
+        if instance_id not in self.pty_instances:
+            raise RuntimeError(f"PTY instance {instance_id} not found")
+
+        pty_instance = self.pty_instances[instance_id]
+
+        # Record message in history
+        if instance_id not in self.message_history:
+            self.message_history[instance_id] = []
+
+        self.message_history[instance_id].append({
+            "role": "user",
+            "content": message,
+            "timestamp": datetime.now(UTC).isoformat()
+        })
+
+        try:
+            # Send message via PTY
+            response_data = await pty_instance.send_message(message, timeout)
+
+            # Add response to history
+            self.message_history[instance_id].append({
+                "role": "assistant",
+                "content": response_data.get("response", ""),
+                "timestamp": datetime.now(UTC).isoformat()
+            })
+
+            # Update usage statistics (estimates)
+            estimated_tokens = len(message.split()) + len(response_data.get("response", "").split())
+            estimated_cost = estimated_tokens * 0.00001
+
+            instance = self.instances[instance_id]
+            instance["total_tokens_used"] += estimated_tokens
+            instance["total_cost"] += estimated_cost
+            instance["request_count"] += 1
+
+            self.total_tokens_used += estimated_tokens
+            self.total_cost += estimated_cost
+
+            return {
+                "instance_id": instance_id,
+                "message_id": str(uuid.uuid4()),
+                "response": response_data.get("response", ""),
+                "timestamp": datetime.now(UTC).isoformat(),
+                "tokens_used": estimated_tokens,
+                "cost": estimated_cost
+            }
+
+        except Exception as e:
+            logger.error(f"Error sending PTY message to instance {instance_id}: {e}")
+            raise
 
     async def _send_and_receive_message(
         self,

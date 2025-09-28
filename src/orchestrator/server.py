@@ -294,6 +294,7 @@ class ClaudeOrchestratorServer:
         temperature: float = 0.0,
         workspace_dir: str | None = None,
         parent_instance_id: str | None = None,
+        use_pty: bool = False,  # Back to subprocess for reliability
         **kwargs
     ) -> dict[str, Any]:
         """Spawn a new Claude instance."""
@@ -313,6 +314,7 @@ class ClaudeOrchestratorServer:
                 temperature=temperature,
                 workspace_dir=workspace_dir,
                 parent_instance_id=parent_instance_id,
+                use_pty=use_pty,
                 **kwargs
             )
 
