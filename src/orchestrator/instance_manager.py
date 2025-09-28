@@ -45,7 +45,8 @@ class InstanceManager:
         name: str,
         role: str = "general",
         system_prompt: str | None = None,
-        model: str = "claude-3-5-sonnet-20241022",
+        model: str = "claude-4-sonnet-20250514",
+        bypass_isolation: bool = False,
         **kwargs
     ) -> str:
         """Spawn a new Claude instance.
@@ -82,6 +83,7 @@ class InstanceManager:
             "state": "initializing",
             "system_prompt": system_prompt,
             "workspace_dir": str(workspace_dir),
+            "bypass_isolation": bypass_isolation,
             "created_at": datetime.now(UTC).isoformat(),
             "last_activity": datetime.now(UTC).isoformat(),
             "total_tokens_used": 0,
@@ -631,13 +633,25 @@ class InstanceManager:
         # Add the initial system prompt as context
         system_prompt = instance["system_prompt"]
         workspace_path = instance["workspace_dir"]  # Get the string path
-        instance["context"] = (
-            f"You are a specialized Claude instance. {system_prompt}\n\n"
-            f"IMPORTANT: You have a workspace directory at: {workspace_path}\n"
-            f"You can read and write files within this directory. When asked to write files, "
-            f"write them to your workspace directory unless specifically asked to write elsewhere. "
-            f"Your current working directory is: {workspace_path}"
-        )
+
+        if instance.get("bypass_isolation", False):
+            # Full filesystem access
+            instance["context"] = (
+                f"You are a specialized Claude instance. {system_prompt}\n\n"
+                f"IMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
+                f"Your workspace directory is at: {workspace_path}\n"
+                f"Your current working directory will be: {Path.cwd()}\n"
+                f"You can write files to any absolute path or relative to the current directory."
+            )
+        else:
+            # Isolated workspace
+            instance["context"] = (
+                f"You are a specialized Claude instance. {system_prompt}\n\n"
+                f"IMPORTANT: You have a workspace directory at: {workspace_path}\n"
+                f"You can read and write files within this directory. When asked to write files, "
+                f"write them to your workspace directory unless specifically asked to write elsewhere. "
+                f"Your current working directory is: {workspace_path}"
+            )
 
         # Initialize without starting a process yet
         # Processes will be started on-demand for each message
@@ -685,11 +699,14 @@ class InstanceManager:
             if "environment_vars" in instance:
                 env.update(instance["environment_vars"])
 
+            # Set working directory based on isolation setting
+            working_dir = str(Path.cwd()) if instance.get("bypass_isolation", False) else instance["workspace_dir"]
+
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                cwd=instance["workspace_dir"],
+                cwd=working_dir,
                 env=env,  # Pass environment to subprocess
                 text=True,
                 bufsize=-1

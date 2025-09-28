@@ -63,7 +63,8 @@ class MCPAdapter:
                                             "description": "Predefined role"
                                         },
                                         "system_prompt": {"type": "string", "description": "Custom system prompt"},
-                                        "model": {"type": "string", "description": "Claude model to use"}
+                                        "model": {"type": "string", "description": "Claude model to use"},
+                                        "bypass_isolation": {"type": "boolean", "description": "Allow full filesystem access (default: false)"}
                                     },
                                     "required": ["name"]
                                 }
@@ -195,7 +196,8 @@ class MCPAdapter:
                             name=tool_args.get("name", "unnamed"),
                             role=tool_args.get("role", "general"),
                             system_prompt=tool_args.get("system_prompt"),
-                            model=tool_args.get("model", "claude-3-5-sonnet-20241022"),
+                            model=tool_args.get("model", "claude-4-sonnet-20250514"),
+                            bypass_isolation=tool_args.get("bypass_isolation", False),
                         )
                         result = {
                             "content": [

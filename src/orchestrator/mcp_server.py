@@ -60,7 +60,7 @@ class OrchestrationMCPServer:
                             "model": {
                                 "type": "string",
                                 "description": "Claude model to use",
-                                "default": "claude-3-5-sonnet-20241022"
+                                "default": "claude-4-sonnet-20250514"
                             }
                         },
                         "required": ["name"]
@@ -189,7 +189,7 @@ class OrchestrationMCPServer:
                         name=arguments.get("name", "unnamed"),
                         role=arguments.get("role", "general"),
                         system_prompt=arguments.get("system_prompt"),
-                        model=arguments.get("model", "claude-3-5-sonnet-20241022"),
+                        model=arguments.get("model", "claude-4-sonnet-20250514"),
                     )
                     return [
                         TextContent(
