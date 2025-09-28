@@ -30,6 +30,7 @@ class InstanceManager:
 
         # Job tracking for async messages
         self.jobs: dict[str, dict[str, Any]] = {}  # job_id -> job metadata
+        self.job_processes: dict[str, subprocess.Popen] = {}  # job_id -> background process
 
         # Resource tracking
         self.total_tokens_used = 0
@@ -287,9 +288,9 @@ class InstanceManager:
             self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
             logger.error(f"Error monitoring background job {job_id}: {e}")
         finally:
-            # Clean up process reference from job
-            if "process" in self.jobs[job_id]:
-                del self.jobs[job_id]["process"]
+            # Clean up process reference from separate storage
+            if job_id in self.job_processes:
+                del self.job_processes[job_id]
 
     async def _continue_processing(
         self,
@@ -730,9 +731,11 @@ class InstanceManager:
                     "updated_at": timestamp,
                     "result": None,
                     "error": None,
-                    "process": process,  # Store the process reference
                     "estimated_completion_seconds": 60
                 }
+
+                # Store process separately to avoid JSON serialization issues
+                self.job_processes[job_id] = process
 
                 # Start monitoring the process in background
                 asyncio.create_task(
