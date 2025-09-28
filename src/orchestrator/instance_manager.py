@@ -628,7 +628,14 @@ class InstanceManager:
 
         # Add the initial system prompt as context
         system_prompt = instance["system_prompt"]
-        instance["context"] = f"You are a specialized Claude instance. {system_prompt}"
+        workspace_path = instance["workspace_dir"]  # Get the string path
+        instance["context"] = (
+            f"You are a specialized Claude instance. {system_prompt}\n\n"
+            f"IMPORTANT: You have a workspace directory at: {workspace_path}\n"
+            f"You can read and write files within this directory. When asked to write files, "
+            f"write them to your workspace directory unless specifically asked to write elsewhere. "
+            f"Your current working directory is: {workspace_path}"
+        )
 
         # Initialize without starting a process yet
         # Processes will be started on-demand for each message
