@@ -97,11 +97,13 @@ class MCPAdapter:
                             },
                             {
                                 "name": "get_job_status",
-                                "description": "Get the status of an asynchronous job",
+                                "description": "Get the status of an asynchronous job (waits for completion by default)",
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
-                                        "job_id": {"type": "string", "description": "Job ID to check status"}
+                                        "job_id": {"type": "string", "description": "Job ID to check status"},
+                                        "wait_for_completion": {"type": "boolean", "default": True, "description": "Wait for job to complete (default true)"},
+                                        "max_wait": {"type": "integer", "default": 120, "description": "Maximum seconds to wait (default 120)"}
                                     },
                                     "required": ["job_id"]
                                 }
@@ -278,7 +280,9 @@ class MCPAdapter:
 
                     elif tool_name == "get_job_status":
                         job_status = await self.manager.get_job_status(
-                            job_id=tool_args["job_id"]
+                            job_id=tool_args["job_id"],
+                            wait_for_completion=tool_args.get("wait_for_completion", True),
+                            max_wait=tool_args.get("max_wait", 120)
                         )
                         result = {
                             "content": [

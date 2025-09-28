@@ -384,16 +384,35 @@ class InstanceManager:
             if instance_id in self.instances:
                 self.instances[instance_id]["state"] = "idle"
 
-    async def get_job_status(self, job_id: str) -> dict[str, Any] | None:
+    async def get_job_status(self, job_id: str, wait_for_completion: bool = True, max_wait: int = 120) -> dict[str, Any] | None:
         """Get the status of a job.
 
         Args:
             job_id: Job ID to check
+            wait_for_completion: If True, wait for job to complete
+            max_wait: Maximum seconds to wait for completion
 
         Returns:
             Job status dict or None if not found
         """
-        return self.jobs.get(job_id)
+        if job_id not in self.jobs:
+            return None
+
+        # If not waiting or job already complete, return immediately
+        job = self.jobs[job_id]
+        if not wait_for_completion or job["status"] in ["completed", "failed", "timeout"]:
+            return job
+
+        # Wait for completion
+        start_time = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start_time < max_wait:
+            job = self.jobs[job_id]
+            if job["status"] in ["completed", "failed", "timeout"]:
+                return job
+            await asyncio.sleep(1)
+
+        # Return current status after max wait
+        return self.jobs[job_id]
 
     async def get_instance_output(
         self,
