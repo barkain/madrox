@@ -70,13 +70,13 @@ class MCPAdapter:
                             },
                             {
                                 "name": "send_to_instance",
-                                "description": "Send a message to a specific Claude instance",
+                                "description": "Send a message to a specific Claude instance (non-blocking by default)",
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
                                         "instance_id": {"type": "string"},
                                         "message": {"type": "string"},
-                                        "wait_for_response": {"type": "boolean", "default": True},
+                                        "wait_for_response": {"type": "boolean", "default": False, "description": "Set to true to wait for response"},
                                         "timeout_seconds": {"type": "integer", "default": 30}
                                     },
                                     "required": ["instance_id", "message"]
@@ -93,6 +93,17 @@ class MCPAdapter:
                                         "limit": {"type": "integer", "default": 100}
                                     },
                                     "required": ["instance_id"]
+                                }
+                            },
+                            {
+                                "name": "get_job_status",
+                                "description": "Get the status of an asynchronous job",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "job_id": {"type": "string", "description": "Job ID to check status"}
+                                    },
+                                    "required": ["job_id"]
                                 }
                             },
                             {
@@ -170,17 +181,41 @@ class MCPAdapter:
                         response = await self.manager.send_to_instance(
                             instance_id=tool_args["instance_id"],
                             message=tool_args["message"],
-                            wait_for_response=tool_args.get("wait_for_response", True),
+                            wait_for_response=tool_args.get("wait_for_response", False),  # Default to False
                             timeout_seconds=tool_args.get("timeout_seconds", 30),
                         )
-                        result = {
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": response.get("response", "Message sent") if response else "Message sent (no response)"
-                                }
-                            ]
-                        }
+
+                        # Handle response based on whether we waited or not
+                        if isinstance(response, dict) and "job_id" in response:
+                            # Non-blocking: return job info
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"Message sent (job_id: {response['job_id']}, status: {response['status']})"
+                                    }
+                                ]
+                            }
+                        elif response:
+                            # Blocking: return actual response
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": response.get("response", "Message sent") if response else "Message sent"
+                                    }
+                                ]
+                            }
+                        else:
+                            # No response (timeout or error)
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Message sent (no response received)"
+                                    }
+                                ]
+                            }
 
                     elif tool_name == "get_instance_output":
                         output = await self.manager.get_instance_output(
@@ -223,6 +258,19 @@ class MCPAdapter:
                                 {
                                     "type": "text",
                                     "text": f"Instance {tool_args['instance_id']} terminated" if success else f"Failed to terminate {tool_args['instance_id']}"
+                                }
+                            ]
+                        }
+
+                    elif tool_name == "get_job_status":
+                        job_status = await self.manager.get_job_status(
+                            job_id=tool_args["job_id"]
+                        )
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": json.dumps(job_status, indent=2) if job_status else "Job not found"
                                 }
                             ]
                         }

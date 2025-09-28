@@ -28,6 +28,9 @@ class InstanceManager:
         self.response_buffers: dict[str, str] = {}  # instance_id -> buffered response
         self.message_history: dict[str, list[dict]] = {}  # instance_id -> message history
 
+        # Job tracking for async messages
+        self.jobs: dict[str, dict[str, Any]] = {}  # job_id -> job metadata
+
         # Resource tracking
         self.total_tokens_used = 0
         self.total_cost = 0.0
@@ -127,7 +130,8 @@ class InstanceManager:
             priority: Message priority
 
         Returns:
-            Response data if wait_for_response=True, None otherwise
+            If wait_for_response=True: Response data dict
+            If wait_for_response=False: Dict with job_id and status
         """
         if instance_id not in self.instances:
             raise ValueError(f"Instance {instance_id} not found")
@@ -145,7 +149,11 @@ class InstanceManager:
                 # Send message and wait for response
                 try:
                     response_data = await asyncio.wait_for(
-                        self._send_and_receive_message(instance_id, message),
+                        self._send_and_receive_message(
+                            instance_id,
+                            message,
+                            process_timeout=timeout_seconds,
+                        ),
                         timeout=timeout_seconds
                     )
                     return response_data
@@ -153,26 +161,111 @@ class InstanceManager:
                     logger.warning(f"Timeout waiting for response from instance {instance_id}")
                     return None
             else:
-                # Just add to message history without waiting
+                # Create job for async processing
+                job_id = str(uuid.uuid4())
+                timestamp = datetime.now(UTC).isoformat()
+
+                self.jobs[job_id] = {
+                    "job_id": job_id,
+                    "instance_id": instance_id,
+                    "message": message,
+                    "status": "pending",
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    "result": None,
+                    "error": None
+                }
+
+                # Add to message history
                 if instance_id not in self.message_history:
                     self.message_history[instance_id] = []
 
                 self.message_history[instance_id].append({
                     "role": "user",
                     "content": message,
-                    "timestamp": datetime.now(UTC).isoformat()
+                    "timestamp": timestamp,
+                    "job_id": job_id
                 })
 
-                # Queue message for async processing
-                await self.message_queues[instance_id].put(message)
-                return None
+                # Start async processing
+                asyncio.create_task(
+                    self._process_job_async(job_id, instance_id, message, timeout_seconds)
+                )
+
+                logger.info(f"Created async job {job_id} for instance {instance_id}")
+                return {"job_id": job_id, "status": "pending"}
+
+        finally:
+            # Only update back to idle if we were waiting for response
+            if wait_for_response and instance["state"] == "busy":
+                instance["state"] = "idle"
+
+    async def _process_job_async(
+        self,
+        job_id: str,
+        instance_id: str,
+        message: str,
+        timeout_seconds: int
+    ):
+        """Process a job asynchronously."""
+        try:
+            # Update job status to processing
+            self.jobs[job_id]["status"] = "processing"
+            self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
+
+            # Send message and wait for response
+            response_data = await asyncio.wait_for(
+                self._send_and_receive_message(
+                    instance_id,
+                    message,
+                    process_timeout=timeout_seconds,
+                ),
+                timeout=timeout_seconds
+            )
+
+            # Update job with result
+            self.jobs[job_id]["status"] = "completed"
+            self.jobs[job_id]["result"] = response_data
+            self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
+
+            # Add response to message history
+            if instance_id in self.message_history:
+                self.message_history[instance_id].append({
+                    "role": "assistant",
+                    "content": response_data.get("content", ""),
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "job_id": job_id
+                })
+
+            logger.info(f"Completed job {job_id} for instance {instance_id}")
+
+        except asyncio.TimeoutError:
+            self.jobs[job_id]["status"] = "timeout"
+            self.jobs[job_id]["error"] = f"Timeout after {timeout_seconds} seconds"
+            self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
+            logger.warning(f"Job {job_id} timed out after {timeout_seconds} seconds")
+
+        except Exception as e:
+            self.jobs[job_id]["status"] = "failed"
+            self.jobs[job_id]["error"] = str(e)
+            self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
+            logger.error(f"Job {job_id} failed: {e}")
 
         finally:
             # Update instance state back to idle
-            if instance["state"] == "busy":
-                instance["state"] = "idle"
+            if instance_id in self.instances:
+                self.instances[instance_id]["state"] = "idle"
 
-        return None
+    async def get_job_status(self, job_id: str) -> dict[str, Any] | None:
+        """Get the status of a job.
+
+        Args:
+            job_id: Job ID to check
+
+        Returns:
+            Job status dict or None if not found
+        """
+        return self.jobs.get(job_id)
 
     async def get_instance_output(
         self,
@@ -395,7 +488,13 @@ class InstanceManager:
         logger.info(f"Instance {instance_id} initialized (process will start on first message)")
         instance["conversation_id"] = f"conv_{instance_id}"
 
-    async def _send_and_receive_message(self, instance_id: str, message: str) -> dict[str, Any]:
+    async def _send_and_receive_message(
+        self,
+        instance_id: str,
+        message: str,
+        *,
+        process_timeout: int | float | None = None,
+    ) -> dict[str, Any]:
         """Send message to Claude CLI instance and receive response."""
         instance = self.instances[instance_id]
 
@@ -441,7 +540,9 @@ class InstanceManager:
             )
 
             # Wait for the response
-            stdout, stderr = process.communicate(timeout=30)
+            stdout, stderr = process.communicate(
+                timeout=process_timeout if process_timeout is not None else 30
+            )
 
             if process.returncode != 0:
                 logger.error(f"Claude CLI failed: {stderr}")
