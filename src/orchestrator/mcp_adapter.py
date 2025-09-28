@@ -154,6 +154,33 @@ class MCPAdapter:
                                         }
                                     }
                                 }
+                            },
+                            {
+                                "name": "retrieve_instance_file",
+                                "description": "Retrieve a file from an instance's workspace directory",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "instance_id": {"type": "string"},
+                                        "filename": {"type": "string", "description": "Name of the file to retrieve"},
+                                        "destination_path": {
+                                            "type": "string",
+                                            "description": "Optional destination path (defaults to current directory)"
+                                        }
+                                    },
+                                    "required": ["instance_id", "filename"]
+                                }
+                            },
+                            {
+                                "name": "list_instance_files",
+                                "description": "List all files in an instance's workspace directory",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "instance_id": {"type": "string"}
+                                    },
+                                    "required": ["instance_id"]
+                                }
                             }
                         ]
                     }
@@ -302,6 +329,34 @@ class MCPAdapter:
                                 {
                                     "type": "text",
                                     "text": json.dumps(status, indent=2)
+                                }
+                            ]
+                        }
+
+                    elif tool_name == "retrieve_instance_file":
+                        file_path = await self.manager.retrieve_instance_file(
+                            instance_id=tool_args["instance_id"],
+                            filename=tool_args["filename"],
+                            destination_path=tool_args.get("destination_path")
+                        )
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"File retrieved successfully to: {file_path}" if file_path else "File not found"
+                                }
+                            ]
+                        }
+
+                    elif tool_name == "list_instance_files":
+                        files = await self.manager.list_instance_files(
+                            instance_id=tool_args["instance_id"]
+                        )
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": json.dumps(files, indent=2) if files else "No files found or instance not found"
                                 }
                             ]
                         }

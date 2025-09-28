@@ -885,3 +885,81 @@ class InstanceManager:
                 continue
 
         logger.info(f"Health check complete. Active instances: {len([i for i in self.instances.values() if i['state'] not in ['terminated', 'error']])}")
+
+    async def retrieve_instance_file(
+        self,
+        instance_id: str,
+        filename: str,
+        destination_path: str | None = None
+    ) -> str | None:
+        """Retrieve a file from an instance's workspace directory.
+
+        Args:
+            instance_id: The instance ID
+            filename: Name of the file to retrieve
+            destination_path: Optional destination path (defaults to current directory)
+
+        Returns:
+            Path to the retrieved file, or None if not found
+        """
+        if instance_id not in self.instances:
+            logger.error(f"Instance {instance_id} not found")
+            return None
+
+        instance = self.instances[instance_id]
+        workspace_dir = Path(instance["workspace_dir"])
+        source_file = workspace_dir / filename
+
+        if not source_file.exists():
+            logger.warning(f"File {filename} not found in instance {instance_id} workspace")
+            return None
+
+        # Determine destination
+        if destination_path:
+            dest = Path(destination_path)
+            if dest.is_dir():
+                dest = dest / filename
+        else:
+            dest = Path.cwd() / filename
+
+        try:
+            import shutil
+            shutil.copy2(source_file, dest)
+            logger.info(f"Retrieved file {filename} from instance {instance_id} to {dest}")
+            return str(dest)
+        except Exception as e:
+            logger.error(f"Failed to retrieve file: {e}")
+            return None
+
+    async def list_instance_files(self, instance_id: str) -> list[str] | None:
+        """List all files in an instance's workspace directory.
+
+        Args:
+            instance_id: The instance ID
+
+        Returns:
+            List of file paths relative to workspace, or None if instance not found
+        """
+        if instance_id not in self.instances:
+            logger.error(f"Instance {instance_id} not found")
+            return None
+
+        instance = self.instances[instance_id]
+        workspace_dir = Path(instance["workspace_dir"])
+
+        if not workspace_dir.exists():
+            logger.warning(f"Workspace directory for instance {instance_id} does not exist")
+            return []
+
+        try:
+            files = []
+            for item in workspace_dir.rglob("*"):
+                if item.is_file():
+                    relative_path = item.relative_to(workspace_dir)
+                    files.append(str(relative_path))
+
+            logger.debug(f"Found {len(files)} files in instance {instance_id} workspace")
+            return sorted(files)
+        except Exception as e:
+            logger.error(f"Failed to list files: {e}")
+            return []
