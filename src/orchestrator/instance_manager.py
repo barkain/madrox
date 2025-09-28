@@ -616,7 +616,9 @@ class InstanceManager:
         # Build the Claude CLI command for interactive mode
         # Each message spawns a new claude process with the full conversation context
         cmd = [
-            "claude"
+            "claude",
+            "--permission-mode", "bypassPermissions",  # Allow file operations without approval
+            "--print"  # Ensure we get output
         ]
 
         # Add allowed tools if specified
