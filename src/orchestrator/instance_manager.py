@@ -230,6 +230,67 @@ class InstanceManager:
             if wait_for_response and instance["state"] == "busy":
                 instance["state"] = "idle"
 
+    async def _monitor_background_process(
+        self,
+        job_id: str,
+        process: subprocess.Popen,
+        instance_id: str
+    ):
+        """Monitor a background process that timed out initially."""
+        try:
+            # Continue monitoring the process
+            stdout, stderr = await asyncio.get_event_loop().run_in_executor(
+                None, process.communicate
+            )
+
+            if process.returncode == 0 and stdout:
+                response_text = stdout.strip()
+
+                # Update job with result
+                self.jobs[job_id]["status"] = "completed"
+                self.jobs[job_id]["result"] = {
+                    "instance_id": instance_id,
+                    "message_id": str(uuid.uuid4()),
+                    "response": response_text,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+                self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
+
+                # Add to message history
+                if instance_id in self.message_history:
+                    self.message_history[instance_id].append({
+                        "role": "assistant",
+                        "content": response_text,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "job_id": job_id
+                    })
+
+                # Update usage statistics
+                estimated_tokens = len(response_text.split())
+                estimated_cost = estimated_tokens * 0.00001
+
+                if instance_id in self.instances:
+                    self.instances[instance_id]["total_tokens_used"] += estimated_tokens
+                    self.instances[instance_id]["total_cost"] += estimated_cost
+
+                logger.info(f"Background job {job_id} completed successfully")
+            else:
+                # Process failed
+                self.jobs[job_id]["status"] = "failed"
+                self.jobs[job_id]["error"] = stderr if stderr else "Process failed with no output"
+                self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
+                logger.error(f"Background job {job_id} failed: {stderr}")
+
+        except Exception as e:
+            self.jobs[job_id]["status"] = "failed"
+            self.jobs[job_id]["error"] = str(e)
+            self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
+            logger.error(f"Error monitoring background job {job_id}: {e}")
+        finally:
+            # Clean up process reference from job
+            if "process" in self.jobs[job_id]:
+                del self.jobs[job_id]["process"]
+
     async def _continue_processing(
         self,
         job_id: str,
@@ -605,52 +666,87 @@ class InstanceManager:
                 bufsize=-1
             )
 
-            # Wait for the response
-            stdout, stderr = process.communicate(
-                timeout=process_timeout if process_timeout is not None else 30
-            )
+            # Store process for potential later retrieval
+            self.processes[instance_id] = process
 
-            if process.returncode != 0:
-                logger.error(f"Claude CLI failed: {stderr}")
-                raise RuntimeError(f"Claude CLI process failed: {stderr}")
+            try:
+                # Wait for the response
+                stdout, stderr = process.communicate(
+                    timeout=process_timeout if process_timeout is not None else 180
+                )
 
-            response_text = stdout.strip()
+                if process.returncode != 0:
+                    logger.error(f"Claude CLI failed: {stderr}")
+                    raise RuntimeError(f"Claude CLI process failed: {stderr}")
 
-            if not response_text:
-                raise RuntimeError("No response received from Claude CLI")
+                response_text = stdout.strip()
 
-            # Add assistant response to history
-            self.message_history[instance_id].append({
-                "role": "assistant",
-                "content": response_text,
-                "timestamp": datetime.now(UTC).isoformat()
-            })
+                if not response_text:
+                    raise RuntimeError("No response received from Claude CLI")
 
-            # Update usage statistics (estimates since CLI doesn't provide token counts)
-            estimated_tokens = len(message.split()) + len(response_text.split())
-            estimated_cost = estimated_tokens * 0.00001  # Rough estimate
+                # Add assistant response to history
+                self.message_history[instance_id].append({
+                    "role": "assistant",
+                    "content": response_text,
+                    "timestamp": datetime.now(UTC).isoformat()
+                })
 
-            instance["total_tokens_used"] += estimated_tokens
-            instance["total_cost"] += estimated_cost
-            instance["request_count"] += 1
+                # Update usage statistics (estimates since CLI doesn't provide token counts)
+                estimated_tokens = len(message.split()) + len(response_text.split())
+                estimated_cost = estimated_tokens * 0.00001  # Rough estimate
 
-            self.total_tokens_used += estimated_tokens
-            self.total_cost += estimated_cost
+                instance["total_tokens_used"] += estimated_tokens
+                instance["total_cost"] += estimated_cost
+                instance["request_count"] += 1
 
-            logger.debug(f"Sent message to instance {instance_id}. Response length: {len(response_text)}")
+                self.total_tokens_used += estimated_tokens
+                self.total_cost += estimated_cost
 
-            return {
-                "instance_id": instance_id,
-                "message_id": str(uuid.uuid4()),
-                "response": response_text,
-                "timestamp": datetime.now(UTC).isoformat(),
-                "tokens_used": estimated_tokens,
-                "cost": estimated_cost
-            }
+                logger.debug(f"Sent message to instance {instance_id}. Response length: {len(response_text)}")
 
-        except subprocess.TimeoutExpired as e:
-            logger.error(f"Timeout waiting for response from instance {instance_id}")
-            raise RuntimeError("Claude CLI process timed out") from e
+                return {
+                    "instance_id": instance_id,
+                    "message_id": str(uuid.uuid4()),
+                    "response": response_text,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "tokens_used": estimated_tokens,
+                    "cost": estimated_cost
+                }
+
+            except subprocess.TimeoutExpired:
+                # Don't kill the process - let it continue running
+                logger.warning(f"Timeout waiting for response from instance {instance_id}, but process continues")
+
+                # Create a job to track the ongoing work
+                job_id = str(uuid.uuid4())
+                timestamp = datetime.now(UTC).isoformat()
+
+                self.jobs[job_id] = {
+                    "job_id": job_id,
+                    "instance_id": instance_id,
+                    "message": message,
+                    "status": "processing",
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    "result": None,
+                    "error": None,
+                    "process": process,  # Store the process reference
+                    "estimated_completion_seconds": 60
+                }
+
+                # Start monitoring the process in background
+                asyncio.create_task(
+                    self._monitor_background_process(job_id, process, instance_id)
+                )
+
+                # Return timeout response with job tracking
+                return {
+                    "status": "timeout",
+                    "job_id": job_id,
+                    "message": "Request is still processing in background",
+                    "estimated_wait_seconds": 60,
+                    "instance_state": instance["state"]
+                }
         except Exception as e:
             logger.error(f"Error communicating with Claude CLI: {e}")
             raise RuntimeError(f"Failed to communicate with Claude CLI: {e}") from e
