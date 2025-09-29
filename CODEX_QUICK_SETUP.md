@@ -2,10 +2,16 @@
 
 ## One-Command Installation
 
-To add Madrox MCP server to your Codex CLI configuration, simply run:
+To add Madrox MCP server to your Codex CLI configuration, simply run from the Madrox directory:
 
 ```bash
-codex mcp add madrox /Users/nadavbarkai/dev/madrox/madrox-mcp
+codex mcp add madrox $(pwd)/madrox-mcp
+```
+
+Or with the full path:
+
+```bash
+codex mcp add madrox /path/to/madrox/madrox-mcp
 ```
 
 This uses a wrapper script that handles the proper environment setup.
@@ -46,12 +52,12 @@ codex
 
 If the server doesn't work:
 
-1. Ensure uv is installed: `/Users/nadavbarkai/.local/bin/uv --version`
-2. Ensure dependencies are installed: `cd /Users/nadavbarkai/dev/madrox && uv sync`
-3. Test the server directly:
+1. Ensure uv is installed: `uv --version` (or check `~/.local/bin/uv --version`)
+2. Ensure dependencies are installed: `cd /path/to/madrox && uv sync`
+3. Test the server directly from the Madrox directory:
    ```bash
    echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | \
-   /Users/nadavbarkai/.local/bin/uv run python /Users/nadavbarkai/dev/madrox/run_orchestrator_stdio.py
+   ./madrox-mcp
    ```
 
 ## Remove Server

@@ -4,7 +4,7 @@ This document describes how to set up and use the Madrox MCP server with OpenAI'
 
 ## Overview
 
-The stdio MCP server (`run_stdio_server.py`) implements the Model Context Protocol (MCP) using JSON-RPC 2.0 over standard input/output streams. This allows Codex CLI to spawn and manage multiple Claude instances through Madrox.
+The stdio MCP server (`run_orchestrator_stdio.py`) implements the Model Context Protocol (MCP) using JSON-RPC 2.0 over standard input/output streams. This allows Codex CLI to spawn and manage multiple Claude instances through Madrox.
 
 ## Features
 
@@ -48,8 +48,10 @@ Edit `~/.codex/config.toml` and update the path to your Madrox installation:
 
 ```toml
 [mcp_servers.madrox]
-command = "python"
-args = ["/YOUR/PATH/TO/madrox/run_stdio_server.py"]  # Update this path
+command = "/YOUR/PATH/TO/madrox/madrox-mcp"  # Update this path
+# Or if you prefer to use Python directly:
+# command = "python"
+# args = ["/YOUR/PATH/TO/madrox/run_orchestrator_stdio.py"]
 ```
 
 ## Usage
@@ -59,14 +61,17 @@ args = ["/YOUR/PATH/TO/madrox/run_stdio_server.py"]  # Update this path
 You can test the server directly using JSON-RPC commands:
 
 ```bash
-# Test initialization
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | python run_stdio_server.py
+# Test initialization using the wrapper script
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | ./madrox-mcp
+
+# Or test directly with Python
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | python run_orchestrator_stdio.py
 
 # List available tools
-echo '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | python run_stdio_server.py
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | ./madrox-mcp
 
 # Get instance status
-echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_instance_status","arguments":{}}}' | python run_stdio_server.py
+echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_instance_status","arguments":{}}}' | ./madrox-mcp
 ```
 
 ### Using with Codex CLI
@@ -123,12 +128,12 @@ When spawning instances, you can specify these predefined roles:
 
 ### Server not responding
 - Check that Python can find the Madrox modules
-- Ensure the virtual environment is activated or dependencies are installed
-- Check stderr output for error messages: `python run_stdio_server.py 2>error.log`
+- Ensure uv is installed or the virtual environment is activated
+- Check stderr output for error messages: `./madrox-mcp 2>error.log`
 
 ### Codex can't find the server
 - Verify the path in `~/.codex/config.toml` is absolute and correct
-- Ensure the script is executable: `chmod +x run_stdio_server.py`
+- Ensure the wrapper script is executable: `chmod +x madrox-mcp`
 - Check Codex logs for MCP server initialization errors
 
 ### Instance spawn failures
