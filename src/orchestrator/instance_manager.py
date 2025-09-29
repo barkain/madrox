@@ -75,7 +75,9 @@ class InstanceManager:
         Returns:
             Instance ID
         """
-        if len(self.instances) >= self.config.get("max_concurrent_instances", 10):
+        # Count only active instances (not terminated)
+        active_count = len([i for i in self.instances.values() if i["state"] != "terminated"])
+        if active_count >= self.config.get("max_concurrent_instances", 10):
             raise RuntimeError("Maximum concurrent instances reached")
 
         instance_id = str(uuid.uuid4())
@@ -177,7 +179,9 @@ class InstanceManager:
         Returns:
             Instance ID
         """
-        if len(self.instances) >= self.config.get("max_concurrent_instances", 10):
+        # Count only active instances (not terminated)
+        active_count = len([i for i in self.instances.values() if i["state"] != "terminated"])
+        if active_count >= self.config.get("max_concurrent_instances", 10):
             raise RuntimeError("Maximum concurrent instances reached")
 
         # Validate model - Codex only supports OpenAI models
