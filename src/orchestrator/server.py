@@ -134,7 +134,8 @@ class ClaudeOrchestratorServer:
                         "input_schema": {
                             "type": "object",
                             "properties": {
-                                "name": {"type": "string", "description": "Human-readable name for the instance"},
+                                "name": {"type": "string", "description": "Optional custom name (auto-generates funny name if not provided)"},
+                                "auto_generate_name": {"type": "boolean", "description": "Force funny name generation even if name is provided", "default": False},
                                 "role": {
                                     "type": "string",
                                     "enum": [role.value for role in InstanceRole],
@@ -147,7 +148,7 @@ class ClaudeOrchestratorServer:
                                 "workspace_dir": {"type": "string", "description": "Working directory"},
                                 "parent_instance_id": {"type": "string", "description": "Parent instance ID"},
                             },
-                            "required": ["name"],
+                            "required": [],
                         },
                     },
                     {
@@ -286,7 +287,8 @@ class ClaudeOrchestratorServer:
 
     async def _spawn_claude(
         self,
-        name: str,
+        name: str | None = None,
+        auto_generate_name: bool = False,
         role: str = "general",
         system_prompt: str | None = None,
         model: str = "claude-4-sonnet-20250514",
@@ -298,7 +300,14 @@ class ClaudeOrchestratorServer:
         **kwargs
     ) -> dict[str, Any]:
         """Spawn a new Claude instance."""
-        logger.info(f"Spawning Claude instance: {name} with role {role}")
+        # Force funny name generation if requested or if name is empty/generic
+        generic_names = ["unnamed", "assistant", "claude_assistant", "auto_instance",
+                        "assistant-1", "assistant-2", "assistant-3", "assistant-4",
+                        "madrox-instance", "instance"]
+        if (auto_generate_name or not name or name == "" or
+            any(name and name.lower().startswith(g) for g in generic_names)):
+            name = None
+        logger.info(f"Spawning Claude instance: {name if name else 'auto-generated funny name'} with role {role}")
 
         try:
             # Validate role
@@ -318,13 +327,17 @@ class ClaudeOrchestratorServer:
                 **kwargs
             )
 
+            # Get the actual instance to get the generated name
+            instance = self.instance_manager.instances[instance_id]
+            actual_name = instance["name"]
+
             return {
                 "success": True,
                 "instance_id": instance_id,
-                "name": name,
+                "name": actual_name,
                 "role": role,
                 "model": model,
-                "message": f"Successfully spawned Claude instance '{name}' with role '{role}'",
+                "message": f"Successfully spawned Claude instance '{actual_name}' with role '{role}'",
             }
 
         except Exception as e:

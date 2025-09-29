@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from .name_generator import get_instance_name
 from .pty_instance import PTYInstance
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ class InstanceManager:
 
     async def spawn_instance(
         self,
-        name: str,
+        name: str | None = None,
         role: str = "general",
         system_prompt: str | None = None,
         model: str = "claude-4-sonnet-20250514",
@@ -70,6 +71,12 @@ class InstanceManager:
 
         instance_id = str(uuid.uuid4())
 
+        # Generate a funny name if not provided or if empty string
+        if not name or name == "unnamed" or name == "":
+            instance_name = get_instance_name(None)
+        else:
+            instance_name = get_instance_name(name)
+
         # Create isolated workspace
         workspace_dir = self.workspace_base / instance_id
         workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -78,10 +85,20 @@ class InstanceManager:
         if not system_prompt:
             system_prompt = self._get_role_prompt(role)
 
+        # Add a greeting with the instance's funny name
+        greeting = f"\n\nHello! I'm {instance_name}, your Madrox instance. "
+        if instance_name.count('-') > 1:  # Has a title
+            greeting += "As you can tell from my distinguished title, I'm here to help! "
+        else:
+            greeting += "I'm ready to assist you with any tasks you have. "
+        greeting += "Let's get started! 🚀"
+
+        system_prompt = system_prompt + greeting
+
         # Create instance record
         instance = {
             "id": instance_id,
-            "name": name,
+            "name": instance_name,
             "role": role,
             "model": model,
             "state": "initializing",
@@ -115,7 +132,7 @@ class InstanceManager:
                 await self._initialize_instance(instance_id)
             instance["state"] = "running"
             mode = "PTY" if use_pty else "subprocess"
-            logger.info(f"Successfully spawned Claude instance {instance_id} ({name}) with role {role} using {mode}")
+            logger.info(f"Successfully spawned Claude instance {instance_id} ({instance_name}) with role {role} using {mode}")
         except Exception as e:
             instance["state"] = "error"
             instance["error_message"] = str(e)
