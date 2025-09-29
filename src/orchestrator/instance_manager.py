@@ -81,19 +81,21 @@ class InstanceManager:
         workspace_dir = self.workspace_base / instance_id
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
+        # Track whether a custom prompt was provided
+        has_custom_prompt = bool(system_prompt)
+
         # Build system prompt based on role
         if not system_prompt:
+            # Only add greeting and default prompt when no custom prompt provided
             system_prompt = self._get_role_prompt(role)
-
-        # Add a greeting with the instance's funny name
-        greeting = f"\n\nHello! I'm {instance_name}, your Madrox instance. "
-        if instance_name.count('-') > 1:  # Has a title
-            greeting += "As you can tell from my distinguished title, I'm here to help! "
-        else:
-            greeting += "I'm ready to assist you with any tasks you have. "
-        greeting += "Let's get started! 🚀"
-
-        system_prompt = system_prompt + greeting
+            # Add a greeting with the instance's funny name
+            greeting = f"\n\nHello! I'm {instance_name}, your Madrox instance. "
+            if instance_name.count('-') > 1:  # Has a title
+                greeting += "As you can tell from my distinguished title, I'm here to help! "
+            else:
+                greeting += "I'm ready to assist you with any tasks you have. "
+            greeting += "Let's get started! 🚀"
+            system_prompt = system_prompt + greeting
 
         # Create instance record
         instance = {
@@ -103,6 +105,7 @@ class InstanceManager:
             "model": model,
             "state": "initializing",
             "system_prompt": system_prompt,
+            "has_custom_prompt": has_custom_prompt,  # Track if custom prompt was provided
             "workspace_dir": str(workspace_dir),
             "bypass_isolation": bypass_isolation,
             "created_at": datetime.now(UTC).isoformat(),
@@ -672,24 +675,30 @@ class InstanceManager:
         system_prompt = instance["system_prompt"]
         workspace_path = instance["workspace_dir"]  # Get the string path
 
+        # Check if a custom prompt was provided
+        has_custom_prompt = instance.get("has_custom_prompt", False)
+
+        # Only add prefix if this is not a custom prompt
+        prompt_prefix = "" if has_custom_prompt else "You are a specialized Claude instance. "
+
         if instance.get("bypass_isolation", False):
             # Full filesystem access
-            instance["context"] = (
-                f"You are a specialized Claude instance. {system_prompt}\n\n"
-                f"IMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
+            workspace_info = (
+                f"\n\nIMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
                 f"Your workspace directory is at: {workspace_path}\n"
                 f"Your current working directory will be: {Path.cwd()}\n"
                 f"You can write files to any absolute path or relative to the current directory."
             )
+            instance["context"] = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
         else:
             # Isolated workspace
-            instance["context"] = (
-                f"You are a specialized Claude instance. {system_prompt}\n\n"
-                f"IMPORTANT: You have a workspace directory at: {workspace_path}\n"
+            workspace_info = (
+                f"\n\nIMPORTANT: You have a workspace directory at: {workspace_path}\n"
                 f"You can read and write files within this directory. When asked to write files, "
                 f"write them to your workspace directory unless specifically asked to write elsewhere. "
                 f"Your current working directory is: {workspace_path}"
             )
+            instance["context"] = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
 
         # Initialize without starting a process yet
         # Processes will be started on-demand for each message
@@ -710,24 +719,30 @@ class InstanceManager:
         system_prompt = instance["system_prompt"]
         workspace_path = instance["workspace_dir"]
 
+        # Check if a custom prompt was provided
+        has_custom_prompt = instance.get("has_custom_prompt", False)
+
+        # Only add prefix if this is not a custom prompt
+        prompt_prefix = "" if has_custom_prompt else "You are a specialized Claude instance. "
+
         if instance.get("bypass_isolation", False):
             # Full filesystem access
-            instance["context"] = (
-                f"You are a specialized Claude instance. {system_prompt}\n\n"
-                f"IMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
+            workspace_info = (
+                f"\n\nIMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
                 f"Your workspace directory is at: {workspace_path}\n"
                 f"Your current working directory will be: {Path.cwd()}\n"
                 f"You can write files to any absolute path or relative to the current directory."
             )
+            instance["context"] = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
         else:
             # Isolated workspace
-            instance["context"] = (
-                f"You are a specialized Claude instance. {system_prompt}\n\n"
-                f"IMPORTANT: You have a workspace directory at: {workspace_path}\n"
+            workspace_info = (
+                f"\n\nIMPORTANT: You have a workspace directory at: {workspace_path}\n"
                 f"You can read and write files within this directory. When asked to write files, "
                 f"write them to your workspace directory unless specifically asked to write elsewhere. "
                 f"Your current working directory is: {workspace_path}"
             )
+            instance["context"] = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
 
         # Create PTY instance
         pty_instance = PTYInstance(instance_id, instance)
@@ -1019,6 +1034,9 @@ class InstanceManager:
 
             # Check for timeout
             last_activity = datetime.fromisoformat(instance["last_activity"])
+            # Ensure last_activity is timezone-aware (it should already have timezone from UTC)
+            if last_activity.tzinfo is None:
+                last_activity = last_activity.replace(tzinfo=UTC)
             if current_time - last_activity > timedelta(minutes=timeout_minutes):
                 logger.warning(f"Instance {instance_id} timed out, terminating")
                 await self.terminate_instance(instance_id, force=True)
