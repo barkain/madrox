@@ -20,6 +20,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "mcp>=1.15.0",
     "mcp-python>=0.1.4",
+    "aiohttp>=3.12.15",
+    "sse-starlette>=3.0.2",
 ]
 
 [project.optional-dependencies]

@@ -59,6 +59,7 @@ class InstanceManager:
         model: str | None = None,
         bypass_isolation: bool = False,
         use_pty: bool = False,  # Back to subprocess for reliability
+        enable_madrox: bool = False,  # Enable madrox MCP server access
         **kwargs,
     ) -> str:
         """Spawn a new Claude instance.
@@ -70,6 +71,7 @@ class InstanceManager:
             model: Claude model to use (None = use CLI default)
             bypass_isolation: Allow full filesystem access
             use_pty: Use PTY mode for persistent sessions
+            enable_madrox: Enable madrox MCP server tools (allows spawning sub-instances)
             **kwargs: Additional configuration options
 
         Returns:
@@ -119,6 +121,7 @@ class InstanceManager:
             "has_custom_prompt": has_custom_prompt,  # Track if custom prompt was provided
             "workspace_dir": str(workspace_dir),
             "bypass_isolation": bypass_isolation,
+            "enable_madrox": enable_madrox,
             "created_at": datetime.now(UTC).isoformat(),
             "last_activity": datetime.now(UTC).isoformat(),
             "total_tokens_used": 0,
@@ -911,6 +914,11 @@ class InstanceManager:
         # Add model if explicitly specified (None = use CLI default)
         if model := instance.get("model"):
             cmd.extend(["--model", model])
+
+        # Add madrox MCP server if enabled
+        if instance.get("enable_madrox", False):
+            madrox_mcp_path = str(Path(__file__).parent.parent.parent / "madrox-mcp")
+            cmd.extend(["--mcp-server", f"madrox={madrox_mcp_path}"])
 
         # Add allowed tools if specified
         if "allowed_tools" in instance:

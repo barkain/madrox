@@ -70,6 +70,11 @@ class MCPAdapter:
                                             "type": "boolean",
                                             "description": "Allow full filesystem access (default: false)",
                                         },
+                                        "enable_madrox": {
+                                            "type": "boolean",
+                                            "default": False,
+                                            "description": "Enable madrox MCP server (allows spawning sub-instances)",
+                                        },
                                     },
                                     "required": ["name"],
                                 },
@@ -266,6 +271,7 @@ class MCPAdapter:
                             system_prompt=tool_args.get("system_prompt"),
                             model=tool_args.get("model"),  # None = use CLI default
                             bypass_isolation=tool_args.get("bypass_isolation", False),
+                            enable_madrox=tool_args.get("enable_madrox", False),
                         )
                         result = {
                             "content": [

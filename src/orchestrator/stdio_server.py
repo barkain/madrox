@@ -3,17 +3,17 @@
 import asyncio
 import json
 import logging
-import sys
 import os
-from typing import Any, Optional
+import sys
+from typing import Any
 
-from mcp.server import Server
-from mcp.server.models import InitializationOptions
 import mcp.server.stdio
 import mcp.types as types
+from mcp.server import Server
+from mcp.server.models import InitializationOptions
 
 from .instance_manager import InstanceManager
-from .simple_models import OrchestratorConfig, InstanceRole
+from .simple_models import InstanceRole, OrchestratorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -49,28 +49,34 @@ class MadroxStdioServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "Instance name"
-                            },
+                            "name": {"type": "string", "description": "Instance name"},
                             "role": {
                                 "type": "string",
                                 "enum": [role.value for role in InstanceRole],
                                 "description": "Predefined role",
-                                "default": "general"
+                                "default": "general",
                             },
                             "system_prompt": {
                                 "type": "string",
-                                "description": "Custom system prompt"
+                                "description": "Custom system prompt",
                             },
                             "model": {
                                 "type": "string",
-                                "description": "Claude model to use",
-                                "default": "claude-4-sonnet-20250514"
-                            }
+                                "description": "Claude model to use (omit to use CLI default)",
+                            },
+                            "bypass_isolation": {
+                                "type": "boolean",
+                                "description": "Allow full filesystem access (default: false)",
+                                "default": False,
+                            },
+                            "enable_madrox": {
+                                "type": "boolean",
+                                "description": "Enable madrox MCP server (allows spawning sub-instances)",
+                                "default": False,
+                            },
                         },
-                        "required": ["name"]
-                    }
+                        "required": ["name"],
+                    },
                 ),
                 types.Tool(
                     name="send_to_instance",
@@ -78,27 +84,21 @@ class MadroxStdioServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "instance_id": {
-                                "type": "string",
-                                "description": "Target instance ID"
-                            },
-                            "message": {
-                                "type": "string",
-                                "description": "Message to send"
-                            },
+                            "instance_id": {"type": "string", "description": "Target instance ID"},
+                            "message": {"type": "string", "description": "Message to send"},
                             "wait_for_response": {
                                 "type": "boolean",
                                 "description": "Wait for response",
-                                "default": True
+                                "default": True,
                             },
                             "timeout_seconds": {
                                 "type": "integer",
                                 "description": "Response timeout",
-                                "default": 30
-                            }
+                                "default": 30,
+                            },
                         },
-                        "required": ["instance_id", "message"]
-                    }
+                        "required": ["instance_id", "message"],
+                    },
                 ),
                 types.Tool(
                     name="get_instance_output",
@@ -106,22 +106,16 @@ class MadroxStdioServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "instance_id": {
-                                "type": "string",
-                                "description": "Instance ID"
-                            },
+                            "instance_id": {"type": "string", "description": "Instance ID"},
                             "limit": {
                                 "type": "integer",
                                 "description": "Maximum number of messages",
-                                "default": 100
+                                "default": 100,
                             },
-                            "since": {
-                                "type": "string",
-                                "description": "ISO timestamp filter"
-                            }
+                            "since": {"type": "string", "description": "ISO timestamp filter"},
                         },
-                        "required": ["instance_id"]
-                    }
+                        "required": ["instance_id"],
+                    },
                 ),
                 types.Tool(
                     name="coordinate_instances",
@@ -131,26 +125,26 @@ class MadroxStdioServer:
                         "properties": {
                             "coordinator_id": {
                                 "type": "string",
-                                "description": "Coordinating instance ID"
+                                "description": "Coordinating instance ID",
                             },
                             "participant_ids": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Participant instance IDs"
+                                "description": "Participant instance IDs",
                             },
                             "task_description": {
                                 "type": "string",
-                                "description": "Task description"
+                                "description": "Task description",
                             },
                             "coordination_type": {
                                 "type": "string",
                                 "enum": ["sequential", "parallel", "consensus"],
                                 "description": "Coordination type",
-                                "default": "sequential"
-                            }
+                                "default": "sequential",
+                            },
                         },
-                        "required": ["coordinator_id", "participant_ids", "task_description"]
-                    }
+                        "required": ["coordinator_id", "participant_ids", "task_description"],
+                    },
                 ),
                 types.Tool(
                     name="terminate_instance",
@@ -160,16 +154,16 @@ class MadroxStdioServer:
                         "properties": {
                             "instance_id": {
                                 "type": "string",
-                                "description": "Instance ID to terminate"
+                                "description": "Instance ID to terminate",
                             },
                             "force": {
                                 "type": "boolean",
                                 "description": "Force termination",
-                                "default": False
-                            }
+                                "default": False,
+                            },
                         },
-                        "required": ["instance_id"]
-                    }
+                        "required": ["instance_id"],
+                    },
                 ),
                 types.Tool(
                     name="get_instance_status",
@@ -179,18 +173,17 @@ class MadroxStdioServer:
                         "properties": {
                             "instance_id": {
                                 "type": "string",
-                                "description": "Optional instance ID (omit for all instances)"
+                                "description": "Optional instance ID (omit for all instances)",
                             }
-                        }
-                    }
-                )
+                        },
+                    },
+                ),
             ]
 
         @self.server.call_tool()
         async def handle_call_tool(
-            name: str,
-            arguments: dict[str, Any]
-        ) -> list[TextContent]:
+            name: str, arguments: dict[str, Any]
+        ) -> list[types.TextContent]:
             """Handle tool calls."""
             try:
                 if name == "spawn_claude":
@@ -212,18 +205,19 @@ class MadroxStdioServer:
 
             except Exception as e:
                 logger.error(f"Error executing tool {name}: {e}", exc_info=True)
-                return [types.TextContent(
-                    type="text",
-                    text=json.dumps({"error": str(e)}, indent=2)
-                )]
+                return [
+                    types.TextContent(type="text", text=json.dumps({"error": str(e)}, indent=2))
+                ]
 
     async def _spawn_claude(
         self,
         name: str,
         role: str = "general",
-        system_prompt: Optional[str] = None,
-        model: str = "claude-4-sonnet-20250514",
-        **kwargs
+        system_prompt: str | None = None,
+        model: str | None = None,
+        bypass_isolation: bool = False,
+        enable_madrox: bool = False,
+        **kwargs,
     ) -> dict[str, Any]:
         """Spawn a new Claude instance."""
         try:
@@ -236,7 +230,9 @@ class MadroxStdioServer:
                 role=role,
                 system_prompt=system_prompt,
                 model=model,
-                **kwargs
+                bypass_isolation=bypass_isolation,
+                enable_madrox=enable_madrox,
+                **kwargs,
             )
 
             instance = self.instance_manager.instances[instance_id]
@@ -247,7 +243,7 @@ class MadroxStdioServer:
                 "name": instance["name"],
                 "role": role,
                 "model": model,
-                "message": f"Successfully spawned Claude instance '{instance['name']}'"
+                "message": f"Successfully spawned Claude instance '{instance['name']}'",
             }
 
         except Exception as e:
@@ -255,7 +251,7 @@ class MadroxStdioServer:
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"Failed to spawn Claude instance: {e}"
+                "message": f"Failed to spawn Claude instance: {e}",
             }
 
     async def _send_to_instance(
@@ -264,7 +260,7 @@ class MadroxStdioServer:
         message: str,
         wait_for_response: bool = True,
         timeout_seconds: int = 30,
-        **kwargs
+        **kwargs,
     ) -> dict[str, Any]:
         """Send message to Claude instance."""
         try:
@@ -273,7 +269,7 @@ class MadroxStdioServer:
                 message=message,
                 wait_for_response=wait_for_response,
                 timeout_seconds=timeout_seconds,
-                **kwargs
+                **kwargs,
             )
 
             if response:
@@ -281,36 +277,27 @@ class MadroxStdioServer:
                     "success": True,
                     "instance_id": instance_id,
                     "response": response,
-                    "message": "Message sent and response received"
+                    "message": "Message sent and response received",
                 }
             else:
                 return {
                     "success": True,
                     "instance_id": instance_id,
-                    "message": "Message sent" + (" (no response requested)" if not wait_for_response else " (timeout)")
+                    "message": "Message sent"
+                    + (" (no response requested)" if not wait_for_response else " (timeout)"),
                 }
 
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "message": f"Failed to send message: {e}"
-            }
+            return {"success": False, "error": str(e), "message": f"Failed to send message: {e}"}
 
     async def _get_instance_output(
-        self,
-        instance_id: str,
-        since: Optional[str] = None,
-        limit: int = 100,
-        **kwargs
+        self, instance_id: str, since: str | None = None, limit: int = 100, **kwargs
     ) -> dict[str, Any]:
         """Get instance output."""
         try:
             output = await self.instance_manager.get_instance_output(
-                instance_id=instance_id,
-                since=since,
-                limit=limit
+                instance_id=instance_id, since=since, limit=limit
             )
 
             return {
@@ -318,16 +305,12 @@ class MadroxStdioServer:
                 "instance_id": instance_id,
                 "output": output,
                 "count": len(output),
-                "message": f"Retrieved {len(output)} output messages"
+                "message": f"Retrieved {len(output)} output messages",
             }
 
         except Exception as e:
             logger.error(f"Failed to get output: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "message": f"Failed to get output: {e}"
-            }
+            return {"success": False, "error": str(e), "message": f"Failed to get output: {e}"}
 
     async def _coordinate_instances(
         self,
@@ -335,7 +318,7 @@ class MadroxStdioServer:
         participant_ids: list[str],
         task_description: str,
         coordination_type: str = "sequential",
-        **kwargs
+        **kwargs,
     ) -> dict[str, Any]:
         """Coordinate multiple instances."""
         try:
@@ -343,7 +326,7 @@ class MadroxStdioServer:
                 coordinator_id=coordinator_id,
                 participant_ids=participant_ids,
                 task_description=task_description,
-                coordination_type=coordination_type
+                coordination_type=coordination_type,
             )
 
             return {
@@ -352,7 +335,7 @@ class MadroxStdioServer:
                 "coordinator_id": coordinator_id,
                 "participant_ids": participant_ids,
                 "coordination_type": coordination_type,
-                "message": f"Started coordination task {task_id}"
+                "message": f"Started coordination task {task_id}",
             }
 
         except Exception as e:
@@ -360,33 +343,29 @@ class MadroxStdioServer:
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"Failed to start coordination: {e}"
+                "message": f"Failed to start coordination: {e}",
             }
 
     async def _terminate_instance(
-        self,
-        instance_id: str,
-        force: bool = False,
-        **kwargs
+        self, instance_id: str, force: bool = False, **kwargs
     ) -> dict[str, Any]:
         """Terminate Claude instance."""
         try:
             success = await self.instance_manager.terminate_instance(
-                instance_id=instance_id,
-                force=force
+                instance_id=instance_id, force=force
             )
 
             if success:
                 return {
                     "success": True,
                     "instance_id": instance_id,
-                    "message": f"Successfully terminated instance {instance_id}"
+                    "message": f"Successfully terminated instance {instance_id}",
                 }
             else:
                 return {
                     "success": False,
                     "instance_id": instance_id,
-                    "message": f"Failed to terminate instance {instance_id} (try with force=true)"
+                    "message": f"Failed to terminate instance {instance_id} (try with force=true)",
                 }
 
         except Exception as e:
@@ -394,29 +373,23 @@ class MadroxStdioServer:
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"Failed to terminate instance: {e}"
+                "message": f"Failed to terminate instance: {e}",
             }
 
     async def _get_instance_status(
-        self,
-        instance_id: Optional[str] = None,
-        **kwargs
+        self, instance_id: str | None = None, **kwargs
     ) -> dict[str, Any]:
         """Get instance status."""
         try:
             status = self.instance_manager.get_instance_status(instance_id)
-            return {
-                "success": True,
-                "status": status,
-                "message": "Retrieved instance status"
-            }
+            return {"success": True, "status": status, "message": "Retrieved instance status"}
 
         except Exception as e:
             logger.error(f"Failed to get instance status: {e}")
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"Failed to fetch instance status: {e}"
+                "message": f"Failed to fetch instance status: {e}",
             }
 
     async def run(self):
@@ -426,16 +399,11 @@ class MadroxStdioServer:
                 server_name="madrox",
                 server_version="1.0.0",
                 capabilities=self.server.get_capabilities(
-                    notification_options=None,
-                    experimental_capabilities={}
-                )
+                    notification_options=None, experimental_capabilities={}
+                ),
             )
 
-            await self.server.run(
-                read_stream,
-                write_stream,
-                init_options
-            )
+            await self.server.run(read_stream, write_stream, init_options)
 
 
 async def main():
@@ -444,7 +412,7 @@ async def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stderr)]
+        handlers=[logging.StreamHandler(sys.stderr)],
     )
 
     # Load configuration from environment
