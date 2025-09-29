@@ -2,7 +2,6 @@
 
 import json
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Request, Response
 from sse_starlette.sse import EventSourceResponse
@@ -41,10 +40,7 @@ class MCPAdapter:
                             "tools": {},
                             "resources": {},
                         },
-                        "serverInfo": {
-                            "name": "claude-orchestrator",
-                            "version": "1.0.0"
-                        }
+                        "serverInfo": {"name": "claude-orchestrator", "version": "1.0.0"},
                     }
 
                 elif method == "tools/list":
@@ -60,14 +56,23 @@ class MCPAdapter:
                                         "role": {
                                             "type": "string",
                                             "enum": [role.value for role in InstanceRole],
-                                            "description": "Predefined role"
+                                            "description": "Predefined role",
                                         },
-                                        "system_prompt": {"type": "string", "description": "Custom system prompt"},
-                                        "model": {"type": "string", "description": "Claude model to use"},
-                                        "bypass_isolation": {"type": "boolean", "description": "Allow full filesystem access (default: false)"}
+                                        "system_prompt": {
+                                            "type": "string",
+                                            "description": "Custom system prompt",
+                                        },
+                                        "model": {
+                                            "type": "string",
+                                            "description": "Claude model to use (omit to use CLI default)",
+                                        },
+                                        "bypass_isolation": {
+                                            "type": "boolean",
+                                            "description": "Allow full filesystem access (default: false)",
+                                        },
                                     },
-                                    "required": ["name"]
-                                }
+                                    "required": ["name"],
+                                },
                             },
                             {
                                 "name": "send_to_instance",
@@ -77,11 +82,19 @@ class MCPAdapter:
                                     "properties": {
                                         "instance_id": {"type": "string"},
                                         "message": {"type": "string"},
-                                        "wait_for_response": {"type": "boolean", "default": False, "description": "Set to true to wait for response"},
-                                        "timeout_seconds": {"type": "integer", "default": 180, "description": "Timeout in seconds (default 180)"}
+                                        "wait_for_response": {
+                                            "type": "boolean",
+                                            "default": False,
+                                            "description": "Set to true to wait for response",
+                                        },
+                                        "timeout_seconds": {
+                                            "type": "integer",
+                                            "default": 180,
+                                            "description": "Timeout in seconds (default 180)",
+                                        },
                                     },
-                                    "required": ["instance_id", "message"]
-                                }
+                                    "required": ["instance_id", "message"],
+                                },
                             },
                             {
                                 "name": "get_instance_output",
@@ -90,11 +103,14 @@ class MCPAdapter:
                                     "type": "object",
                                     "properties": {
                                         "instance_id": {"type": "string"},
-                                        "since": {"type": "string", "description": "ISO timestamp filter"},
-                                        "limit": {"type": "integer", "default": 100}
+                                        "since": {
+                                            "type": "string",
+                                            "description": "ISO timestamp filter",
+                                        },
+                                        "limit": {"type": "integer", "default": 100},
                                     },
-                                    "required": ["instance_id"]
-                                }
+                                    "required": ["instance_id"],
+                                },
                             },
                             {
                                 "name": "get_job_status",
@@ -102,12 +118,23 @@ class MCPAdapter:
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
-                                        "job_id": {"type": "string", "description": "Job ID to check status"},
-                                        "wait_for_completion": {"type": "boolean", "default": True, "description": "Wait for job to complete (default true)"},
-                                        "max_wait": {"type": "integer", "default": 120, "description": "Maximum seconds to wait (default 120)"}
+                                        "job_id": {
+                                            "type": "string",
+                                            "description": "Job ID to check status",
+                                        },
+                                        "wait_for_completion": {
+                                            "type": "boolean",
+                                            "default": True,
+                                            "description": "Wait for job to complete (default true)",
+                                        },
+                                        "max_wait": {
+                                            "type": "integer",
+                                            "default": 120,
+                                            "description": "Maximum seconds to wait (default 120)",
+                                        },
                                     },
-                                    "required": ["job_id"]
-                                }
+                                    "required": ["job_id"],
+                                },
                             },
                             {
                                 "name": "coordinate_instances",
@@ -115,21 +142,28 @@ class MCPAdapter:
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
-                                        "coordinator_id": {"type": "string", "description": "Coordinating instance ID"},
+                                        "coordinator_id": {
+                                            "type": "string",
+                                            "description": "Coordinating instance ID",
+                                        },
                                         "participant_ids": {
                                             "type": "array",
                                             "items": {"type": "string"},
-                                            "description": "Participant instance IDs"
+                                            "description": "Participant instance IDs",
                                         },
                                         "task_description": {"type": "string"},
                                         "coordination_type": {
                                             "type": "string",
                                             "enum": ["sequential", "parallel", "consensus"],
-                                            "default": "sequential"
-                                        }
+                                            "default": "sequential",
+                                        },
                                     },
-                                    "required": ["coordinator_id", "participant_ids", "task_description"]
-                                }
+                                    "required": [
+                                        "coordinator_id",
+                                        "participant_ids",
+                                        "task_description",
+                                    ],
+                                },
                             },
                             {
                                 "name": "terminate_instance",
@@ -138,10 +172,10 @@ class MCPAdapter:
                                     "type": "object",
                                     "properties": {
                                         "instance_id": {"type": "string"},
-                                        "force": {"type": "boolean", "default": False}
+                                        "force": {"type": "boolean", "default": False},
                                     },
-                                    "required": ["instance_id"]
-                                }
+                                    "required": ["instance_id"],
+                                },
                             },
                             {
                                 "name": "get_instance_status",
@@ -151,10 +185,10 @@ class MCPAdapter:
                                     "properties": {
                                         "instance_id": {
                                             "type": "string",
-                                            "description": "Optional instance ID (omit for all instances)"
+                                            "description": "Optional instance ID (omit for all instances)",
                                         }
-                                    }
-                                }
+                                    },
+                                },
                             },
                             {
                                 "name": "retrieve_instance_file",
@@ -163,26 +197,60 @@ class MCPAdapter:
                                     "type": "object",
                                     "properties": {
                                         "instance_id": {"type": "string"},
-                                        "filename": {"type": "string", "description": "Name of the file to retrieve"},
+                                        "filename": {
+                                            "type": "string",
+                                            "description": "Name of the file to retrieve",
+                                        },
                                         "destination_path": {
                                             "type": "string",
-                                            "description": "Optional destination path (defaults to current directory)"
-                                        }
+                                            "description": "Optional destination path (defaults to current directory)",
+                                        },
                                     },
-                                    "required": ["instance_id", "filename"]
-                                }
+                                    "required": ["instance_id", "filename"],
+                                },
                             },
                             {
                                 "name": "list_instance_files",
                                 "description": "List all files in an instance's workspace directory",
                                 "inputSchema": {
                                     "type": "object",
+                                    "properties": {"instance_id": {"type": "string"}},
+                                    "required": ["instance_id"],
+                                },
+                            },
+                            {
+                                "name": "spawn_codex_instance",
+                                "description": "Spawn a new Codex CLI instance with specific configuration",
+                                "inputSchema": {
+                                    "type": "object",
                                     "properties": {
-                                        "instance_id": {"type": "string"}
+                                        "name": {"type": "string", "description": "Instance name"},
+                                        "model": {
+                                            "type": "string",
+                                            "description": "Codex model to use - OpenAI models only (omit to use CLI default, typically gpt-5-codex)",
+                                        },
+                                        "sandbox_mode": {
+                                            "type": "string",
+                                            "default": "workspace-write",
+                                            "enum": [
+                                                "read-only",
+                                                "workspace-write",
+                                                "danger-full-access",
+                                            ],
+                                            "description": "Sandbox policy for shell commands",
+                                        },
+                                        "profile": {
+                                            "type": "string",
+                                            "description": "Configuration profile from config.toml",
+                                        },
+                                        "initial_prompt": {
+                                            "type": "string",
+                                            "description": "Initial prompt to start the session",
+                                        },
                                     },
-                                    "required": ["instance_id"]
-                                }
-                            }
+                                    "required": ["name"],
+                                },
+                            },
                         ]
                     }
 
@@ -196,14 +264,14 @@ class MCPAdapter:
                             name=tool_args.get("name", "unnamed"),
                             role=tool_args.get("role", "general"),
                             system_prompt=tool_args.get("system_prompt"),
-                            model=tool_args.get("model", "claude-4-sonnet-20250514"),
+                            model=tool_args.get("model"),  # None = use CLI default
                             bypass_isolation=tool_args.get("bypass_isolation", False),
                         )
                         result = {
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Spawned instance '{tool_args.get('name')}' with ID: {instance_id}"
+                                    "text": f"Spawned instance '{tool_args.get('name')}' with ID: {instance_id}",
                                 }
                             ]
                         }
@@ -212,8 +280,12 @@ class MCPAdapter:
                         response = await self.manager.send_to_instance(
                             instance_id=tool_args["instance_id"],
                             message=tool_args["message"],
-                            wait_for_response=tool_args.get("wait_for_response", False),  # Default to False
-                            timeout_seconds=tool_args.get("timeout_seconds", 180),  # Default to 180 seconds
+                            wait_for_response=tool_args.get(
+                                "wait_for_response", False
+                            ),  # Default to False
+                            timeout_seconds=tool_args.get(
+                                "timeout_seconds", 180
+                            ),  # Default to 180 seconds
                         )
 
                         # Handle response based on whether we waited or not
@@ -233,21 +305,14 @@ class MCPAdapter:
                                 # Other status response
                                 text = f"Response: {response}"
 
-                            result = {
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": text
-                                    }
-                                ]
-                            }
+                            result = {"content": [{"type": "text", "text": text}]}
                         elif response:
                             # Blocking: return actual response
                             result = {
                                 "content": [
                                     {
                                         "type": "text",
-                                        "text": response.get("response", str(response))
+                                        "text": response.get("response", str(response)),
                                     }
                                 ]
                             }
@@ -257,7 +322,7 @@ class MCPAdapter:
                                 "content": [
                                     {
                                         "type": "text",
-                                        "text": "Message sent but no response received"
+                                        "text": "Message sent but no response received",
                                     }
                                 ]
                             }
@@ -269,12 +334,7 @@ class MCPAdapter:
                             limit=tool_args.get("limit", 100),
                         )
                         result = {
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": json.dumps(output, indent=2)
-                                }
-                            ]
+                            "content": [{"type": "text", "text": json.dumps(output, indent=2)}]
                         }
 
                     elif tool_name == "coordinate_instances":
@@ -288,7 +348,7 @@ class MCPAdapter:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Coordination completed: {coordination_result}"
+                                    "text": f"Coordination completed: {coordination_result}",
                                 }
                             ]
                         }
@@ -302,7 +362,9 @@ class MCPAdapter:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Instance {tool_args['instance_id']} terminated" if success else f"Failed to terminate {tool_args['instance_id']}"
+                                    "text": f"Instance {tool_args['instance_id']} terminated"
+                                    if success
+                                    else f"Failed to terminate {tool_args['instance_id']}",
                                 }
                             ]
                         }
@@ -311,13 +373,15 @@ class MCPAdapter:
                         job_status = await self.manager.get_job_status(
                             job_id=tool_args["job_id"],
                             wait_for_completion=tool_args.get("wait_for_completion", True),
-                            max_wait=tool_args.get("max_wait", 120)
+                            max_wait=tool_args.get("max_wait", 120),
                         )
                         result = {
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": json.dumps(job_status, indent=2) if job_status else "Job not found"
+                                    "text": json.dumps(job_status, indent=2)
+                                    if job_status
+                                    else "Job not found",
                                 }
                             ]
                         }
@@ -327,25 +391,22 @@ class MCPAdapter:
                             instance_id=tool_args.get("instance_id")
                         )
                         result = {
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": json.dumps(status, indent=2)
-                                }
-                            ]
+                            "content": [{"type": "text", "text": json.dumps(status, indent=2)}]
                         }
 
                     elif tool_name == "retrieve_instance_file":
                         file_path = await self.manager.retrieve_instance_file(
                             instance_id=tool_args["instance_id"],
                             filename=tool_args["filename"],
-                            destination_path=tool_args.get("destination_path")
+                            destination_path=tool_args.get("destination_path"),
                         )
                         result = {
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"File retrieved successfully to: {file_path}" if file_path else "File not found"
+                                    "text": f"File retrieved successfully to: {file_path}"
+                                    if file_path
+                                    else "File not found",
                                 }
                             ]
                         }
@@ -358,38 +419,54 @@ class MCPAdapter:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": json.dumps(files, indent=2) if files else "No files found or instance not found"
+                                    "text": json.dumps(files, indent=2)
+                                    if files
+                                    else "No files found or instance not found",
+                                }
+                            ]
+                        }
+
+                    elif tool_name == "spawn_codex_instance":
+                        instance_id = await self.manager.spawn_codex_instance(
+                            name=tool_args.get("name", "unnamed"),
+                            model=tool_args.get("model"),  # None = use CLI default
+                            sandbox_mode=tool_args.get("sandbox_mode", "workspace-write"),
+                            profile=tool_args.get("profile"),
+                            initial_prompt=tool_args.get("initial_prompt"),
+                        )
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Spawned Codex instance '{tool_args.get('name')}' with ID: {instance_id}",
                                 }
                             ]
                         }
 
                     else:
-                        result = {"error": {"code": -32601, "message": f"Unknown tool: {tool_name}"}}
+                        result = {
+                            "error": {"code": -32601, "message": f"Unknown tool: {tool_name}"}
+                        }
 
                 else:
                     result = {"error": {"code": -32601, "message": f"Method not found: {method}"}}
 
                 # Return JSON-RPC response
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "result": result
-                }
+                response = {"jsonrpc": "2.0", "id": request_id, "result": result}
 
                 return Response(content=json.dumps(response), media_type="application/json")
 
             except Exception as e:
                 logger.error(f"Error handling MCP request: {e}")
                 return Response(
-                    content=json.dumps({
-                        "jsonrpc": "2.0",
-                        "id": body.get("id") if "body" in locals() else None,
-                        "error": {
-                            "code": -32603,
-                            "message": str(e)
+                    content=json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": body.get("id") if "body" in locals() else None,
+                            "error": {"code": -32603, "message": str(e)},
                         }
-                    }),
-                    media_type="application/json"
+                    ),
+                    media_type="application/json",
                 )
 
         # Allow clients that omit the trailing slash (e.g. /mcp)
@@ -409,28 +486,21 @@ class MCPAdapter:
                     # Send initial connection message
                     yield {
                         "event": "message",
-                        "data": json.dumps({
-                            "jsonrpc": "2.0",
-                            "method": "connection/ready",
-                            "params": {}
-                        })
+                        "data": json.dumps(
+                            {"jsonrpc": "2.0", "method": "connection/ready", "params": {}}
+                        ),
                     }
 
                     # Keep connection alive
                     import asyncio
+
                     while True:
                         await asyncio.sleep(30)
-                        yield {
-                            "event": "ping",
-                            "data": json.dumps({"timestamp": "now"})
-                        }
+                        yield {"event": "ping", "data": json.dumps({"timestamp": "now"})}
 
                 except Exception as e:
                     logger.error(f"SSE error: {e}")
-                    yield {
-                        "event": "error",
-                        "data": json.dumps({"error": str(e)})
-                    }
+                    yield {"event": "error", "data": json.dumps({"error": str(e)})}
 
             return EventSourceResponse(event_generator())
 
@@ -441,5 +511,5 @@ class MCPAdapter:
                 "status": "healthy",
                 "server": "claude-orchestrator",
                 "version": "1.0.0",
-                "transport": "sse"
+                "transport": "sse",
             }

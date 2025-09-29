@@ -10,6 +10,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import aiohttp
+
 from .name_generator import get_instance_name
 from .pty_instance import PTYInstance
 
@@ -37,6 +39,10 @@ class InstanceManager:
         self.jobs: dict[str, dict[str, Any]] = {}  # job_id -> job metadata
         self.job_processes: dict[str, subprocess.Popen] = {}  # job_id -> background process
 
+        # Push notification support
+        self.event_forwarders: dict[str, asyncio.Task] = {}  # subscriber_id -> forwarder task
+        self.push_targets: dict[str, dict[str, Any]] = {}  # subscriber_id -> push config
+
         # Resource tracking
         self.total_tokens_used = 0
         self.total_cost = 0.0
@@ -50,10 +56,10 @@ class InstanceManager:
         name: str | None = None,
         role: str = "general",
         system_prompt: str | None = None,
-        model: str = "claude-4-sonnet-20250514",
+        model: str | None = None,
         bypass_isolation: bool = False,
         use_pty: bool = False,  # Back to subprocess for reliability
-        **kwargs
+        **kwargs,
     ) -> str:
         """Spawn a new Claude instance.
 
@@ -61,7 +67,9 @@ class InstanceManager:
             name: Human-readable name for the instance
             role: Predefined role (general, frontend_developer, etc.)
             system_prompt: Custom system prompt
-            model: Claude model to use
+            model: Claude model to use (None = use CLI default)
+            bypass_isolation: Allow full filesystem access
+            use_pty: Use PTY mode for persistent sessions
             **kwargs: Additional configuration options
 
         Returns:
@@ -91,7 +99,7 @@ class InstanceManager:
             system_prompt = self._get_role_prompt(role)
             # Add a greeting with the instance's funny name
             greeting = f"\n\nHello! I'm {instance_name}, your Madrox instance. "
-            if instance_name.count('-') > 1:  # Has a title
+            if instance_name.count("-") > 1:  # Has a title
                 greeting += "As you can tell from my distinguished title, I'm here to help! "
             else:
                 greeting += "I'm ready to assist you with any tasks you have. "
@@ -136,7 +144,9 @@ class InstanceManager:
                 await self._initialize_instance(instance_id)
             instance["state"] = "running"
             mode = "PTY" if use_pty else "subprocess"
-            logger.info(f"Successfully spawned Claude instance {instance_id} ({instance_name}) with role {role} using {mode}")
+            logger.info(
+                f"Successfully spawned Claude instance {instance_id} ({instance_name}) with role {role} using {mode}"
+            )
         except Exception as e:
             instance["state"] = "error"
             instance["error_message"] = str(e)
@@ -148,17 +158,17 @@ class InstanceManager:
     async def spawn_codex_instance(
         self,
         name: str | None = None,
-        model: str = "gpt-5-codex",
+        model: str | None = None,
         sandbox_mode: str = "workspace-write",
         profile: str | None = None,
         initial_prompt: str | None = None,
-        **kwargs
+        **kwargs,
     ) -> str:
         """Spawn a new Codex CLI instance.
 
         Args:
             name: Human-readable name for the instance
-            model: Codex model to use (e.g., "gpt-5-codex", "gpt-4", "claude-3.5-sonnet")
+            model: Codex model to use - OpenAI models only (None = use CLI default, typically gpt-5-codex)
             sandbox_mode: Sandbox policy for shell commands
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session
@@ -169,6 +179,14 @@ class InstanceManager:
         """
         if len(self.instances) >= self.config.get("max_concurrent_instances", 10):
             raise RuntimeError("Maximum concurrent instances reached")
+
+        # Validate model - Codex only supports OpenAI models
+        if model and ("claude" in model.lower() or "anthropic" in model.lower()):
+            raise ValueError(
+                f"Invalid model '{model}' for Codex instance. "
+                f"Codex only supports OpenAI models (e.g., 'gpt-5-codex', 'gpt-4', 'gpt-4o'). "
+                f"Use spawn_instance() for Claude models."
+            )
 
         instance_id = str(uuid.uuid4())
 
@@ -211,7 +229,9 @@ class InstanceManager:
         # Initialize the Codex instance
         try:
             instance["state"] = "running"
-            logger.info(f"Successfully spawned Codex instance {instance_id} ({instance_name}) with model {model}")
+            logger.info(
+                f"Successfully spawned Codex instance {instance_id} ({instance_name}) with model {model}"
+            )
         except Exception as e:
             instance["state"] = "error"
             instance["error_message"] = str(e)
@@ -226,7 +246,10 @@ class InstanceManager:
         message: str,
         wait_for_response: bool = True,
         timeout_seconds: int = 30,
-        priority: int = 0
+        priority: int = 0,
+        enable_push: bool = False,
+        push_url: str | None = None,
+        push_events: list[str] | None = None,
     ) -> dict[str, Any] | None:
         """Send a message to a Claude instance.
 
@@ -236,17 +259,22 @@ class InstanceManager:
             wait_for_response: Whether to wait for response
             timeout_seconds: Response timeout
             priority: Message priority
+            enable_push: Enable push notifications (requires PTY mode)
+            push_url: URL to receive push notifications
+            push_events: List of event types to push
 
         Returns:
             If wait_for_response=True: Response data dict
-            If wait_for_response=False: Dict with job_id and status
+            If wait_for_response=False: Dict with job_id and status (includes push_enabled flag)
         """
         if instance_id not in self.instances:
             raise ValueError(f"Instance {instance_id} not found")
 
         instance = self.instances[instance_id]
         if instance["state"] not in ["running", "idle"]:
-            raise RuntimeError(f"Instance {instance_id} is not in a valid state: {instance['state']}")
+            raise RuntimeError(
+                f"Instance {instance_id} is not in a valid state: {instance['state']}"
+            )
 
         # Update instance state
         instance["state"] = "busy"
@@ -257,7 +285,9 @@ class InstanceManager:
                 # Send message and wait for response
                 try:
                     if instance.get("use_pty", False):
-                        response_data = await self._send_pty_message(instance_id, message, timeout_seconds)
+                        response_data = await self._send_pty_message(
+                            instance_id, message, timeout_seconds
+                        )
                     else:
                         response_data = await asyncio.wait_for(
                             self._send_and_receive_message(
@@ -265,7 +295,7 @@ class InstanceManager:
                                 message,
                                 process_timeout=timeout_seconds,
                             ),
-                            timeout=timeout_seconds
+                            timeout=timeout_seconds,
                         )
                     return response_data
                 except TimeoutError:
@@ -285,7 +315,7 @@ class InstanceManager:
                         "updated_at": timestamp,
                         "result": None,
                         "error": None,
-                        "estimated_completion_seconds": 30  # Estimate additional time needed
+                        "estimated_completion_seconds": 30,  # Estimate additional time needed
                     }
 
                     # Continue processing in background
@@ -299,7 +329,7 @@ class InstanceManager:
                         "message": f"Request is still processing. Check status with job_id: {job_id}",
                         "estimated_wait_seconds": 30,
                         "instance_state": instance["state"],
-                        "retry_recommended": True
+                        "retry_recommended": True,
                     }
             else:
                 # Create job for async processing
@@ -314,19 +344,32 @@ class InstanceManager:
                     "created_at": timestamp,
                     "updated_at": timestamp,
                     "result": None,
-                    "error": None
+                    "error": None,
                 }
 
                 # Add to message history
                 if instance_id not in self.message_history:
                     self.message_history[instance_id] = []
 
-                self.message_history[instance_id].append({
-                    "role": "user",
-                    "content": message,
-                    "timestamp": timestamp,
-                    "job_id": job_id
-                })
+                self.message_history[instance_id].append(
+                    {"role": "user", "content": message, "timestamp": timestamp, "job_id": job_id}
+                )
+
+                # Register push notifications if enabled (PTY only)
+                push_registered = False
+                if enable_push and push_url and instance.get("use_pty", False):
+                    try:
+                        await self.register_push_target(
+                            job_id=job_id,
+                            instance_id=instance_id,
+                            push_url=push_url,
+                            push_events=push_events
+                            or ["progress", "tool_execution", "message", "task_complete", "error"],
+                        )
+                        push_registered = True
+                        logger.info(f"Push notifications enabled for job {job_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to register push notifications: {e}")
 
                 # Start async processing
                 asyncio.create_task(
@@ -334,7 +377,7 @@ class InstanceManager:
                 )
 
                 logger.info(f"Created async job {job_id} for instance {instance_id}")
-                return {"job_id": job_id, "status": "pending"}
+                return {"job_id": job_id, "status": "pending", "push_enabled": push_registered}
 
         finally:
             # Only update back to idle if we were waiting for response
@@ -342,10 +385,7 @@ class InstanceManager:
                 instance["state"] = "idle"
 
     async def _monitor_background_process(
-        self,
-        job_id: str,
-        process: subprocess.Popen,
-        instance_id: str
+        self, job_id: str, process: subprocess.Popen, instance_id: str
     ):
         """Monitor a background process that timed out initially."""
         try:
@@ -369,12 +409,14 @@ class InstanceManager:
 
                 # Add to message history
                 if instance_id in self.message_history:
-                    self.message_history[instance_id].append({
-                        "role": "assistant",
-                        "content": response_text,
-                        "timestamp": datetime.now(UTC).isoformat(),
-                        "job_id": job_id
-                    })
+                    self.message_history[instance_id].append(
+                        {
+                            "role": "assistant",
+                            "content": response_text,
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "job_id": job_id,
+                        }
+                    )
 
                 # Update usage statistics
                 estimated_tokens = len(response_text.split())
@@ -403,10 +445,7 @@ class InstanceManager:
                 del self.job_processes[job_id]
 
     async def _continue_processing(
-        self,
-        job_id: str,
-        instance_id: str,
-        additional_timeout: int = 60
+        self, job_id: str, instance_id: str, additional_timeout: int = 60
     ):
         """Continue processing a job that timed out initially."""
         try:
@@ -437,11 +476,7 @@ class InstanceManager:
             logger.error(f"Error continuing job {job_id}: {e}")
 
     async def _process_job_async(
-        self,
-        job_id: str,
-        instance_id: str,
-        message: str,
-        timeout_seconds: int
+        self, job_id: str, instance_id: str, message: str, timeout_seconds: int
     ):
         """Process a job asynchronously."""
         try:
@@ -460,7 +495,7 @@ class InstanceManager:
                         message,
                         process_timeout=timeout_seconds,
                     ),
-                    timeout=timeout_seconds
+                    timeout=timeout_seconds,
                 )
 
             # Update job with result
@@ -470,12 +505,14 @@ class InstanceManager:
 
             # Add response to message history
             if instance_id in self.message_history:
-                self.message_history[instance_id].append({
-                    "role": "assistant",
-                    "content": response_data.get("content", ""),
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "job_id": job_id
-                })
+                self.message_history[instance_id].append(
+                    {
+                        "role": "assistant",
+                        "content": response_data.get("content", ""),
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "job_id": job_id,
+                    }
+                )
 
             logger.info(f"Completed job {job_id} for instance {instance_id}")
 
@@ -485,7 +522,9 @@ class InstanceManager:
             self.jobs[job_id]["error"] = None
             self.jobs[job_id]["updated_at"] = datetime.now(UTC).isoformat()
             self.jobs[job_id]["estimated_completion_seconds"] = 30
-            logger.warning(f"Job {job_id} taking longer than {timeout_seconds} seconds, continuing in background")
+            logger.warning(
+                f"Job {job_id} taking longer than {timeout_seconds} seconds, continuing in background"
+            )
 
         except Exception as e:
             self.jobs[job_id]["status"] = "failed"
@@ -498,7 +537,9 @@ class InstanceManager:
             if instance_id in self.instances:
                 self.instances[instance_id]["state"] = "idle"
 
-    async def get_job_status(self, job_id: str, wait_for_completion: bool = True, max_wait: int = 120) -> dict[str, Any] | None:
+    async def get_job_status(
+        self, job_id: str, wait_for_completion: bool = True, max_wait: int = 120
+    ) -> dict[str, Any] | None:
         """Get the status of a job.
 
         Args:
@@ -529,10 +570,7 @@ class InstanceManager:
         return self.jobs[job_id]
 
     async def get_instance_output(
-        self,
-        instance_id: str,
-        since: str | None = None,
-        limit: int = 100
+        self, instance_id: str, since: str | None = None, limit: int = 100
     ) -> list[dict[str, Any]]:
         """Get recent output from an instance.
 
@@ -558,13 +596,15 @@ class InstanceManager:
         # Convert messages to output format
         output_messages = []
         for i, msg in enumerate(messages):
-            output_messages.append({
-                "instance_id": instance_id,
-                "timestamp": instance["last_activity"],  # Would be better to track per-message
-                "type": "user" if msg["role"] == "user" else "response",
-                "content": msg["content"],
-                "message_index": i
-            })
+            output_messages.append(
+                {
+                    "instance_id": instance_id,
+                    "timestamp": instance["last_activity"],  # Would be better to track per-message
+                    "type": "user" if msg["role"] == "user" else "response",
+                    "content": msg["content"],
+                    "message_index": i,
+                }
+            )
 
         # Apply since filter if provided
         if since:
@@ -581,12 +621,129 @@ class InstanceManager:
 
         return output_messages
 
+    async def register_push_target(
+        self,
+        job_id: str,
+        instance_id: str,
+        push_url: str,
+        push_type: str = "http",
+        push_events: list[str] | None = None,
+    ) -> str:
+        """Register push target for instance events.
+
+        Args:
+            job_id: Job ID to associate with push notifications
+            instance_id: Instance to monitor
+            push_url: URL to receive push notifications
+            push_type: Type of push (http, mcp)
+            push_events: List of event types to push
+
+        Returns:
+            Subscriber ID
+        """
+        push_events = push_events or ["task_complete", "error"]
+        subscriber_id = f"{job_id}_push"
+
+        # Subscribe to PTY instance events
+        if instance_id not in self.pty_instances:
+            raise ValueError(f"PTY instance {instance_id} not found or not using PTY mode")
+
+        event_queue = self.pty_instances[instance_id].subscribe_events(subscriber_id)
+
+        # Store push configuration
+        self.push_targets[subscriber_id] = {
+            "job_id": job_id,
+            "instance_id": instance_id,
+            "push_url": push_url,
+            "push_type": push_type,
+            "push_events": push_events,
+            "event_queue": event_queue,
+            "registered_at": datetime.now(UTC).isoformat(),
+        }
+
+        # Start forwarder task
+        forwarder = asyncio.create_task(self._forward_events_to_push(subscriber_id))
+        self.event_forwarders[subscriber_id] = forwarder
+
+        logger.info(f"Registered push target for job {job_id} on instance {instance_id}")
+        return subscriber_id
+
+    async def _forward_events_to_push(self, subscriber_id: str):
+        """Forward PTY events to registered push target.
+
+        Args:
+            subscriber_id: Subscriber ID for push target
+        """
+        if subscriber_id not in self.push_targets:
+            logger.error(f"Push target {subscriber_id} not found")
+            return
+
+        config = self.push_targets[subscriber_id]
+        event_queue = config["event_queue"]
+
+        try:
+            while True:
+                # Wait for events from PTY instance
+                event = await event_queue.get()
+
+                # Filter by event type
+                if event["event_type"] not in config["push_events"]:
+                    continue
+
+                # Push to target
+                await self._deliver_push_notification(config, event)
+
+                # Stop if completion event
+                if event["event_type"] in ["task_complete", "error"]:
+                    logger.info(
+                        f"Stopping push forwarder for {subscriber_id} after {event['event_type']}"
+                    )
+                    break
+
+        except Exception as e:
+            logger.error(f"Error forwarding events for {subscriber_id}: {e}")
+        finally:
+            # Cleanup
+            instance_id = config["instance_id"]
+            if instance_id in self.pty_instances:
+                self.pty_instances[instance_id].unsubscribe_events(subscriber_id)
+            if subscriber_id in self.push_targets:
+                del self.push_targets[subscriber_id]
+            if subscriber_id in self.event_forwarders:
+                del self.event_forwarders[subscriber_id]
+
+    async def _deliver_push_notification(self, config: dict[str, Any], event: dict[str, Any]):
+        """Deliver push notification to target URL.
+
+        Args:
+            config: Push target configuration
+            event: Event to deliver
+        """
+        try:
+            if config["push_type"] == "http":
+                async with aiohttp.ClientSession() as session:
+                    await session.post(
+                        config["push_url"],
+                        json={
+                            "job_id": config["job_id"],
+                            "instance_id": config["instance_id"],
+                            "event_type": event["event_type"],
+                            "data": event["data"],
+                            "timestamp": event["timestamp"],
+                        },
+                        timeout=aiohttp.ClientTimeout(total=5),
+                    )
+                    logger.debug(f"Pushed {event['event_type']} event for job {config['job_id']}")
+
+        except Exception as e:
+            logger.error(f"Failed to deliver push notification: {e}")
+
     async def coordinate_instances(
         self,
         coordinator_id: str,
         participant_ids: list[str],
         task_description: str,
-        coordination_type: str = "sequential"
+        coordination_type: str = "sequential",
     ) -> str:
         """Coordinate multiple instances for a task.
 
@@ -619,7 +776,7 @@ class InstanceManager:
             "status": "running",
             "started_at": datetime.now(UTC).isoformat(),
             "steps": [],
-            "results": {}
+            "results": {},
         }
 
         logger.info(f"Started coordination task {task_id} with {len(participant_ids)} participants")
@@ -698,9 +855,15 @@ class InstanceManager:
             return {
                 "instances": {iid: inst.copy() for iid, inst in self.instances.items()},
                 "total_instances": len(self.instances),
-                "active_instances": len([i for i in self.instances.values() if i["state"] in ["running", "idle", "busy"]]),
+                "active_instances": len(
+                    [
+                        i
+                        for i in self.instances.values()
+                        if i["state"] in ["running", "idle", "busy"]
+                    ]
+                ),
                 "total_tokens_used": self.total_tokens_used,
-                "total_cost": self.total_cost
+                "total_cost": self.total_cost,
             }
 
     def _get_role_prompt(self, role: str) -> str:
@@ -715,7 +878,7 @@ class InstanceManager:
             "architect": "You are a software architect who designs scalable systems and makes architectural decisions.",
             "debugger": "You are a debugging specialist who identifies and fixes complex issues in code.",
             "security_analyst": "You are a security specialist who identifies vulnerabilities and ensures secure coding practices.",
-            "data_analyst": "You are a data analyst who works with data processing, analysis, and visualization."
+            "data_analyst": "You are a data analyst who works with data processing, analysis, and visualization.",
         }
 
         return role_prompts.get(role, role_prompts["general"])
@@ -736,9 +899,14 @@ class InstanceManager:
         # Each message spawns a new claude process with the full conversation context
         cmd = [
             "claude",
-            "--permission-mode", "bypassPermissions",  # Allow file operations without approval
-            "--print"  # Ensure we get output
+            "--permission-mode",
+            "bypassPermissions",  # Allow file operations without approval
+            "--print",  # Ensure we get output
         ]
+
+        # Add model if explicitly specified (None = use CLI default)
+        if model := instance.get("model"):
+            cmd.extend(["--model", model])
 
         # Add allowed tools if specified
         if "allowed_tools" in instance:
@@ -765,7 +933,9 @@ class InstanceManager:
                 f"Your current working directory will be: {Path.cwd()}\n"
                 f"You can write files to any absolute path or relative to the current directory."
             )
-            instance["context"] = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
+            instance["context"] = (
+                f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
+            )
         else:
             # Isolated workspace
             workspace_info = (
@@ -774,7 +944,9 @@ class InstanceManager:
                 f"write them to your workspace directory unless specifically asked to write elsewhere. "
                 f"Your current working directory is: {workspace_path}"
             )
-            instance["context"] = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
+            instance["context"] = (
+                f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
+            )
 
         # Initialize without starting a process yet
         # Processes will be started on-demand for each message
@@ -809,7 +981,9 @@ class InstanceManager:
                 f"Your current working directory will be: {Path.cwd()}\n"
                 f"You can write files to any absolute path or relative to the current directory."
             )
-            instance["context"] = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
+            instance["context"] = (
+                f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
+            )
         else:
             # Isolated workspace
             workspace_info = (
@@ -818,7 +992,9 @@ class InstanceManager:
                 f"write them to your workspace directory unless specifically asked to write elsewhere. "
                 f"Your current working directory is: {workspace_path}"
             )
-            instance["context"] = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
+            instance["context"] = (
+                f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
+            )
 
         # Create PTY instance
         pty_instance = PTYInstance(instance_id, instance)
@@ -832,7 +1008,9 @@ class InstanceManager:
         logger.info(f"PTY instance {instance_id} initialized successfully")
         instance["conversation_id"] = f"conv_{instance_id}"
 
-    async def _send_pty_message(self, instance_id: str, message: str, timeout: int) -> dict[str, Any]:
+    async def _send_pty_message(
+        self, instance_id: str, message: str, timeout: int
+    ) -> dict[str, Any]:
         """Send message to PTY instance and get response."""
         if instance_id not in self.pty_instances:
             raise RuntimeError(f"PTY instance {instance_id} not found")
@@ -843,22 +1021,22 @@ class InstanceManager:
         if instance_id not in self.message_history:
             self.message_history[instance_id] = []
 
-        self.message_history[instance_id].append({
-            "role": "user",
-            "content": message,
-            "timestamp": datetime.now(UTC).isoformat()
-        })
+        self.message_history[instance_id].append(
+            {"role": "user", "content": message, "timestamp": datetime.now(UTC).isoformat()}
+        )
 
         try:
             # Send message via PTY
             response_data = await pty_instance.send_message(message, timeout)
 
             # Add response to history
-            self.message_history[instance_id].append({
-                "role": "assistant",
-                "content": response_data.get("response", ""),
-                "timestamp": datetime.now(UTC).isoformat()
-            })
+            self.message_history[instance_id].append(
+                {
+                    "role": "assistant",
+                    "content": response_data.get("response", ""),
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
 
             # Update usage statistics (estimates)
             estimated_tokens = len(message.split()) + len(response_data.get("response", "").split())
@@ -878,7 +1056,7 @@ class InstanceManager:
                 "response": response_data.get("response", ""),
                 "timestamp": datetime.now(UTC).isoformat(),
                 "tokens_used": estimated_tokens,
-                "cost": estimated_cost
+                "cost": estimated_cost,
             }
 
         except Exception as e:
@@ -899,11 +1077,9 @@ class InstanceManager:
         if instance_id not in self.message_history:
             self.message_history[instance_id] = []
 
-        self.message_history[instance_id].append({
-            "role": "user",
-            "content": message,
-            "timestamp": datetime.now(UTC).isoformat()
-        })
+        self.message_history[instance_id].append(
+            {"role": "user", "content": message, "timestamp": datetime.now(UTC).isoformat()}
+        )
 
         try:
             # Check if this is a Codex instance
@@ -911,7 +1087,7 @@ class InstanceManager:
                 # Build Codex command
                 cmd = ["codex", "exec", "--skip-git-repo-check"]
 
-                # Add model if specified
+                # Add model if explicitly specified (None = use CLI default)
                 if model := instance.get("model"):
                     cmd.extend(["-m", model])
 
@@ -933,10 +1109,14 @@ class InstanceManager:
                         cmd.extend(["-c", f"{key}={value}"])
 
                 # Build conversation context from history (same as Claude)
-                conversation = "\n\n".join([
-                    f"{msg['role'].upper()}: {msg['content']}"
-                    for msg in self.message_history[instance_id][-5:]  # Last 5 messages for context
-                ])
+                conversation = "\n\n".join(
+                    [
+                        f"{msg['role'].upper()}: {msg['content']}"
+                        for msg in self.message_history[instance_id][
+                            -5:
+                        ]  # Last 5 messages for context
+                    ]
+                )
 
                 # Construct the full prompt with conversation history
                 full_prompt = f"{conversation}\n\nPlease respond to the latest user message."
@@ -947,13 +1127,19 @@ class InstanceManager:
                 # Claude instance - use existing logic
                 # Build conversation context from history
                 context = instance.get("context", "")
-                conversation = "\n\n".join([
-                    f"{msg['role'].upper()}: {msg['content']}"
-                    for msg in self.message_history[instance_id][-5:]  # Last 5 messages for context
-                ])
+                conversation = "\n\n".join(
+                    [
+                        f"{msg['role'].upper()}: {msg['content']}"
+                        for msg in self.message_history[instance_id][
+                            -5:
+                        ]  # Last 5 messages for context
+                    ]
+                )
 
                 # Construct the full prompt with context
-                full_prompt = f"{context}\n\n{conversation}\n\nPlease respond to the latest user message."
+                full_prompt = (
+                    f"{context}\n\n{conversation}\n\nPlease respond to the latest user message."
+                )
 
                 # Create a new process for this interaction
                 cmd = instance["cmd_template"] + [full_prompt]
@@ -966,7 +1152,11 @@ class InstanceManager:
                 env.update(instance["environment_vars"])
 
             # Set working directory based on isolation setting
-            working_dir = str(Path.cwd()) if instance.get("bypass_isolation", False) else instance["workspace_dir"]
+            working_dir = (
+                str(Path.cwd())
+                if instance.get("bypass_isolation", False)
+                else instance["workspace_dir"]
+            )
 
             process = subprocess.Popen(
                 cmd,
@@ -975,7 +1165,7 @@ class InstanceManager:
                 cwd=working_dir,
                 env=env,  # Pass environment to subprocess
                 text=True,
-                bufsize=-1
+                bufsize=-1,
             )
 
             # Store process for potential later retrieval
@@ -999,11 +1189,13 @@ class InstanceManager:
                     raise RuntimeError(f"No response received from {cli_name} CLI")
 
                 # Add assistant response to history
-                self.message_history[instance_id].append({
-                    "role": "assistant",
-                    "content": response_text,
-                    "timestamp": datetime.now(UTC).isoformat()
-                })
+                self.message_history[instance_id].append(
+                    {
+                        "role": "assistant",
+                        "content": response_text,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                )
 
                 # Update usage statistics (estimates since CLI doesn't provide token counts)
                 if instance.get("type") == "codex":
@@ -1014,14 +1206,18 @@ class InstanceManager:
                     estimated_tokens = len(message.split()) + len(response_text.split())
                     estimated_cost = estimated_tokens * 0.00001  # Rough estimate
 
-                    instance["total_tokens_used"] = instance.get("total_tokens_used", 0) + estimated_tokens
+                    instance["total_tokens_used"] = (
+                        instance.get("total_tokens_used", 0) + estimated_tokens
+                    )
                     instance["total_cost"] = instance.get("total_cost", 0) + estimated_cost
                     instance["request_count"] = instance.get("request_count", 0) + 1
 
                     self.total_tokens_used += estimated_tokens
                     self.total_cost += estimated_cost
 
-                logger.debug(f"Sent message to instance {instance_id}. Response length: {len(response_text)}")
+                logger.debug(
+                    f"Sent message to instance {instance_id}. Response length: {len(response_text)}"
+                )
 
                 # Build response based on instance type
                 result: dict[str, Any] = {
@@ -1040,7 +1236,9 @@ class InstanceManager:
 
             except subprocess.TimeoutExpired:
                 # Don't kill the process - let it continue running
-                logger.warning(f"Timeout waiting for response from instance {instance_id}, but process continues")
+                logger.warning(
+                    f"Timeout waiting for response from instance {instance_id}, but process continues"
+                )
 
                 # Create a job to track the ongoing work
                 job_id = str(uuid.uuid4())
@@ -1055,16 +1253,14 @@ class InstanceManager:
                     "updated_at": timestamp,
                     "result": None,
                     "error": None,
-                    "estimated_completion_seconds": 60
+                    "estimated_completion_seconds": 60,
                 }
 
                 # Store process separately to avoid JSON serialization issues
                 self.job_processes[job_id] = process
 
                 # Start monitoring the process in background
-                asyncio.create_task(
-                    self._monitor_background_process(job_id, process, instance_id)
-                )
+                asyncio.create_task(self._monitor_background_process(job_id, process, instance_id))
 
                 # Return timeout response with job tracking
                 return {
@@ -1072,12 +1268,11 @@ class InstanceManager:
                     "job_id": job_id,
                     "message": "Request is still processing in background",
                     "estimated_wait_seconds": 60,
-                    "instance_state": instance["state"]
+                    "instance_state": instance["state"],
                 }
         except Exception as e:
             logger.error(f"Error communicating with Claude CLI: {e}")
             raise RuntimeError(f"Failed to communicate with Claude CLI: {e}") from e
-
 
     async def _process_queued_message(self, instance_id: str) -> dict[str, Any] | None:
         """Process a queued message for an instance.
@@ -1089,10 +1284,7 @@ class InstanceManager:
 
         try:
             # Get message from queue with a short timeout
-            message = await asyncio.wait_for(
-                self.message_queues[instance_id].get(),
-                timeout=1.0
-            )
+            message = await asyncio.wait_for(self.message_queues[instance_id].get(), timeout=1.0)
 
             # Process the message
             return await self._send_and_receive_message(instance_id, message)
@@ -1116,7 +1308,7 @@ class InstanceManager:
                 for i, participant_id in enumerate(participant_ids):
                     step_result = await self.send_to_instance(
                         participant_id,
-                        f"Please work on step {i+1} of the coordination task: {coordination_task['description']}"
+                        f"Please work on step {i + 1} of the coordination task: {coordination_task['description']}",
                     )
                     coordination_task["results"][participant_id] = step_result
 
@@ -1139,6 +1331,7 @@ class InstanceManager:
         if workspace_dir.exists():
             try:
                 import shutil
+
                 shutil.rmtree(workspace_dir)
                 logger.debug(f"Cleaned up workspace for instance {instance_id}")
             except Exception as e:
@@ -1183,13 +1376,12 @@ class InstanceManager:
                 await self.terminate_instance(instance_id, force=True)
                 continue
 
-        logger.info(f"Health check complete. Active instances: {len([i for i in self.instances.values() if i['state'] not in ['terminated', 'error']])}")
+        logger.info(
+            f"Health check complete. Active instances: {len([i for i in self.instances.values() if i['state'] not in ['terminated', 'error']])}"
+        )
 
     async def retrieve_instance_file(
-        self,
-        instance_id: str,
-        filename: str,
-        destination_path: str | None = None
+        self, instance_id: str, filename: str, destination_path: str | None = None
     ) -> str | None:
         """Retrieve a file from an instance's workspace directory.
 
@@ -1223,6 +1415,7 @@ class InstanceManager:
 
         try:
             import shutil
+
             shutil.copy2(source_file, dest)
             logger.info(f"Retrieved file {filename} from instance {instance_id} to {dest}")
             return str(dest)
