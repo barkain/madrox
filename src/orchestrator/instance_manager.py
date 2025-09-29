@@ -1,6 +1,7 @@
 """Instance Manager for Claude Orchestrator."""
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -140,6 +141,81 @@ class InstanceManager:
             instance["state"] = "error"
             instance["error_message"] = str(e)
             logger.error(f"Failed to initialize instance {instance_id}: {e}")
+            raise
+
+        return instance_id
+
+    async def spawn_codex_instance(
+        self,
+        name: str | None = None,
+        model: str = "gpt-5-codex",
+        sandbox_mode: str = "workspace-write",
+        profile: str | None = None,
+        initial_prompt: str | None = None,
+        **kwargs
+    ) -> str:
+        """Spawn a new Codex CLI instance.
+
+        Args:
+            name: Human-readable name for the instance
+            model: Codex model to use (e.g., "gpt-5-codex", "gpt-4", "claude-3.5-sonnet")
+            sandbox_mode: Sandbox policy for shell commands
+            profile: Configuration profile from config.toml
+            initial_prompt: Initial prompt to start the session
+            **kwargs: Additional configuration options
+
+        Returns:
+            Instance ID
+        """
+        if len(self.instances) >= self.config.get("max_concurrent_instances", 10):
+            raise RuntimeError("Maximum concurrent instances reached")
+
+        instance_id = str(uuid.uuid4())
+
+        # Generate a funny name if not provided
+        if not name or name == "unnamed" or name == "":
+            instance_name = get_instance_name(None)
+        else:
+            instance_name = get_instance_name(name)
+
+        # Create isolated workspace
+        workspace_dir = self.workspace_base / instance_id
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create instance record for Codex
+        instance = {
+            "id": instance_id,
+            "name": instance_name,
+            "type": "codex",  # Mark as Codex instance
+            "model": model,
+            "state": "initializing",
+            "sandbox_mode": sandbox_mode,
+            "profile": profile,
+            "initial_prompt": initial_prompt,
+            "workspace_dir": str(workspace_dir),
+            "created_at": datetime.now(UTC).isoformat(),
+            "last_activity": datetime.now(UTC).isoformat(),
+            "total_requests": 0,
+            "conversation_id": None,
+            "environment_vars": kwargs.get("environment_vars", {}),
+            "custom_configs": kwargs.get("custom_configs", {}),
+            "error_message": None,
+            "retry_count": 0,
+        }
+
+        self.instances[instance_id] = instance
+        self.message_queues[instance_id] = asyncio.Queue()
+        self.message_history[instance_id] = []
+        self.response_buffers[instance_id] = ""
+
+        # Initialize the Codex instance
+        try:
+            instance["state"] = "running"
+            logger.info(f"Successfully spawned Codex instance {instance_id} ({instance_name}) with model {model}")
+        except Exception as e:
+            instance["state"] = "error"
+            instance["error_message"] = str(e)
+            logger.error(f"Failed to initialize Codex instance {instance_id}: {e}")
             raise
 
         return instance_id
@@ -816,7 +892,7 @@ class InstanceManager:
         *,
         process_timeout: int | float | None = None,
     ) -> dict[str, Any]:
-        """Send message to Claude CLI instance and receive response."""
+        """Send message to CLI instance (Claude or Codex) and receive response."""
         instance = self.instances[instance_id]
 
         # Record message in history
@@ -830,18 +906,57 @@ class InstanceManager:
         })
 
         try:
-            # Build conversation context from history
-            context = instance.get("context", "")
-            conversation = "\n\n".join([
-                f"{msg['role'].upper()}: {msg['content']}"
-                for msg in self.message_history[instance_id][-5:]  # Last 5 messages for context
-            ])
+            # Check if this is a Codex instance
+            if instance.get("type") == "codex":
+                # Build Codex command
+                cmd = ["codex", "exec", "--skip-git-repo-check"]
 
-            # Construct the full prompt with context
-            full_prompt = f"{context}\n\n{conversation}\n\nPlease respond to the latest user message."
+                # Add model if specified
+                if model := instance.get("model"):
+                    cmd.extend(["-m", model])
 
-            # Create a new process for this interaction
-            cmd = instance["cmd_template"] + [full_prompt]
+                # Add sandbox mode
+                sandbox_mode = instance.get("sandbox_mode", "workspace-write")
+                cmd.extend(["-s", sandbox_mode])
+
+                # Add profile if specified
+                if profile := instance.get("profile"):
+                    cmd.extend(["-p", profile])
+
+                # Add custom configs if specified
+                if custom_configs := instance.get("custom_configs"):
+                    for key, value in custom_configs.items():
+                        if isinstance(value, bool):
+                            value = "true" if value else "false"
+                        elif isinstance(value, list | dict):
+                            value = json.dumps(value)
+                        cmd.extend(["-c", f"{key}={value}"])
+
+                # Build conversation context from history (same as Claude)
+                conversation = "\n\n".join([
+                    f"{msg['role'].upper()}: {msg['content']}"
+                    for msg in self.message_history[instance_id][-5:]  # Last 5 messages for context
+                ])
+
+                # Construct the full prompt with conversation history
+                full_prompt = f"{conversation}\n\nPlease respond to the latest user message."
+
+                # Add the full prompt with context
+                cmd.append(full_prompt)
+            else:
+                # Claude instance - use existing logic
+                # Build conversation context from history
+                context = instance.get("context", "")
+                conversation = "\n\n".join([
+                    f"{msg['role'].upper()}: {msg['content']}"
+                    for msg in self.message_history[instance_id][-5:]  # Last 5 messages for context
+                ])
+
+                # Construct the full prompt with context
+                full_prompt = f"{context}\n\n{conversation}\n\nPlease respond to the latest user message."
+
+                # Create a new process for this interaction
+                cmd = instance["cmd_template"] + [full_prompt]
 
             # Pass current environment to subprocess so MCP servers work
             env = os.environ.copy()
@@ -873,13 +988,15 @@ class InstanceManager:
                 )
 
                 if process.returncode != 0:
-                    logger.error(f"Claude CLI failed: {stderr}")
-                    raise RuntimeError(f"Claude CLI process failed: {stderr}")
+                    cli_name = "Codex" if instance.get("type") == "codex" else "Claude"
+                    logger.error(f"{cli_name} CLI failed: {stderr}")
+                    raise RuntimeError(f"{cli_name} CLI process failed: {stderr}")
 
                 response_text = stdout.strip()
 
                 if not response_text:
-                    raise RuntimeError("No response received from Claude CLI")
+                    cli_name = "Codex" if instance.get("type") == "codex" else "Claude"
+                    raise RuntimeError(f"No response received from {cli_name} CLI")
 
                 # Add assistant response to history
                 self.message_history[instance_id].append({
@@ -889,26 +1006,37 @@ class InstanceManager:
                 })
 
                 # Update usage statistics (estimates since CLI doesn't provide token counts)
-                estimated_tokens = len(message.split()) + len(response_text.split())
-                estimated_cost = estimated_tokens * 0.00001  # Rough estimate
+                if instance.get("type") == "codex":
+                    # Codex instances track requests differently
+                    instance["total_requests"] = instance.get("total_requests", 0) + 1
+                else:
+                    # Claude instances track tokens and cost
+                    estimated_tokens = len(message.split()) + len(response_text.split())
+                    estimated_cost = estimated_tokens * 0.00001  # Rough estimate
 
-                instance["total_tokens_used"] += estimated_tokens
-                instance["total_cost"] += estimated_cost
-                instance["request_count"] += 1
+                    instance["total_tokens_used"] = instance.get("total_tokens_used", 0) + estimated_tokens
+                    instance["total_cost"] = instance.get("total_cost", 0) + estimated_cost
+                    instance["request_count"] = instance.get("request_count", 0) + 1
 
-                self.total_tokens_used += estimated_tokens
-                self.total_cost += estimated_cost
+                    self.total_tokens_used += estimated_tokens
+                    self.total_cost += estimated_cost
 
                 logger.debug(f"Sent message to instance {instance_id}. Response length: {len(response_text)}")
 
-                return {
+                # Build response based on instance type
+                result: dict[str, Any] = {
                     "instance_id": instance_id,
                     "message_id": str(uuid.uuid4()),
                     "response": response_text,
                     "timestamp": datetime.now(UTC).isoformat(),
-                    "tokens_used": estimated_tokens,
-                    "cost": estimated_cost
                 }
+
+                # Add token/cost info only for Claude instances
+                if instance.get("type") != "codex":
+                    result["tokens_used"] = estimated_tokens
+                    result["cost"] = estimated_cost
+
+                return result
 
             except subprocess.TimeoutExpired:
                 # Don't kill the process - let it continue running
