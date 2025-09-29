@@ -1,0 +1,11 @@
+#!/bin/bash
+# Madrox MCP Server Wrapper for Codex CLI
+
+# Ensure Claude CLI is in PATH
+export PATH="/Users/nadavbarkai/.nvm/versions/node/v22.17.0/bin:$PATH"
+
+# Change to the Madrox directory
+cd /Users/nadavbarkai/dev/madrox
+
+# Run the stdio server with uv
+exec /Users/nadavbarkai/.local/bin/uv run python run_orchestrator_stdio.py
