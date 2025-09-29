@@ -1,0 +1,30 @@
+#!/bin/bash
+# Madrox HTTP Server Wrapper - Runs the FastAPI orchestrator
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Change to the Madrox directory
+cd "$SCRIPT_DIR"
+
+# Default port if not specified
+PORT="${ORCHESTRATOR_PORT:-8001}"
+
+echo "Starting Madrox HTTP server on port $PORT..."
+echo "Press Ctrl+C to stop the server"
+echo ""
+
+# Check if we're in a virtual environment or if uv is available
+if [ -n "$VIRTUAL_ENV" ]; then
+    # Already in a virtual environment, use python directly
+    exec python run_orchestrator.py
+elif command -v uv >/dev/null 2>&1; then
+    # uv is available in PATH
+    exec uv run python run_orchestrator.py
+elif [ -f "$HOME/.local/bin/uv" ]; then
+    # uv is in the common local bin location
+    exec "$HOME/.local/bin/uv" run python run_orchestrator.py
+else
+    # Try to use python directly (assumes dependencies are installed)
+    exec python run_orchestrator.py
+fi
