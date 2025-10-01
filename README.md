@@ -1,25 +1,36 @@
-# Claude Conversational Orchestrator MCP Server
+# Madrox - Hierarchical Multi-Agent Orchestrator
 
-A Model Context Protocol (MCP) server that enables Claude to spawn and manage multiple Claude instances through natural conversation. This system allows for sophisticated multi-agent orchestration with role-based specialization, parallel task execution, and intelligent coordination.
+A Model Context Protocol (MCP) server that enables AI instances to spawn and manage hierarchical networks of Claude and Codex instances. This system supports sophisticated multi-agent orchestration with parent-child relationships, bidirectional communication, role-based specialization, and intelligent coordination across multiple AI models.
 
 ## 🎯 Features
 
 ### Core Orchestration Tools
 - **`spawn_claude`** - Spawn new Claude instances with specific roles and configurations
+- **`spawn_codex_instance`** - Spawn OpenAI Codex instances for multi-model orchestration
+- **`spawn_multiple_instances`** - Spawn multiple instances in parallel for faster setup
 - **`send_to_instance`** - Send messages to specific instances and receive responses
+- **`send_to_multiple_instances`** - Message multiple instances concurrently
 - **`get_instance_output`** - Retrieve output history from instances
+- **`get_instance_tree`** - Visualize hierarchical network of all running instances
+- **`get_children`** - Query child instances of a parent
+- **`broadcast_to_children`** - Broadcast messages to all children of a parent
 - **`coordinate_instances`** - Coordinate multiple instances for complex tasks
 - **`terminate_instance`** - Gracefully terminate instances with proper cleanup
 
 ### Advanced Capabilities
+- **Multi-Model Support** - Orchestrate both Claude (Anthropic) and Codex (OpenAI) instances
+- **Hierarchical Architecture** - Parent-child relationships with bidirectional communication
+- **Instance Tree Visualization** - Real-time network topology with state and type indicators
+- **Parallel Spawning** - Launch multiple instances concurrently for performance
+- **Non-Blocking Mode** - Background initialization with immediate ID return
+- **Message Auto-Injection** - Automatic context sharing from child to parent instances
 - **Instance Lifecycle Management** - Complete lifecycle with proper resource cleanup
 - **Role-Based Specialization** - 10 predefined roles (architect, frontend dev, backend dev, etc.)
-- **Isolated Environments** - Each instance gets its own workspace directory
+- **Isolated Environments** - Each instance gets its own workspace directory with metadata
 - **Message Passing** - Reliable inter-instance communication with timeout handling
 - **Parallel Task Execution** - Coordinate multiple instances working in parallel
 - **Resource Tracking** - Monitor token usage, costs, and performance metrics
 - **Health Monitoring** - Automatic health checks with timeout and limit enforcement
-- **Hierarchical Delegation** - Support for parent-child instance relationships
 - **Consensus Building** - Coordinate instances for decision-making processes
 - **Cost Optimization** - Resource limits and usage tracking
 
@@ -235,23 +246,84 @@ response = await manager.send_to_instance(
 )
 ```
 
-### Example 2: Multi-Instance Coordination
+### Example 2: Hierarchical Multi-Instance Network
 ```python
-# Spawn multiple specialists
-architect_id = await manager.spawn_instance("System Architect", "architect")
-frontend_id = await manager.spawn_instance("Frontend Dev", "frontend_developer")
-backend_id = await manager.spawn_instance("Backend Dev", "backend_developer")
-
-# Coordinate them for a project
-task_id = await manager.coordinate_instances(
-    coordinator_id=architect_id,
-    participant_ids=[frontend_id, backend_id],
-    task_description="Build a real-time chat application",
-    coordination_type="parallel"
+# Spawn a coordinator parent
+coordinator_id = await manager.spawn_instance(
+    name="Project Manager",
+    role="general",
+    enable_madrox=True
 )
+
+# Parent spawns its own children
+await manager.send_to_instance(
+    coordinator_id,
+    "Spawn two child instances: a frontend developer and a backend developer. "
+    "Pass your instance_id as parent_instance_id for both."
+)
+
+# Query children from parent
+children = manager.get_children(coordinator_id)
+# Returns: [{"id": "...", "name": "frontend-dev", ...}, {"id": "...", "name": "backend-dev", ...}]
+
+# Broadcast message to all children
+await manager.broadcast_to_children(
+    parent_id=coordinator_id,
+    message="Start working on the user authentication feature",
+    wait_for_responses=True
+)
+
+# Visualize the network
+tree = manager.get_instance_tree()
+print(tree)
+# Output:
+# Project Manager (abc123...) [idle] (claude)
+# ├── frontend-dev (def456...) [running] (claude)
+# └── backend-dev (ghi789...) [running] (claude)
 ```
 
-### Example 3: Resource Management
+### Example 3: Multi-Model Orchestration (Claude + Codex)
+```python
+# Spawn both Claude and Codex instances in parallel
+instances = await manager.spawn_multiple_instances([
+    {"name": "claude-architect", "role": "architect", "enable_madrox": True},
+    {"name": "codex-coder", "instance_type": "codex"}
+])
+
+# Send tasks to both models
+await manager.send_to_multiple_instances([
+    {
+        "instance_id": instances[0],
+        "message": "Design a microservices architecture for an e-commerce platform"
+    },
+    {
+        "instance_id": instances[1],
+        "message": "Generate boilerplate code for user service with authentication"
+    }
+])
+
+# Check the full network topology
+tree = manager.get_instance_tree()
+```
+
+### Example 4: Parallel Spawning & Non-Blocking Mode
+```python
+# Spawn multiple instances in parallel for faster setup
+instance_ids = await manager.spawn_multiple_instances([
+    {"name": "worker-1", "role": "general", "wait_for_ready": False},
+    {"name": "worker-2", "role": "general", "wait_for_ready": False},
+    {"name": "worker-3", "role": "general", "wait_for_ready": False},
+])
+# Returns immediately with IDs, instances initialize in background
+
+# Message all workers simultaneously
+await manager.send_to_multiple_instances([
+    {"instance_id": id, "message": "Process dataset chunk", "wait_for_response": False}
+    for id in instance_ids
+])
+```
+
+### Example 5: Resource Management
 ```python
 # Spawn with resource limits
 instance_id = await manager.spawn_instance(
