@@ -61,3 +61,7 @@ logs/
 
 # Package manager
 uv.lock
+
+# Test scripts in root (use tests/ directory for real tests)
+/test_*.py
+/*.txt
