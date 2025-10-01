@@ -14,6 +14,7 @@ import aiohttp
 
 from .name_generator import get_instance_name
 from .pty_instance import PTYInstance
+from .tmux_instance_manager import TmuxInstanceManager
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,9 @@ class InstanceManager:
         self.workspace_base = Path(config.get("workspace_base_dir", "/tmp/claude_orchestrator"))
         self.workspace_base.mkdir(parents=True, exist_ok=True)
 
+        # Initialize Tmux instance manager for Claude instances
+        self.tmux_manager = TmuxInstanceManager(config)
+
     async def spawn_instance(
         self,
         name: str | None = None,
@@ -60,6 +64,7 @@ class InstanceManager:
         bypass_isolation: bool = False,
         use_pty: bool = False,  # Back to subprocess for reliability
         enable_madrox: bool = False,  # Enable madrox MCP server access
+        instance_type: str = "claude",  # "claude" or other types
         **kwargs,
     ) -> str:
         """Spawn a new Claude instance.
@@ -72,11 +77,28 @@ class InstanceManager:
             bypass_isolation: Allow full filesystem access
             use_pty: Use PTY mode for persistent sessions
             enable_madrox: Enable madrox MCP server tools (allows spawning sub-instances)
+            instance_type: Type of instance ("claude" uses tmux, others use subprocess)
             **kwargs: Additional configuration options
 
         Returns:
             Instance ID
         """
+        # Delegate to TmuxInstanceManager for Claude instances
+        if instance_type == "claude":
+            instance_id = await self.tmux_manager.spawn_instance(
+                name=name,
+                role=role,
+                system_prompt=system_prompt,
+                model=model,
+                bypass_isolation=bypass_isolation,
+                enable_madrox=enable_madrox,
+                **kwargs,
+            )
+            # Copy instance to main instances dict for unified tracking
+            self.instances[instance_id] = self.tmux_manager.instances[instance_id]
+            self.instances[instance_id]["instance_type"] = "claude"
+            return instance_id
+
         # Count only active instances (not terminated)
         active_count = len([i for i in self.instances.values() if i["state"] != "terminated"])
         if active_count >= self.config.get("max_concurrent_instances", 10):
@@ -278,6 +300,16 @@ class InstanceManager:
             raise ValueError(f"Instance {instance_id} not found")
 
         instance = self.instances[instance_id]
+
+        # Delegate to TmuxInstanceManager for Claude instances
+        if instance.get("instance_type") == "claude":
+            return await self.tmux_manager.send_message(
+                instance_id=instance_id,
+                message=message,
+                wait_for_response=wait_for_response,
+                timeout_seconds=timeout_seconds,
+            )
+
         if instance["state"] not in ["running", "idle"]:
             raise RuntimeError(
                 f"Instance {instance_id} is not in a valid state: {instance['state']}"
@@ -594,11 +626,17 @@ class InstanceManager:
 
         instance = self.instances[instance_id]
 
-        # Get message history for this instance
-        if instance_id not in self.message_history:
-            return []
-
-        messages = self.message_history[instance_id]
+        # Get message history - check if it's a Claude instance (tmux) or other
+        if instance.get("instance_type") == "claude":
+            # For Claude instances, get history from tmux manager
+            if instance_id not in self.tmux_manager.message_history:
+                return []
+            messages = self.tmux_manager.message_history[instance_id]
+        else:
+            # For other instances, use local message history
+            if instance_id not in self.message_history:
+                return []
+            messages = self.message_history[instance_id]
 
         # Convert messages to output format
         output_messages = []
@@ -807,6 +845,14 @@ class InstanceManager:
             raise ValueError(f"Instance {instance_id} not found")
 
         instance = self.instances[instance_id]
+
+        # Delegate to TmuxInstanceManager for Claude instances
+        if instance.get("instance_type") == "claude":
+            result = await self.tmux_manager.terminate_instance(instance_id, force)
+            if result:
+                # Update main instances dict
+                self.instances[instance_id] = self.tmux_manager.instances[instance_id]
+            return result
 
         if not force and instance["state"] == "busy":
             logger.warning(f"Cannot terminate busy instance {instance_id} without force=True")
