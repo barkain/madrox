@@ -79,6 +79,51 @@ class MadroxStdioServer:
                     },
                 ),
                 types.Tool(
+                    name="spawn_multiple_instances",
+                    description="Spawn multiple Claude instances in parallel for better performance",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "instances": {
+                                "type": "array",
+                                "description": "List of instance configurations to spawn",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string", "description": "Instance name"},
+                                        "role": {
+                                            "type": "string",
+                                            "enum": [role.value for role in InstanceRole],
+                                            "description": "Predefined role",
+                                            "default": "general",
+                                        },
+                                        "system_prompt": {
+                                            "type": "string",
+                                            "description": "Custom system prompt",
+                                        },
+                                        "model": {
+                                            "type": "string",
+                                            "description": "Claude model to use (omit to use CLI default)",
+                                        },
+                                        "bypass_isolation": {
+                                            "type": "boolean",
+                                            "description": "Allow full filesystem access (default: false)",
+                                            "default": False,
+                                        },
+                                        "enable_madrox": {
+                                            "type": "boolean",
+                                            "description": "Enable madrox MCP server (allows spawning sub-instances)",
+                                            "default": True,
+                                        },
+                                    },
+                                    "required": ["name"],
+                                },
+                            },
+                        },
+                        "required": ["instances"],
+                    },
+                ),
+                types.Tool(
                     name="send_to_instance",
                     description="Send a message to a specific Claude instance",
                     inputSchema={
@@ -166,6 +211,26 @@ class MadroxStdioServer:
                     },
                 ),
                 types.Tool(
+                    name="terminate_multiple_instances",
+                    description="Terminate multiple Claude instances in parallel",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "instance_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of instance IDs to terminate",
+                            },
+                            "force": {
+                                "type": "boolean",
+                                "description": "Force termination for all instances",
+                                "default": False,
+                            },
+                        },
+                        "required": ["instance_ids"],
+                    },
+                ),
+                types.Tool(
                     name="get_instance_status",
                     description="Get status for a single instance or all instances",
                     inputSchema={
@@ -181,13 +246,13 @@ class MadroxStdioServer:
             ]
 
         @self.server.call_tool()
-        async def handle_call_tool(
-            name: str, arguments: dict[str, Any]
-        ) -> list[types.TextContent]:
+        async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
             """Handle tool calls."""
             try:
                 if name == "spawn_claude":
                     result = await self._spawn_claude(**arguments)
+                elif name == "spawn_multiple_instances":
+                    result = await self._spawn_multiple_instances(**arguments)
                 elif name == "send_to_instance":
                     result = await self._send_to_instance(**arguments)
                 elif name == "get_instance_output":
@@ -196,6 +261,8 @@ class MadroxStdioServer:
                     result = await self._coordinate_instances(**arguments)
                 elif name == "terminate_instance":
                     result = await self._terminate_instance(**arguments)
+                elif name == "terminate_multiple_instances":
+                    result = await self._terminate_multiple_instances(**arguments)
                 elif name == "get_instance_status":
                     result = await self._get_instance_status(**arguments)
                 else:
@@ -216,7 +283,7 @@ class MadroxStdioServer:
         system_prompt: str | None = None,
         model: str | None = None,
         bypass_isolation: bool = False,
-        enable_madrox: bool = False,
+        enable_madrox: bool = True,
         **kwargs,
     ) -> dict[str, Any]:
         """Spawn a new Claude instance."""
@@ -252,6 +319,98 @@ class MadroxStdioServer:
                 "success": False,
                 "error": str(e),
                 "message": f"Failed to spawn Claude instance: {e}",
+            }
+
+    async def _spawn_multiple_instances(
+        self,
+        instances: list[dict[str, Any]],
+        **kwargs,
+    ) -> dict[str, Any]:
+        """Spawn multiple Claude instances in parallel.
+
+        Args:
+            instances: List of instance configurations, each containing:
+                - name: Instance name (required)
+                - role: Predefined role (default: "general")
+                - system_prompt: Custom system prompt (optional)
+                - model: Claude model to use (optional)
+                - bypass_isolation: Allow full filesystem access (default: False)
+                - enable_madrox: Enable madrox MCP server (default: True)
+
+        Returns:
+            Dict with success status and list of spawned instances or errors
+        """
+        try:
+            # Create spawn tasks for all instances
+            spawn_tasks = []
+            for instance_config in instances:
+                # Extract configuration with defaults
+                name = instance_config.get("name")
+                if not name:
+                    raise ValueError("Each instance must have a 'name' field")
+
+                role = instance_config.get("role", "general")
+                system_prompt = instance_config.get("system_prompt")
+                model = instance_config.get("model")
+                bypass_isolation = instance_config.get("bypass_isolation", False)
+                enable_madrox = instance_config.get("enable_madrox", True)
+
+                # Create spawn task
+                spawn_tasks.append(
+                    self._spawn_claude(
+                        name=name,
+                        role=role,
+                        system_prompt=system_prompt,
+                        model=model,
+                        bypass_isolation=bypass_isolation,
+                        enable_madrox=enable_madrox,
+                    )
+                )
+
+            # Execute all spawns in parallel
+            results = await asyncio.gather(*spawn_tasks, return_exceptions=True)
+
+            # Process results
+            spawned_instances = []
+            errors = []
+
+            for idx, result in enumerate(results):
+                if isinstance(result, Exception):
+                    errors.append(
+                        {
+                            "index": idx,
+                            "name": instances[idx].get("name", "unknown"),
+                            "error": str(result),
+                        }
+                    )
+                elif isinstance(result, dict) and not result.get("success", False):
+                    errors.append(
+                        {
+                            "index": idx,
+                            "name": instances[idx].get("name", "unknown"),
+                            "error": result.get("error", "Unknown error"),
+                        }
+                    )
+                else:
+                    spawned_instances.append(result)
+
+            # Return summary
+            return {
+                "success": len(errors) == 0,
+                "total_requested": len(instances),
+                "spawned": len(spawned_instances),
+                "failed": len(errors),
+                "instances": spawned_instances,
+                "errors": errors if errors else None,
+                "message": f"Successfully spawned {len(spawned_instances)}/{len(instances)} instances",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to spawn multiple instances: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to spawn multiple instances: {e}",
             }
 
     async def _send_to_instance(
@@ -374,6 +533,69 @@ class MadroxStdioServer:
                 "success": False,
                 "error": str(e),
                 "message": f"Failed to terminate instance: {e}",
+            }
+
+    async def _terminate_multiple_instances(
+        self, instance_ids: list[str], force: bool = False, **kwargs
+    ) -> dict[str, Any]:
+        """Terminate multiple Claude instances in parallel.
+
+        Args:
+            instance_ids: List of instance IDs to terminate
+            force: Force termination for all instances
+
+        Returns:
+            Dict with success status and list of terminated instances or errors
+        """
+        try:
+            # Create termination tasks for all instances
+            terminate_tasks = []
+            for instance_id in instance_ids:
+                terminate_tasks.append(
+                    self.instance_manager.terminate_instance(instance_id=instance_id, force=force)
+                )
+
+            # Execute all terminations in parallel
+            results = await asyncio.gather(*terminate_tasks, return_exceptions=True)
+
+            # Process results
+            terminated_instances = []
+            errors = []
+
+            for idx, result in enumerate(results):
+                instance_id = instance_ids[idx]
+
+                if isinstance(result, Exception):
+                    errors.append({"instance_id": instance_id, "error": str(result)})
+                elif result:
+                    # Successfully terminated
+                    terminated_instances.append(instance_id)
+                else:
+                    # Termination failed (returned False)
+                    errors.append(
+                        {
+                            "instance_id": instance_id,
+                            "error": "Termination failed (try with force=true)",
+                        }
+                    )
+
+            # Return summary
+            return {
+                "success": len(errors) == 0,
+                "total_requested": len(instance_ids),
+                "terminated": len(terminated_instances),
+                "failed": len(errors),
+                "terminated_instances": terminated_instances,
+                "errors": errors if errors else None,
+                "message": f"Successfully terminated {len(terminated_instances)}/{len(instance_ids)} instances",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to terminate multiple instances: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to terminate multiple instances: {e}",
             }
 
     async def _get_instance_status(

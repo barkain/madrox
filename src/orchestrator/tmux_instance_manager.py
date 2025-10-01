@@ -53,11 +53,12 @@ class TmuxInstanceManager:
         system_prompt: str | None = None,
         model: str | None = None,
         bypass_isolation: bool = False,
-        enable_madrox: bool = False,
+        enable_madrox: bool = True,
         instance_type: str = "claude",
         sandbox_mode: str | None = None,
         profile: str | None = None,
         initial_prompt: str | None = None,
+        wait_for_ready: bool = True,
         **kwargs,
     ) -> str:
         """Spawn a new Claude or Codex instance in a tmux session.
@@ -73,6 +74,7 @@ class TmuxInstanceManager:
             sandbox_mode: For Codex - sandbox policy (read-only, workspace-write, danger-full-access)
             profile: For Codex - configuration profile from config.toml
             initial_prompt: For Codex - initial prompt to send after initialization
+            wait_for_ready: Wait for instance to fully initialize (default: True). If False, returns immediately.
             **kwargs: Additional configuration options
 
         Returns:
@@ -94,6 +96,10 @@ class TmuxInstanceManager:
         # Create isolated workspace
         workspace_dir = self.workspace_base / instance_id
         workspace_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write instance metadata file so child knows its own ID
+        metadata_file = workspace_dir / ".madrox_instance_id"
+        metadata_file.write_text(instance_id)
 
         # Register madrox MCP if enabled
         if enable_madrox:
@@ -167,28 +173,63 @@ class TmuxInstanceManager:
         self.message_history[instance_id] = []
 
         # Start the tmux session
+        if wait_for_ready:
+            # Blocking: wait for full initialization
+            try:
+                await self._initialize_tmux_session(instance_id)
+                instance["state"] = "running"
+                logger.info(
+                    f"Successfully spawned {instance_type} instance {instance_id} ({instance_name}) with role {role} via tmux",
+                    extra={
+                        "instance_id": instance_id,
+                        "instance_type": instance_type,
+                        "role": role,
+                        "name": instance_name,
+                    },
+                )
+            except Exception as e:
+                instance["state"] = "error"
+                instance["error_message"] = str(e)
+                logger.error(
+                    f"Failed to initialize tmux instance {instance_id}: {e}",
+                    extra={"instance_id": instance_id, "error": str(e)},
+                )
+                raise
+        else:
+            # Non-blocking: launch initialization in background
+            logger.info(
+                f"Spawning {instance_type} instance {instance_id} ({instance_name}) in background",
+                extra={"instance_id": instance_id, "instance_type": instance_type},
+            )
+            asyncio.create_task(self._initialize_instance_background(instance_id))
+
+        return instance_id
+
+    async def _initialize_instance_background(self, instance_id: str):
+        """Initialize an instance in the background (non-blocking spawn).
+
+        Args:
+            instance_id: Instance ID to initialize
+        """
+        instance = self.instances.get(instance_id)
+        if not instance:
+            logger.error(f"Instance {instance_id} not found for background initialization")
+            return
+
         try:
             await self._initialize_tmux_session(instance_id)
             instance["state"] = "running"
             logger.info(
-                f"Successfully spawned {instance_type} instance {instance_id} ({instance_name}) with role {role} via tmux",
-                extra={
-                    "instance_id": instance_id,
-                    "instance_type": instance_type,
-                    "role": role,
-                    "name": instance_name,
-                },
+                f"Background initialization completed for instance {instance_id} ({instance['name']})",
+                extra={"instance_id": instance_id, "name": instance["name"]},
             )
         except Exception as e:
             instance["state"] = "error"
             instance["error_message"] = str(e)
             logger.error(
-                f"Failed to initialize tmux instance {instance_id}: {e}",
+                f"Background initialization failed for instance {instance_id}: {e}",
                 extra={"instance_id": instance_id, "error": str(e)},
             )
-            raise
-
-        return instance_id
 
     async def send_message(
         self,
@@ -489,7 +530,12 @@ class TmuxInstanceManager:
                 cmd_parts.extend(["--model", model])
         else:
             # Claude CLI command
-            cmd_parts = ["claude", "--permission-mode", "bypassPermissions"]
+            cmd_parts = [
+                "claude",
+                "--permission-mode",
+                "bypassPermissions",
+                "--dangerously-skip-permissions",
+            ]
 
             # Add model if specified
             if model := instance.get("model"):
@@ -522,17 +568,47 @@ class TmuxInstanceManager:
                     "" if has_custom_prompt else "You are a specialized Claude instance. "
                 )
 
+                # Add instance ID information for parent communication
+                instance_id_info = (
+                    f"\n\nYour instance ID: {instance['id']}\n"
+                    f"This ID is also stored in {workspace_path}/.madrox_instance_id\n"
+                )
+
+                if instance.get("parent_instance_id"):
+                    parent_info = (
+                        f"Your parent instance ID: {instance['parent_instance_id']}\n"
+                        f"You can send messages to your parent using: send_to_instance(parent_instance_id='{instance['parent_instance_id']}', message='your message')\n"
+                    )
+                    instance_id_info += parent_info
+
+                # Add instructions for spawning children with parent tracking
+                if instance.get("enable_madrox"):
+                    spawn_info = (
+                        f"\nWhen spawning child instances, pass your instance_id as parent_instance_id:\n"
+                        f"  spawn_claude(name='child', role='general', parent_instance_id='{instance['id']}')\n"
+                        f"This enables bidirectional communication between parent and child.\n\n"
+                        f"HIERARCHICAL MESSAGE PASSING PATTERN:\n"
+                        f"- Children send messages to you (their parent) using: send_to_instance(parent_instance_id='{instance['id']}', message='...')\n"
+                        f"- You coordinate and decide how to route messages between children\n"
+                        f"- Use get_children(parent_id='{instance['id']}') to see all your children\n"
+                        f"- Use broadcast_to_children(parent_id='{instance['id']}', message='...') to message all children\n"
+                        f"- You control what information (IDs, tasks) flows up to your parent or down to your children"
+                    )
+                    instance_id_info += spawn_info
+
                 if instance.get("bypass_isolation", False):
                     workspace_info = (
                         f"\n\nIMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
                         f"Your workspace directory is at: {workspace_path}\n"
                         f"You can write files to any absolute path."
+                        f"{instance_id_info}"
                     )
                 else:
                     workspace_info = (
                         f"\n\nIMPORTANT: You have a workspace directory at: {workspace_path}\n"
                         f"You can read and write files within this directory. When asked to write files, "
                         f"write them to your workspace directory unless specifically asked to write elsewhere."
+                        f"{instance_id_info}"
                     )
 
                 full_prompt = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
