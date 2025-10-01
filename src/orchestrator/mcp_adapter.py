@@ -1,5 +1,6 @@
 """MCP Protocol adapter for the existing FastAPI server."""
 
+import asyncio
 import json
 import logging
 
@@ -19,6 +20,39 @@ class MCPAdapter:
         self.manager = instance_manager
         self.router = APIRouter(prefix="/mcp")
         self._register_routes()
+
+    def _inject_main_messages(self, result: dict) -> dict:
+        """Inject pending main instance messages into the tool result.
+
+        Args:
+            result: Original tool result
+
+        Returns:
+            Result with main messages prepended
+        """
+        # Get pending messages from main inbox
+        main_messages = self.manager.get_and_clear_main_inbox()
+
+        if not main_messages:
+            return result
+
+        # Skip injection for error results
+        if "error" in result:
+            return result
+
+        # Prepend main messages to content
+        if "content" in result:
+            main_content = []
+            for msg in main_messages:
+                main_content.append({
+                    "type": "text",
+                    "text": f"📨 Message from child instance:\n\n{msg.get('content', '')}"
+                })
+
+            # Prepend to existing content
+            result["content"] = main_content + result["content"]
+
+        return result
 
     def _register_routes(self):
         """Register MCP-compliant routes."""
@@ -75,8 +109,74 @@ class MCPAdapter:
                                             "default": False,
                                             "description": "Enable madrox MCP server (allows spawning sub-instances)",
                                         },
+                                        "wait_for_ready": {
+                                            "type": "boolean",
+                                            "default": True,
+                                            "description": "Wait for instance to initialize (default: true). Set to false for non-blocking spawn.",
+                                        },
+                                        "parent_instance_id": {
+                                            "type": "string",
+                                            "description": "Parent instance ID for tracking bidirectional communication (optional)",
+                                        },
                                     },
                                     "required": ["name"],
+                                },
+                            },
+                            {
+                                "name": "spawn_multiple_instances",
+                                "description": "Spawn multiple Claude instances in parallel for better performance",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "instances": {
+                                            "type": "array",
+                                            "description": "List of instance configurations to spawn",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {
+                                                        "type": "string",
+                                                        "description": "Instance name",
+                                                    },
+                                                    "role": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            role.value for role in InstanceRole
+                                                        ],
+                                                        "description": "Predefined role",
+                                                    },
+                                                    "system_prompt": {
+                                                        "type": "string",
+                                                        "description": "Custom system prompt",
+                                                    },
+                                                    "model": {
+                                                        "type": "string",
+                                                        "description": "Claude model to use (omit to use CLI default)",
+                                                    },
+                                                    "bypass_isolation": {
+                                                        "type": "boolean",
+                                                        "description": "Allow full filesystem access (default: false)",
+                                                    },
+                                                    "enable_madrox": {
+                                                        "type": "boolean",
+                                                        "default": True,
+                                                        "description": "Enable madrox MCP server (allows spawning sub-instances)",
+                                                    },
+                                                    "wait_for_ready": {
+                                                        "type": "boolean",
+                                                        "default": True,
+                                                        "description": "Wait for instance to initialize (default: true). Set to false for non-blocking spawn.",
+                                                    },
+                                                    "parent_instance_id": {
+                                                        "type": "string",
+                                                        "description": "Parent instance ID for tracking bidirectional communication (optional)",
+                                                    },
+                                                },
+                                                "required": ["name"],
+                                            },
+                                        },
+                                    },
+                                    "required": ["instances"],
                                 },
                             },
                             {
@@ -102,6 +202,38 @@ class MCPAdapter:
                                 },
                             },
                             {
+                                "name": "send_to_multiple_instances",
+                                "description": "Send messages to multiple Claude instances in parallel for better performance",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "messages": {
+                                            "type": "array",
+                                            "description": "List of messages to send to instances",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "instance_id": {"type": "string"},
+                                                    "message": {"type": "string"},
+                                                    "wait_for_response": {
+                                                        "type": "boolean",
+                                                        "default": True,
+                                                        "description": "Set to true to wait for response",
+                                                    },
+                                                    "timeout_seconds": {
+                                                        "type": "integer",
+                                                        "default": 180,
+                                                        "description": "Timeout in seconds (default 180)",
+                                                    },
+                                                },
+                                                "required": ["instance_id", "message"],
+                                            },
+                                        },
+                                    },
+                                    "required": ["messages"],
+                                },
+                            },
+                            {
                                 "name": "get_instance_output",
                                 "description": "Get recent output from a Claude instance",
                                 "inputSchema": {
@@ -115,6 +247,32 @@ class MCPAdapter:
                                         "limit": {"type": "integer", "default": 100},
                                     },
                                     "required": ["instance_id"],
+                                },
+                            },
+                            {
+                                "name": "get_multiple_instance_outputs",
+                                "description": "Get recent output from multiple Claude instances in parallel",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "requests": {
+                                            "type": "array",
+                                            "description": "List of output requests",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "instance_id": {"type": "string"},
+                                                    "since": {
+                                                        "type": "string",
+                                                        "description": "ISO timestamp filter",
+                                                    },
+                                                    "limit": {"type": "integer", "default": 100},
+                                                },
+                                                "required": ["instance_id"],
+                                            },
+                                        },
+                                    },
+                                    "required": ["requests"],
                                 },
                             },
                             {
@@ -183,6 +341,26 @@ class MCPAdapter:
                                 },
                             },
                             {
+                                "name": "terminate_multiple_instances",
+                                "description": "Terminate multiple Claude instances in parallel",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "instance_ids": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                            "description": "List of instance IDs to terminate",
+                                        },
+                                        "force": {
+                                            "type": "boolean",
+                                            "default": False,
+                                            "description": "Force termination for all instances",
+                                        },
+                                    },
+                                    "required": ["instance_ids"],
+                                },
+                            },
+                            {
                                 "name": "get_instance_status",
                                 "description": "Get status for a single instance or all instances",
                                 "inputSchema": {
@@ -193,6 +371,51 @@ class MCPAdapter:
                                             "description": "Optional instance ID (omit for all instances)",
                                         }
                                     },
+                                },
+                            },
+                            {
+                                "name": "get_children",
+                                "description": "Get all child instances of a parent instance",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "parent_id": {
+                                            "type": "string",
+                                            "description": "Parent instance ID",
+                                        }
+                                    },
+                                    "required": ["parent_id"],
+                                },
+                            },
+                            {
+                                "name": "broadcast_to_children",
+                                "description": "Broadcast a message to all children of a parent instance",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "parent_id": {
+                                            "type": "string",
+                                            "description": "Parent instance ID",
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Message to broadcast to all children",
+                                        },
+                                        "wait_for_responses": {
+                                            "type": "boolean",
+                                            "description": "Wait for responses from all children (default: false)",
+                                            "default": False,
+                                        }
+                                    },
+                                    "required": ["parent_id", "message"],
+                                },
+                            },
+                            {
+                                "name": "get_instance_tree",
+                                "description": "Get a hierarchical tree view of all running instances showing parent-child relationships",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {},
                                 },
                             },
                             {
@@ -215,12 +438,56 @@ class MCPAdapter:
                                 },
                             },
                             {
+                                "name": "retrieve_multiple_instance_files",
+                                "description": "Retrieve files from multiple instances' workspace directories in parallel",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "requests": {
+                                            "type": "array",
+                                            "description": "List of file retrieval requests",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "instance_id": {"type": "string"},
+                                                    "filename": {
+                                                        "type": "string",
+                                                        "description": "Name of the file to retrieve",
+                                                    },
+                                                    "destination_path": {
+                                                        "type": "string",
+                                                        "description": "Optional destination path (defaults to current directory)",
+                                                    },
+                                                },
+                                                "required": ["instance_id", "filename"],
+                                            },
+                                        },
+                                    },
+                                    "required": ["requests"],
+                                },
+                            },
+                            {
                                 "name": "list_instance_files",
                                 "description": "List all files in an instance's workspace directory",
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {"instance_id": {"type": "string"}},
                                     "required": ["instance_id"],
+                                },
+                            },
+                            {
+                                "name": "list_multiple_instance_files",
+                                "description": "List all files in multiple instances' workspace directories in parallel",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "instance_ids": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                            "description": "List of instance IDs to list files for",
+                                        },
+                                    },
+                                    "required": ["instance_ids"],
                                 },
                             },
                             {
@@ -252,8 +519,20 @@ class MCPAdapter:
                                             "type": "string",
                                             "description": "Initial prompt to start the session",
                                         },
+                                        "parent_instance_id": {
+                                            "type": "string",
+                                            "description": "Parent instance ID for tracking bidirectional communication (optional)",
+                                        },
                                     },
                                     "required": ["name"],
+                                },
+                            },
+                            {
+                                "name": "get_main_instance_id",
+                                "description": "Get the main orchestrator instance ID for direct communication. Auto-spawns the main instance if not already running.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {},
                                 },
                             },
                         ]
@@ -271,13 +550,85 @@ class MCPAdapter:
                             system_prompt=tool_args.get("system_prompt"),
                             model=tool_args.get("model"),  # None = use CLI default
                             bypass_isolation=tool_args.get("bypass_isolation", False),
-                            enable_madrox=tool_args.get("enable_madrox", False),
+                            enable_madrox=tool_args.get("enable_madrox", True),
+                            wait_for_ready=tool_args.get("wait_for_ready", True),
+                            parent_instance_id=tool_args.get("parent_instance_id"),
                         )
                         result = {
                             "content": [
                                 {
                                     "type": "text",
                                     "text": f"Spawned instance '{tool_args.get('name')}' with ID: {instance_id}",
+                                }
+                            ]
+                        }
+
+                    elif tool_name == "spawn_multiple_instances":
+                        instances_config = tool_args.get("instances", [])
+
+                        # Create spawn tasks for all instances
+                        spawn_tasks = []
+                        for instance_config in instances_config:
+                            spawn_tasks.append(
+                                self.manager.spawn_instance(
+                                    name=instance_config.get("name", "unnamed"),
+                                    role=instance_config.get("role", "general"),
+                                    system_prompt=instance_config.get("system_prompt"),
+                                    model=instance_config.get("model"),
+                                    bypass_isolation=instance_config.get("bypass_isolation", False),
+                                    enable_madrox=instance_config.get("enable_madrox", True),
+                                    wait_for_ready=instance_config.get("wait_for_ready", True),
+                                    parent_instance_id=instance_config.get("parent_instance_id"),
+                                )
+                            )
+
+                        # Execute all spawns in parallel
+                        results = await asyncio.gather(*spawn_tasks, return_exceptions=True)
+
+                        # Process results
+                        spawned_instances = []
+                        errors = []
+
+                        for idx, spawn_result in enumerate(results):
+                            if isinstance(spawn_result, Exception):
+                                errors.append(
+                                    {
+                                        "index": idx,
+                                        "name": instances_config[idx].get("name", "unknown"),
+                                        "error": str(spawn_result),
+                                    }
+                                )
+                            else:
+                                # spawn_result is the instance_id
+                                spawned_instances.append(
+                                    {
+                                        "name": instances_config[idx].get("name"),
+                                        "instance_id": spawn_result,
+                                    }
+                                )
+
+                        # Build response text
+                        response_lines = [
+                            f"Spawned {len(spawned_instances)}/{len(instances_config)} instances successfully"
+                        ]
+
+                        if spawned_instances:
+                            response_lines.append("\nSuccessfully spawned:")
+                            for instance in spawned_instances:
+                                response_lines.append(
+                                    f"  - {instance['name']}: {instance['instance_id']}"
+                                )
+
+                        if errors:
+                            response_lines.append("\nErrors:")
+                            for error in errors:
+                                response_lines.append(f"  - {error['name']}: {error['error']}")
+
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "\n".join(response_lines),
                                 }
                             ]
                         }
@@ -333,6 +684,84 @@ class MCPAdapter:
                                 ]
                             }
 
+                    elif tool_name == "send_to_multiple_instances":
+                        messages_config = tool_args.get("messages", [])
+
+                        # Create send tasks for all instances
+                        send_tasks = []
+                        for msg_config in messages_config:
+                            send_tasks.append(
+                                self.manager.send_to_instance(
+                                    instance_id=msg_config["instance_id"],
+                                    message=msg_config["message"],
+                                    wait_for_response=msg_config.get("wait_for_response", True),
+                                    timeout_seconds=msg_config.get("timeout_seconds", 180),
+                                )
+                            )
+
+                        # Execute all sends in parallel
+                        results = await asyncio.gather(*send_tasks, return_exceptions=True)
+
+                        # Process results
+                        successful_sends = []
+                        errors = []
+
+                        for idx, send_result in enumerate(results):
+                            msg_config = messages_config[idx]
+                            instance_id = msg_config["instance_id"]
+
+                            if isinstance(send_result, Exception):
+                                errors.append(
+                                    {
+                                        "instance_id": instance_id,
+                                        "error": str(send_result),
+                                    }
+                                )
+                            elif isinstance(send_result, dict):
+                                # Successful send
+                                successful_sends.append(
+                                    {
+                                        "instance_id": instance_id,
+                                        "response": send_result.get("response", "Sent"),
+                                    }
+                                )
+                            else:
+                                # Unexpected result type
+                                successful_sends.append(
+                                    {
+                                        "instance_id": instance_id,
+                                        "response": str(send_result),
+                                    }
+                                )
+
+                        # Build response text
+                        response_lines = [
+                            f"Sent to {len(successful_sends)}/{len(messages_config)} instances successfully"
+                        ]
+
+                        if successful_sends:
+                            response_lines.append("\nResponses:")
+                            for send_info in successful_sends:
+                                response_lines.append(
+                                    f"\n--- {send_info['instance_id']} ---\n{send_info['response']}"
+                                )
+
+                        if errors:
+                            response_lines.append("\nErrors:")
+                            for error in errors:
+                                response_lines.append(
+                                    f"  - {error['instance_id']}: {error['error']}"
+                                )
+
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "\n".join(response_lines),
+                                }
+                            ]
+                        }
+
                     elif tool_name == "get_instance_output":
                         output = await self.manager.get_instance_output(
                             instance_id=tool_args["instance_id"],
@@ -375,6 +804,223 @@ class MCPAdapter:
                             ]
                         }
 
+                    elif tool_name == "terminate_multiple_instances":
+                        instance_ids = tool_args.get("instance_ids", [])
+                        force = tool_args.get("force", False)
+
+                        # Create termination tasks for all instances
+                        terminate_tasks = []
+                        for instance_id in instance_ids:
+                            terminate_tasks.append(
+                                self.manager.terminate_instance(
+                                    instance_id=instance_id, force=force
+                                )
+                            )
+
+                        # Execute all terminations in parallel
+                        results = await asyncio.gather(*terminate_tasks, return_exceptions=True)
+
+                        # Process results
+                        terminated_instances = []
+                        errors = []
+
+                        for idx, terminate_result in enumerate(results):
+                            instance_id = instance_ids[idx]
+
+                            if isinstance(terminate_result, Exception):
+                                errors.append(
+                                    {"instance_id": instance_id, "error": str(terminate_result)}
+                                )
+                            elif terminate_result:
+                                # Successfully terminated
+                                terminated_instances.append(instance_id)
+                            else:
+                                # Termination failed (returned False)
+                                errors.append(
+                                    {
+                                        "instance_id": instance_id,
+                                        "error": "Termination failed (try with force=true)",
+                                    }
+                                )
+
+                        # Build response text
+                        response_lines = [
+                            f"Terminated {len(terminated_instances)}/{len(instance_ids)} instances successfully"
+                        ]
+
+                        if terminated_instances:
+                            response_lines.append("\nSuccessfully terminated:")
+                            for instance_id in terminated_instances:
+                                response_lines.append(f"  - {instance_id}")
+
+                        if errors:
+                            response_lines.append("\nErrors:")
+                            for error in errors:
+                                response_lines.append(
+                                    f"  - {error['instance_id']}: {error['error']}"
+                                )
+
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "\n".join(response_lines),
+                                }
+                            ]
+                        }
+
+                    elif tool_name == "get_multiple_instance_outputs":
+                        requests = tool_args.get("requests", [])
+
+                        # Create tasks for all output requests
+                        output_tasks = []
+                        for req in requests:
+                            output_tasks.append(
+                                self.manager.get_instance_output(
+                                    instance_id=req["instance_id"],
+                                    since=req.get("since"),
+                                    limit=req.get("limit", 100),
+                                )
+                            )
+
+                        # Execute all in parallel
+                        results = await asyncio.gather(*output_tasks, return_exceptions=True)
+
+                        # Process results
+                        outputs = []
+                        errors = []
+
+                        for idx, output_result in enumerate(results):
+                            instance_id = requests[idx]["instance_id"]
+
+                            if isinstance(output_result, Exception):
+                                errors.append(
+                                    {"instance_id": instance_id, "error": str(output_result)}
+                                )
+                            else:
+                                outputs.append(
+                                    {"instance_id": instance_id, "output": output_result}
+                                )
+
+                        # Build response
+                        response_data = {"outputs": outputs, "errors": errors}
+                        result = {
+                            "content": [
+                                {"type": "text", "text": json.dumps(response_data, indent=2)}
+                            ]
+                        }
+
+                    elif tool_name == "retrieve_multiple_instance_files":
+                        requests = tool_args.get("requests", [])
+
+                        # Create tasks for all file retrievals
+                        retrieve_tasks = []
+                        for req in requests:
+                            retrieve_tasks.append(
+                                self.manager.retrieve_instance_file(
+                                    instance_id=req["instance_id"],
+                                    filename=req["filename"],
+                                    destination_path=req.get("destination_path"),
+                                )
+                            )
+
+                        # Execute all in parallel
+                        results = await asyncio.gather(*retrieve_tasks, return_exceptions=True)
+
+                        # Process results
+                        retrieved_files = []
+                        errors = []
+
+                        for idx, retrieve_result in enumerate(results):
+                            req = requests[idx]
+                            instance_id = req["instance_id"]
+                            filename = req["filename"]
+
+                            if isinstance(retrieve_result, Exception):
+                                errors.append(
+                                    {
+                                        "instance_id": instance_id,
+                                        "filename": filename,
+                                        "error": str(retrieve_result),
+                                    }
+                                )
+                            elif retrieve_result:
+                                retrieved_files.append(
+                                    {
+                                        "instance_id": instance_id,
+                                        "filename": filename,
+                                        "path": retrieve_result,
+                                    }
+                                )
+                            else:
+                                errors.append(
+                                    {
+                                        "instance_id": instance_id,
+                                        "filename": filename,
+                                        "error": "File not found",
+                                    }
+                                )
+
+                        # Build response text
+                        response_lines = [
+                            f"Retrieved {len(retrieved_files)}/{len(requests)} files successfully"
+                        ]
+
+                        if retrieved_files:
+                            response_lines.append("\nRetrieved files:")
+                            for file_info in retrieved_files:
+                                response_lines.append(
+                                    f"  - {file_info['instance_id']}/{file_info['filename']}: {file_info['path']}"
+                                )
+
+                        if errors:
+                            response_lines.append("\nErrors:")
+                            for error in errors:
+                                response_lines.append(
+                                    f"  - {error['instance_id']}/{error['filename']}: {error['error']}"
+                                )
+
+                        result = {"content": [{"type": "text", "text": "\n".join(response_lines)}]}
+
+                    elif tool_name == "list_multiple_instance_files":
+                        instance_ids = tool_args.get("instance_ids", [])
+
+                        # Create tasks for all list operations
+                        list_tasks = []
+                        for instance_id in instance_ids:
+                            list_tasks.append(
+                                self.manager.list_instance_files(instance_id=instance_id)
+                            )
+
+                        # Execute all in parallel
+                        results = await asyncio.gather(*list_tasks, return_exceptions=True)
+
+                        # Process results
+                        file_listings = []
+                        errors = []
+
+                        for idx, list_result in enumerate(results):
+                            instance_id = instance_ids[idx]
+
+                            if isinstance(list_result, Exception):
+                                errors.append(
+                                    {"instance_id": instance_id, "error": str(list_result)}
+                                )
+                            elif list_result:
+                                file_listings.append(
+                                    {"instance_id": instance_id, "files": list_result}
+                                )
+                            else:
+                                file_listings.append({"instance_id": instance_id, "files": []})
+
+                        # Build response
+                        response_data = {"listings": file_listings, "errors": errors}
+                        result = {
+                            "content": [
+                                {"type": "text", "text": json.dumps(response_data, indent=2)}
+                            ]
+                        }
+
                     elif tool_name == "get_job_status":
                         job_status = await self.manager.get_job_status(
                             job_id=tool_args["job_id"],
@@ -398,6 +1044,45 @@ class MCPAdapter:
                         )
                         result = {
                             "content": [{"type": "text", "text": json.dumps(status, indent=2)}]
+                        }
+
+                    elif tool_name == "get_children":
+                        children = self.manager.get_children(
+                            parent_id=tool_args["parent_id"]
+                        )
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Found {len(children)} children:\n\n" + json.dumps(children, indent=2)
+                                }
+                            ]
+                        }
+
+                    elif tool_name == "broadcast_to_children":
+                        broadcast_result = await self.manager.broadcast_to_children(
+                            parent_id=tool_args["parent_id"],
+                            message=tool_args["message"],
+                            wait_for_responses=tool_args.get("wait_for_responses", False),
+                        )
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Broadcasted to {broadcast_result['children_count']} children\n\n" + json.dumps(broadcast_result['results'], indent=2)
+                                }
+                            ]
+                        }
+
+                    elif tool_name == "get_instance_tree":
+                        tree_output = self.manager.get_instance_tree()
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Instance Hierarchy:\n\n{tree_output}"
+                                }
+                            ]
                         }
 
                     elif tool_name == "retrieve_instance_file":
@@ -439,12 +1124,25 @@ class MCPAdapter:
                             sandbox_mode=tool_args.get("sandbox_mode", "workspace-write"),
                             profile=tool_args.get("profile"),
                             initial_prompt=tool_args.get("initial_prompt"),
+                            parent_instance_id=tool_args.get("parent_instance_id"),
                         )
                         result = {
                             "content": [
                                 {
                                     "type": "text",
                                     "text": f"Spawned Codex instance '{tool_args.get('name')}' with ID: {instance_id}",
+                                }
+                            ]
+                        }
+
+                    elif tool_name == "get_main_instance_id":
+                        # Ensure main instance is spawned
+                        main_id = await self.manager.ensure_main_instance()
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Main instance ID: {main_id}\n\nUse this ID to send messages directly to the main orchestrator:\nsend_to_instance(instance_id='{main_id}', message='your message')",
                                 }
                             ]
                         }
@@ -456,6 +1154,9 @@ class MCPAdapter:
 
                 else:
                     result = {"error": {"code": -32601, "message": f"Method not found: {method}"}}
+
+                # Inject pending main instance messages into the response
+                result = self._inject_main_messages(result)
 
                 # Return JSON-RPC response
                 response = {"jsonrpc": "2.0", "id": request_id, "result": result}
