@@ -54,17 +54,25 @@ class TmuxInstanceManager:
         model: str | None = None,
         bypass_isolation: bool = False,
         enable_madrox: bool = False,
+        instance_type: str = "claude",
+        sandbox_mode: str | None = None,
+        profile: str | None = None,
+        initial_prompt: str | None = None,
         **kwargs,
     ) -> str:
-        """Spawn a new Claude instance in a tmux session.
+        """Spawn a new Claude or Codex instance in a tmux session.
 
         Args:
             name: Human-readable name for the instance
             role: Predefined role (general, frontend_developer, etc.)
             system_prompt: Custom system prompt
-            model: Claude model to use (None = use CLI default)
+            model: Claude/Codex model to use (None = use CLI default)
             bypass_isolation: Allow full filesystem access
             enable_madrox: Enable madrox MCP server tools
+            instance_type: Type of instance - "claude" or "codex"
+            sandbox_mode: For Codex - sandbox policy (read-only, workspace-write, danger-full-access)
+            profile: For Codex - configuration profile from config.toml
+            initial_prompt: For Codex - initial prompt to send after initialization
             **kwargs: Additional configuration options
 
         Returns:
@@ -137,6 +145,10 @@ class TmuxInstanceManager:
             "workspace_dir": str(workspace_dir),
             "bypass_isolation": bypass_isolation,
             "enable_madrox": enable_madrox,
+            "instance_type": instance_type,
+            "sandbox_mode": sandbox_mode,
+            "profile": profile,
+            "initial_prompt": initial_prompt,
             "created_at": datetime.now(UTC).isoformat(),
             "last_activity": datetime.now(UTC).isoformat(),
             "total_tokens_used": 0,
@@ -159,8 +171,13 @@ class TmuxInstanceManager:
             await self._initialize_tmux_session(instance_id)
             instance["state"] = "running"
             logger.info(
-                f"Successfully spawned Claude instance {instance_id} ({instance_name}) with role {role} via tmux",
-                extra={"instance_id": instance_id, "role": role, "name": instance_name},
+                f"Successfully spawned {instance_type} instance {instance_id} ({instance_name}) with role {role} via tmux",
+                extra={
+                    "instance_id": instance_id,
+                    "instance_type": instance_type,
+                    "role": role,
+                    "name": instance_name,
+                },
             )
         except Exception as e:
             instance["state"] = "error"
@@ -226,14 +243,48 @@ class TmuxInstanceManager:
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
 
-            # Wait for response with timeout
-            start_time = time.time()
+            # Capture baseline AFTER sending (brief delay for message to appear)
+            await asyncio.sleep(0.3)
             initial_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
 
-            # Wait for Claude to process (token usage indicator changes)
-            await asyncio.sleep(timeout_seconds)
+            # Poll with progressive intervals
+            start_time = time.time()
+            last_output = initial_output
+            poll_count = 0
 
-            # Capture full scrollback history
+            while time.time() - start_time < timeout_seconds:
+                # Progressive intervals: 0.5s for first 10s, then 2s
+                elapsed = time.time() - start_time
+                poll_interval = 0.5 if elapsed < 10 else 2
+                await asyncio.sleep(poll_interval)
+                poll_count += 1
+
+                # Capture current visible pane only (not full scrollback - faster)
+                current_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+
+                # Check for response ready indicators
+                if "⏺" in current_output and "⏺" not in last_output:
+                    # Response marker appeared
+                    logger.debug(f"Response ready: marker detected (poll #{poll_count})")
+                    break
+                if "0.0%" not in current_output and "0.0%" in last_output:
+                    # Token usage changed
+                    logger.debug(f"Response ready: token usage changed (poll #{poll_count})")
+                    break
+                if len(current_output) > len(last_output) + 100:
+                    # Significant new content
+                    logger.debug(
+                        f"Response ready: +{len(current_output) - len(last_output)} chars (poll #{poll_count})"
+                    )
+                    break
+
+                last_output = current_output
+
+            logger.debug(
+                f"Polling completed after {poll_count} polls, {time.time() - start_time:.1f}s"
+            )
+
+            # Now capture full scrollback for response extraction
             full_output = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
 
             # Extract the actual response from the output
@@ -387,6 +438,7 @@ class TmuxInstanceManager:
         """Initialize a tmux session for the instance."""
         instance = self.instances[instance_id]
         workspace_dir = instance["workspace_dir"]
+        instance_type = instance.get("instance_type", "claude")
         session_name = f"madrox-{instance_id}"
 
         logger.debug(f"Creating tmux session: {session_name}")
@@ -404,7 +456,7 @@ class TmuxInstanceManager:
         try:
             session = self.tmux_server.new_session(
                 session_name=session_name,
-                window_name="claude",
+                window_name=instance_type,
                 start_directory=workspace_dir,
                 x=160,
                 y=50,
@@ -420,53 +472,77 @@ class TmuxInstanceManager:
         window = session.windows[0]
         pane = window.panes[0]
 
-        # Build Claude CLI command
-        cmd_parts = ["claude", "--permission-mode", "bypassPermissions"]
+        # Build CLI command based on instance type
+        if instance_type == "codex":
+            cmd_parts = ["codex"]
 
-        # Add model if specified
-        if model := instance.get("model"):
-            cmd_parts.extend(["--model", model])
+            # Add sandbox mode if specified
+            if sandbox_mode := instance.get("sandbox_mode"):
+                cmd_parts.extend(["--sandbox", sandbox_mode])
 
-        # Start Claude CLI
+            # Add profile if specified
+            if profile := instance.get("profile"):
+                cmd_parts.extend(["--profile", profile])
+
+            # Add model if specified
+            if model := instance.get("model"):
+                cmd_parts.extend(["--model", model])
+        else:
+            # Claude CLI command
+            cmd_parts = ["claude", "--permission-mode", "bypassPermissions"]
+
+            # Add model if specified
+            if model := instance.get("model"):
+                cmd_parts.extend(["--model", model])
+
+        # Start CLI
         cmd = " ".join(cmd_parts)
         pane.send_keys(cmd, enter=True)
-        logger.debug(f"Started Claude CLI in tmux session: {cmd}")
+        logger.debug(f"Started {instance_type} CLI in tmux session: {cmd}")
 
-        # Wait for Claude to initialize
+        # Wait for CLI to initialize
         await asyncio.sleep(10)
 
-        # Send initial system prompt if provided
-        system_prompt = instance.get("system_prompt")
-        if system_prompt:
-            # Send context as first message
-            workspace_path = instance["workspace_dir"]
-            has_custom_prompt = instance.get("has_custom_prompt", False)
+        # Handle initial prompts based on instance type
+        if instance_type == "codex":
+            # For Codex, send initial_prompt if provided
+            if initial_prompt := instance.get("initial_prompt"):
+                pane.send_keys(initial_prompt, enter=True)
+                logger.debug("Sent initial prompt to Codex instance")
+                await asyncio.sleep(5)
+        else:
+            # For Claude, send system prompt as before
+            system_prompt = instance.get("system_prompt")
+            if system_prompt:
+                # Send context as first message
+                workspace_path = instance["workspace_dir"]
+                has_custom_prompt = instance.get("has_custom_prompt", False)
 
-            prompt_prefix = "" if has_custom_prompt else "You are a specialized Claude instance. "
-
-            if instance.get("bypass_isolation", False):
-                workspace_info = (
-                    f"\n\nIMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
-                    f"Your workspace directory is at: {workspace_path}\n"
-                    f"You can write files to any absolute path."
-                )
-            else:
-                workspace_info = (
-                    f"\n\nIMPORTANT: You have a workspace directory at: {workspace_path}\n"
-                    f"You can read and write files within this directory. When asked to write files, "
-                    f"write them to your workspace directory unless specifically asked to write elsewhere."
+                prompt_prefix = (
+                    "" if has_custom_prompt else "You are a specialized Claude instance. "
                 )
 
-            full_prompt = (
-                f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
-            )
-            pane.send_keys(full_prompt, enter=True)
-            logger.debug("Sent initial system prompt to instance")
+                if instance.get("bypass_isolation", False):
+                    workspace_info = (
+                        f"\n\nIMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
+                        f"Your workspace directory is at: {workspace_path}\n"
+                        f"You can write files to any absolute path."
+                    )
+                else:
+                    workspace_info = (
+                        f"\n\nIMPORTANT: You have a workspace directory at: {workspace_path}\n"
+                        f"You can read and write files within this directory. When asked to write files, "
+                        f"write them to your workspace directory unless specifically asked to write elsewhere."
+                    )
 
-            # Wait for initial response
-            await asyncio.sleep(5)
+                full_prompt = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
+                pane.send_keys(full_prompt, enter=True)
+                logger.debug("Sent initial system prompt to Claude instance")
 
-        logger.info(f"Tmux session initialized for instance {instance_id}")
+                # Wait for initial response
+                await asyncio.sleep(5)
+
+        logger.info(f"Tmux session initialized for {instance_type} instance {instance_id}")
 
     def _extract_response(self, full_output: str, initial_output: str) -> str:
         """Extract the actual Claude response from tmux output.
