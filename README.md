@@ -486,6 +486,49 @@ python run_orchestrator.py
 - **Memory Usage**: Efficient with workspace isolation
 - **Scalability**: Designed for production workloads
 
+## 🗺️ Roadmap
+
+### Network Visibility & Monitoring
+- **Instance Network Dashboard** - Real-time visualization of the entire Madrox network topology
+- **Cross-Instance Metrics** - Monitor resource usage, message flow, and performance across all instances
+- **Network Health Monitoring** - Automatic detection of bottlenecks and communication issues
+- **Inter-Instance Communication Logs** - Trace message paths through the hierarchy
+
+### Deployment & Distribution
+- **Docker Container Support** - Serve Madrox as a containerized MCP server
+- **Kubernetes Orchestration** - Deploy and scale Madrox networks in K8s clusters
+- **Installable MCP Package** - NPM/PyPI package for easy installation without git clone
+- **Pre-built Binaries** - Standalone executables for major platforms (macOS, Linux, Windows)
+
+### Workflow & Orchestration
+- **Complex Workflow Engine** - Define and deploy multi-step workflows across instance networks
+- **Workflow Templates** - Pre-built workflow patterns (MapReduce, Pipeline, Consensus, etc.)
+- **Conditional Execution** - Branch workflows based on instance outputs
+- **State Persistence** - Save and resume long-running workflows across sessions
+- **Workflow Visualization** - Interactive diagram of workflow execution progress
+
+### Multi-Model Integration
+- **OpenAI GPT-4/5 Support** - Direct integration with OpenAI models (beyond Codex)
+- **Gemini Integration** - Add Google Gemini instances to networks
+- **Local LLM Support** - Integrate Ollama, LM Studio, and other local models
+- **Model Selection Strategies** - Auto-select optimal model for each task type
+
+### Advanced Features
+- **Cost Optimization Engine** - Intelligent routing to minimize API costs
+- **Auto-Scaling** - Dynamic instance spawning based on workload
+- **Checkpoint & Recovery** - Automatic state snapshots with rollback capability
+- **Security Hardening** - Role-based access control, audit logs, secrets management
+- **Plugin System** - Custom tools and capabilities for instances
+
+### Developer Experience
+- **Web UI Console** - Browser-based management interface for networks
+- **CLI Tool** - Command-line interface for quick operations
+- **VS Code Extension** - Manage instances directly from IDE
+- **Debugging Tools** - Step-through execution, breakpoints for workflows
+- **Performance Profiling** - Identify slow operations and optimize network topology
+
+Contributions and feedback on roadmap priorities are welcome!
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please follow these guidelines:
