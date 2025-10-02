@@ -90,7 +90,7 @@ graph TD
     CryptoAnalyst -->|spawns specialists| LCGExpert[🎲 LCG/PRNG Specialist<br/>detect linear congruence]
     CryptoAnalyst -->|spawns specialists| ConstantMatcher[🔢 Constant Pattern Matcher<br/>find magic numbers]
 
-    HashAnalyzer -->|name→hash: (h*31+c) pattern| CryptoAnalyst
+    HashAnalyzer -->|name to hash: h*31+c pattern| CryptoAnalyst
     LCGExpert -->|LCG constants identified<br/>mult: 0x41C64E6D<br/>add: 0x3039| CryptoAnalyst
     ConstantMatcher -->|0x1337BEEF, 0xDEADBEEF<br/>0x85EBCA6B found| CryptoAnalyst
 
@@ -103,7 +103,7 @@ graph TD
     AlgorithmReconstructor -->|spawns| MathValidator[📐 Mathematical Validator<br/>verify formula correctness]
 
     MathValidator -->|formula validated| AlgorithmReconstructor
-    AlgorithmReconstructor -->|name → hash formula<br/>hash → checksum formula| Coordinator
+    AlgorithmReconstructor -->|name to hash formula<br/>hash to checksum formula| Coordinator
 
     Coordinator -->|create keygen| PythonDev[💻 Backend Dev<br/>implement keygen.py]
 
