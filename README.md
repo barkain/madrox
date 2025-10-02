@@ -63,7 +63,7 @@ graph TD
 
 ---
 
-Here's another example: **reverse engineering a keygenme challenge** (real workflow from [this repo](https://github.com/barkain/reverse-engineering)).
+Here's another example: **reverse engineering a keygenme challenge** (real workflow from [this repo](https://github.com/barkain/reverse-engineering)). This shows **nested hierarchical orchestration** - instances spawning their own specialized sub-instances.
 
 ```mermaid
 graph TD
@@ -78,22 +78,64 @@ graph TD
     Coordinator -->|spawn parallel analysis| Disassembler[⚙️ Disassembler<br/>x86-64 assembly analysis]
     Coordinator -->|spawn parallel analysis| CryptoAnalyst[🔐 Crypto Analyst<br/>hash/LCG pattern recognition]
 
-    Disassembler -->|control flow<br/>function calls<br/>register operations| Coordinator
-    CryptoAnalyst -->|identified LCG constants<br/>0x41C64E6D, 0x3039<br/>XOR with 0xDEADBEEF| Coordinator
+    %% Disassembler spawns its own children
+    Disassembler -->|spawns specialists| ControlFlow[🔀 Control Flow Analyzer<br/>trace execution paths]
+    Disassembler -->|spawns specialists| RegisterOps[📊 Register Operations<br/>track data transformations]
+
+    ControlFlow -->|execution graph| Disassembler
+    RegisterOps -->|data flow analysis| Disassembler
+
+    %% CryptoAnalyst spawns its own children
+    CryptoAnalyst -->|spawns specialists| HashAnalyzer[#️⃣ Hash Function Expert<br/>identify hash algorithm]
+    CryptoAnalyst -->|spawns specialists| LCGExpert[🎲 LCG/PRNG Specialist<br/>detect linear congruence]
+    CryptoAnalyst -->|spawns specialists| ConstantMatcher[🔢 Constant Pattern Matcher<br/>find magic numbers]
+
+    HashAnalyzer -->|name→hash: (h*31+c) pattern| CryptoAnalyst
+    LCGExpert -->|LCG constants identified<br/>mult: 0x41C64E6D<br/>add: 0x3039| CryptoAnalyst
+    ConstantMatcher -->|0x1337BEEF, 0xDEADBEEF<br/>0x85EBCA6B found| CryptoAnalyst
+
+    Disassembler -->|control flow + register ops| Coordinator
+    CryptoAnalyst -->|complete crypto analysis| Coordinator
 
     Coordinator -->|algorithm understood| AlgorithmReconstructor[🧮 Algorithm Specialist<br/>reconstruct validation logic]
 
+    %% AlgorithmReconstructor spawns validator
+    AlgorithmReconstructor -->|spawns| MathValidator[📐 Mathematical Validator<br/>verify formula correctness]
+
+    MathValidator -->|formula validated| AlgorithmReconstructor
     AlgorithmReconstructor -->|name → hash formula<br/>hash → checksum formula| Coordinator
 
     Coordinator -->|create keygen| PythonDev[💻 Backend Dev<br/>implement keygen.py]
 
+    %% PythonDev spawns code reviewer
+    PythonDev -->|spawns| CodeReviewer[👁️ Code Reviewer<br/>check implementation]
+
+    CodeReviewer -->|code approved| PythonDev
     PythonDev -->|keygen code| Coordinator
 
     Coordinator -->|validate solution| Tester[🧪 Testing Specialist<br/>test multiple names]
 
-    Tester -->|✅ Alice: 632B-03E4-8773-6C30<br/>✅ Bob: C860-897C-2A94-ADDD<br/>✅ DryTau: 6288-0AEF-DA11-3ABD| Coordinator
+    %% Tester spawns multiple test runners
+    Tester -->|spawns parallel| TestRunner1[🏃 Test Runner 1<br/>Alice, Bob, Charlie]
+    Tester -->|spawns parallel| TestRunner2[🏃 Test Runner 2<br/>DryTau, Edge Cases]
+    Tester -->|spawns parallel| Fuzzer[🎯 Fuzzer<br/>random name generation]
 
-    Coordinator -->|all tests pass| DocWriter[📝 Documentation Writer<br/>writeup + solution report]
+    TestRunner1 -->|✅ all passed| Tester
+    TestRunner2 -->|✅ all passed| Tester
+    Fuzzer -->|✅ 1000/1000 valid| Tester
+
+    Tester -->|all tests pass| Coordinator
+
+    Coordinator -->|final phase| DocWriter[📝 Documentation Writer<br/>writeup + solution report]
+
+    %% DocWriter spawns documentation specialists
+    DocWriter -->|spawns| TechnicalWriter[📖 Technical Writer<br/>algorithm explanation]
+    DocWriter -->|spawns| TutorialWriter[🎓 Tutorial Writer<br/>usage guide]
+    DocWriter -->|spawns| DiagramCreator[🎨 Diagram Creator<br/>visual flow charts]
+
+    TechnicalWriter -->|technical writeup| DocWriter
+    TutorialWriter -->|user guide| DocWriter
+    DiagramCreator -->|visual diagrams| DocWriter
 
     DocWriter -->|working keygen<br/>+ comprehensive analysis| User
 
@@ -106,17 +148,39 @@ graph TD
     style PythonDev fill:#cce5ff
     style Tester fill:#d1ecf1
     style DocWriter fill:#f8d7da
+
+    %% Nested children - lighter shades
+    style ControlFlow fill:#e6f2ff
+    style RegisterOps fill:#e6f2ff
+    style HashAnalyzer fill:#e6f2ff
+    style LCGExpert fill:#e6f2ff
+    style ConstantMatcher fill:#e6f2ff
+    style MathValidator fill:#e8f4f8
+    style CodeReviewer fill:#f0f0f0
+    style TestRunner1 fill:#e8f4f8
+    style TestRunner2 fill:#e8f4f8
+    style Fuzzer fill:#e8f4f8
+    style TechnicalWriter fill:#ffe6e6
+    style TutorialWriter fill:#ffe6e6
+    style DiagramCreator fill:#ffe6e6
 ```
 
-**What's happening:**
-1. **Static Analysis**: Find validation function, extract magic constants (`0x1337BEEF`, `0xDEADBEEF`)
-2. **Parallel Deep-Dive**: Disassembler reads x86-64 assembly while Crypto Analyst identifies LCG pattern
-3. **Algorithm Reconstruction**: Piece together name→hash and hash→checksum formulas
-4. **Implementation**: Write Python keygen that generates valid license keys
-5. **Validation**: Test with multiple names to confirm 100% success rate
-6. **Documentation**: Complete writeup explaining the crack
+**What's happening - with hierarchical depth:**
 
-**Result**: Working keygen that generates unlimited valid license keys - systematic RE workflow impossible with single-instance approach.
+**Level 1 - Coordinator spawns main team:**
+1. **Static Analyzer** → Finds entry points, magic constants
+2. **Disassembler** → **Spawns 2 specialists**: Control Flow Analyzer + Register Operations Tracker
+3. **Crypto Analyst** → **Spawns 3 specialists**: Hash Expert + LCG Expert + Constant Matcher
+
+**Level 2 - Specialists spawn their own workers:**
+4. **Algorithm Reconstructor** → **Spawns**: Mathematical Validator to verify formulas
+5. **Python Dev** → **Spawns**: Code Reviewer for quality assurance
+6. **Tester** → **Spawns 3 parallel runners**: TestRunner1, TestRunner2, Fuzzer (validates 1000 random names)
+7. **Doc Writer** → **Spawns 3 documentation specialists**: Technical Writer, Tutorial Writer, Diagram Creator
+
+**Total network: 21 instances across 3 hierarchical levels** - each instance delegates to its own specialized team.
+
+**Result**: Working keygen with comprehensive validation (1000+ tests) and multi-format documentation - impossible with flat single-instance or even single-level orchestration.
 
 ## 🎯 Features
 
