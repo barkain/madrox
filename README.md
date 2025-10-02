@@ -497,7 +497,6 @@ python run_orchestrator.py
 ### Deployment & Distribution
 - **Docker Container Support** - Serve Madrox as a containerized MCP server
 - **Installable MCP Package** - NPM/PyPI package for easy installation without git clone
-- **Pre-built Binaries** - Standalone executables for major platforms (macOS, Linux, Windows)
 
 ### Workflow & Orchestration
 - **Complex Workflow Engine** - Define and deploy multi-step workflows across instance networks
