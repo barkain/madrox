@@ -500,7 +500,17 @@ python run_orchestrator.py
 
 ### Workflow & Orchestration
 - **Complex Workflow Engine** - Define and deploy multi-step workflows across instance networks
-- **Workflow Templates** - Pre-built patterns (Reverse Engineering, Feature from Paper, Codebase Migration, Security Audit, Performance Optimization, etc.)
+- **Workflow Templates** - Pre-built patterns:
+  - Reverse Engineering (analyze → document → reproduce)
+  - Feature from Paper (research → design → implement → validate)
+  - Codebase Migration (audit → plan → convert → test)
+  - Security Audit (scan → analyze → report → remediate)
+  - Performance Optimization (profile → identify bottlenecks → optimize → benchmark)
+  - API Integration (explore docs → design client → implement → test)
+  - Bug Investigation (reproduce → diagnose → fix → verify)
+  - Code Refactoring (analyze → plan → refactor → validate)
+  - Documentation Generation (analyze code → structure docs → write → review)
+  - Test Suite Creation (analyze coverage → design tests → implement → validate)
 - **Conditional Execution** - Branch workflows based on instance outputs
 - **State Persistence** - Save and resume long-running workflows across sessions
 - **Workflow Visualization** - Interactive diagram of workflow execution progress
