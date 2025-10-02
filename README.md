@@ -63,60 +63,60 @@ graph TD
 
 ---
 
-Here's another example: **reverse engineering a proprietary binary or protocol**.
+Here's another example: **reverse engineering a keygenme challenge** (real workflow from [this repo](https://github.com/barkain/reverse-engineering)).
 
 ```mermaid
 graph TD
-    User[👤 You: 'Reverse engineer this binary/protocol']
+    User[👤 You: 'Crack this KeygenMe - create a working keygen']
 
-    User --> Coordinator[🎯 Coordinator Instance<br/>Security Analyst Role]
+    User --> Coordinator[🎯 Coordinator Instance<br/>Debugger Role]
 
-    Coordinator -->|initial recon| Scanner[🔍 Scanner Instance<br/>static analysis]
+    Coordinator -->|initial recon| StaticAnalyzer[🔍 Static Analyzer<br/>strings, imports, symbols]
 
-    Scanner -->|file structure<br/>strings<br/>imports| Coordinator
+    StaticAnalyzer -->|validation function found<br/>magic constants identified| Coordinator
 
-    Coordinator -->|parallel deep-dive| BinaryAnalyst[⚙️ Binary Analyst<br/>disassembly + decompilation]
-    Coordinator -->|parallel deep-dive| ProtocolAnalyst[📡 Protocol Analyst<br/>network/format analysis]
-    Coordinator -->|parallel deep-dive| CryptoAnalyst[🔐 Crypto Analyst<br/>encryption detection]
+    Coordinator -->|spawn parallel analysis| Disassembler[⚙️ Disassembler<br/>x86-64 assembly analysis]
+    Coordinator -->|spawn parallel analysis| CryptoAnalyst[🔐 Crypto Analyst<br/>hash/LCG pattern recognition]
 
-    BinaryAnalyst -->|functions<br/>control flow| Coordinator
-    ProtocolAnalyst -->|message format<br/>state machine| Coordinator
-    CryptoAnalyst -->|crypto primitives<br/>key derivation| Coordinator
+    Disassembler -->|control flow<br/>function calls<br/>register operations| Coordinator
+    CryptoAnalyst -->|identified LCG constants<br/>0x41C64E6D, 0x3039<br/>XOR with 0xDEADBEEF| Coordinator
 
-    Coordinator -->|synthesize findings| Designer[🏗️ Designer Instance<br/>architecture reconstruction]
+    Coordinator -->|algorithm understood| AlgorithmReconstructor[🧮 Algorithm Specialist<br/>reconstruct validation logic]
 
-    Designer -->|system model| Coordinator
+    AlgorithmReconstructor -->|name → hash formula<br/>hash → checksum formula| Coordinator
 
-    Coordinator -->|spawns for validation| Implementer[💻 Backend Dev<br/>reference implementation]
-    Coordinator -->|spawns for validation| Tester[🧪 Testing Specialist<br/>behavior validation]
+    Coordinator -->|create keygen| PythonDev[💻 Backend Dev<br/>implement keygen.py]
 
-    Implementer -->|working code| Tester
-    Tester -->|validation results| Coordinator
+    PythonDev -->|keygen code| Coordinator
 
-    Coordinator -->|final phase| DocWriter[📝 Documentation Writer<br/>comprehensive report]
+    Coordinator -->|validate solution| Tester[🧪 Testing Specialist<br/>test multiple names]
 
-    DocWriter -->|RE report<br/>+ working implementation| User
+    Tester -->|✅ Alice: 632B-03E4-8773-6C30<br/>✅ Bob: C860-897C-2A94-ADDD<br/>✅ DryTau: 6288-0AEF-DA11-3ABD| Coordinator
+
+    Coordinator -->|all tests pass| DocWriter[📝 Documentation Writer<br/>writeup + solution report]
+
+    DocWriter -->|working keygen<br/>+ comprehensive analysis| User
 
     style User fill:#e1f5ff
     style Coordinator fill:#fff3cd
-    style Scanner fill:#d4edda
-    style BinaryAnalyst fill:#cce5ff
-    style ProtocolAnalyst fill:#cce5ff
+    style StaticAnalyzer fill:#d4edda
+    style Disassembler fill:#cce5ff
     style CryptoAnalyst fill:#cce5ff
-    style Designer fill:#d4edda
-    style Implementer fill:#d1ecf1
+    style AlgorithmReconstructor fill:#d1ecf1
+    style PythonDev fill:#cce5ff
     style Tester fill:#d1ecf1
     style DocWriter fill:#f8d7da
 ```
 
 **What's happening:**
-1. **Recon Phase**: Scanner performs initial static analysis (strings, imports, structure)
-2. **Parallel Specialists**: Binary, Protocol, and Crypto analysts work simultaneously on different aspects
-3. **Synthesis**: Designer reconstructs high-level architecture from specialist findings
-4. **Validation**: Reference implementation + testing confirms understanding is correct
-5. **Documentation**: Complete reverse engineering report with working code
+1. **Static Analysis**: Find validation function, extract magic constants (`0x1337BEEF`, `0xDEADBEEF`)
+2. **Parallel Deep-Dive**: Disassembler reads x86-64 assembly while Crypto Analyst identifies LCG pattern
+3. **Algorithm Reconstruction**: Piece together name→hash and hash→checksum formulas
+4. **Implementation**: Write Python keygen that generates valid license keys
+5. **Validation**: Test with multiple names to confirm 100% success rate
+6. **Documentation**: Complete writeup explaining the crack
 
-**Result**: Systematic, thorough reverse engineering with parallel specialization - not possible with single-instance prompting.
+**Result**: Working keygen that generates unlimited valid license keys - systematic RE workflow impossible with single-instance approach.
 
 ## 🎯 Features
 
