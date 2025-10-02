@@ -61,6 +61,63 @@ graph TD
 
 **Result**: Complex multi-week task completed through orchestrated collaboration, not monolithic prompting.
 
+---
+
+Here's another example: **reverse engineering a proprietary binary or protocol**.
+
+```mermaid
+graph TD
+    User[👤 You: 'Reverse engineer this binary/protocol']
+
+    User --> Coordinator[🎯 Coordinator Instance<br/>Security Analyst Role]
+
+    Coordinator -->|initial recon| Scanner[🔍 Scanner Instance<br/>static analysis]
+
+    Scanner -->|file structure<br/>strings<br/>imports| Coordinator
+
+    Coordinator -->|parallel deep-dive| BinaryAnalyst[⚙️ Binary Analyst<br/>disassembly + decompilation]
+    Coordinator -->|parallel deep-dive| ProtocolAnalyst[📡 Protocol Analyst<br/>network/format analysis]
+    Coordinator -->|parallel deep-dive| CryptoAnalyst[🔐 Crypto Analyst<br/>encryption detection]
+
+    BinaryAnalyst -->|functions<br/>control flow| Coordinator
+    ProtocolAnalyst -->|message format<br/>state machine| Coordinator
+    CryptoAnalyst -->|crypto primitives<br/>key derivation| Coordinator
+
+    Coordinator -->|synthesize findings| Designer[🏗️ Designer Instance<br/>architecture reconstruction]
+
+    Designer -->|system model| Coordinator
+
+    Coordinator -->|spawns for validation| Implementer[💻 Backend Dev<br/>reference implementation]
+    Coordinator -->|spawns for validation| Tester[🧪 Testing Specialist<br/>behavior validation]
+
+    Implementer -->|working code| Tester
+    Tester -->|validation results| Coordinator
+
+    Coordinator -->|final phase| DocWriter[📝 Documentation Writer<br/>comprehensive report]
+
+    DocWriter -->|RE report<br/>+ working implementation| User
+
+    style User fill:#e1f5ff
+    style Coordinator fill:#fff3cd
+    style Scanner fill:#d4edda
+    style BinaryAnalyst fill:#cce5ff
+    style ProtocolAnalyst fill:#cce5ff
+    style CryptoAnalyst fill:#cce5ff
+    style Designer fill:#d4edda
+    style Implementer fill:#d1ecf1
+    style Tester fill:#d1ecf1
+    style DocWriter fill:#f8d7da
+```
+
+**What's happening:**
+1. **Recon Phase**: Scanner performs initial static analysis (strings, imports, structure)
+2. **Parallel Specialists**: Binary, Protocol, and Crypto analysts work simultaneously on different aspects
+3. **Synthesis**: Designer reconstructs high-level architecture from specialist findings
+4. **Validation**: Reference implementation + testing confirms understanding is correct
+5. **Documentation**: Complete reverse engineering report with working code
+
+**Result**: Systematic, thorough reverse engineering with parallel specialization - not possible with single-instance prompting.
+
 ## 🎯 Features
 
 ### Core Orchestration Tools
