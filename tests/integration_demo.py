@@ -117,14 +117,22 @@ async def main():
 
         if not isinstance(frontend_response, Exception) and frontend_response:
             print("   ✅ Frontend development completed")
-            response_text = frontend_response.get('response', 'No response') if isinstance(frontend_response, dict) else 'No response'
+            response_text = (
+                frontend_response.get("response", "No response")
+                if isinstance(frontend_response, dict)
+                else "No response"
+            )
             print(f"   📱 Frontend response: {response_text[:100]}...")
         else:
             print("   ⚠️  Frontend development had issues")
 
         if not isinstance(backend_response, Exception) and backend_response:
             print("   ✅ Backend development completed")
-            response_text = backend_response.get('response', 'No response') if isinstance(backend_response, dict) else 'No response'
+            response_text = (
+                backend_response.get("response", "No response")
+                if isinstance(backend_response, dict)
+                else "No response"
+            )
             print(f"   🖥️  Backend response: {response_text[:100]}...")
         else:
             print("   ⚠️  Backend development had issues")
@@ -156,10 +164,12 @@ async def main():
 
         # Show individual instance status
         print("\n   📋 Instance Details:")
-        for _instance_id, instance in status['instances'].items():
-            print(f"      🔸 {instance['name']}: {instance['state']} "
-                  f"(tokens: {instance['total_tokens_used']}, "
-                  f"cost: ${instance['total_cost']:.4f})")
+        for _instance_id, instance in status["instances"].items():
+            print(
+                f"      🔸 {instance['name']}: {instance['state']} "
+                f"(tokens: {instance['total_tokens_used']}, "
+                f"cost: ${instance['total_cost']:.4f})"
+            )
 
         # Phase 7: Cleanup
         print("\n🧹 Phase 7: Graceful shutdown...")
@@ -174,7 +184,7 @@ async def main():
 
         # Final status
         final_status = manager.get_instance_status()
-        active_count = final_status['active_instances']
+        active_count = final_status["active_instances"]
         print(f"   📊 Remaining active instances: {active_count}")
 
         print("\n🎉 Integration Demo Completed Successfully!")

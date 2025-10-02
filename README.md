@@ -1,5 +1,9 @@
 # Madrox - Hierarchical Multi-Agent Orchestrator
 
+<p align="center">
+  <img src="madrox.png" alt="Madrox Logo" width="400"/>
+</p>
+
 A Model Context Protocol (MCP) server that enables AI instances to spawn and manage hierarchical networks of Claude and Codex instances. This system supports sophisticated multi-agent orchestration with parent-child relationships, bidirectional communication, role-based specialization, and intelligent coordination across multiple AI models.
 
 ## 🎯 Features
@@ -15,12 +19,15 @@ A Model Context Protocol (MCP) server that enables AI instances to spawn and man
 - **`get_children`** - Query child instances of a parent
 - **`broadcast_to_children`** - Broadcast messages to all children of a parent
 - **`coordinate_instances`** - Coordinate multiple instances for complex tasks
+- **`interrupt_instance`** - Interrupt running task without terminating instance
+- **`interrupt_multiple_instances`** - Interrupt multiple instances in parallel
 - **`terminate_instance`** - Gracefully terminate instances with proper cleanup
 
 ### Advanced Capabilities
 - **Multi-Model Support** - Orchestrate both Claude (Anthropic) and Codex (OpenAI) instances
 - **Hierarchical Architecture** - Parent-child relationships with bidirectional communication
 - **Instance Tree Visualization** - Real-time network topology with state and type indicators
+- **Task Interruption** - Stop running tasks without terminating instances (preserves context)
 - **Parallel Spawning** - Launch multiple instances concurrently for performance
 - **Non-Blocking Mode** - Background initialization with immediate ID return
 - **Message Auto-Injection** - Automatic context sharing from child to parent instances
@@ -29,6 +36,7 @@ A Model Context Protocol (MCP) server that enables AI instances to spawn and man
 - **Isolated Environments** - Each instance gets its own workspace directory with metadata
 - **Message Passing** - Reliable inter-instance communication with timeout handling
 - **Parallel Task Execution** - Coordinate multiple instances working in parallel
+- **Batch Operations** - Interrupt, message, or query multiple instances simultaneously
 - **Resource Tracking** - Monitor token usage, costs, and performance metrics
 - **Health Monitoring** - Automatic health checks with timeout and limit enforcement
 - **Consensus Building** - Coordinate instances for decision-making processes
@@ -125,9 +133,13 @@ config = OrchestratorConfig(
 )
 ```
 
-## 🎭 Available Instance Roles
+## 🎭 Instance Roles & Customization
 
-- **General** - General-purpose assistant
+### Quick Start: Predefined Roles
+
+For convenience, these ready-made roles are available:
+
+- **General** - Versatile general-purpose assistant
 - **Frontend Developer** - React/TypeScript specialist
 - **Backend Developer** - Python/API specialist
 - **Testing Specialist** - Test automation expert
@@ -137,6 +149,51 @@ config = OrchestratorConfig(
 - **Debugger** - Problem diagnosis and debugging
 - **Security Analyst** - Security assessment and hardening
 - **Data Analyst** - Data processing and analysis
+
+### Custom Roles
+
+**You're not limited to predefined roles!** Create any specialized instance you need:
+
+```python
+# Fully custom role with specialized expertise
+instance_id = await manager.spawn_instance(
+    name="rust-expert",
+    role="general",  # Use any role or general as base
+    system_prompt="""You are a Rust systems programming expert with deep knowledge of:
+    - Embedded systems and bare-metal programming
+    - async/await and tokio runtime internals
+    - Zero-cost abstractions and compiler optimizations
+    - Safety guarantees and lifetime management"""
+)
+
+# Domain-specific expert
+instance_id = await manager.spawn_instance(
+    name="ml-researcher",
+    system_prompt="""You are a machine learning researcher specializing in:
+    - Transformer architectures and attention mechanisms
+    - PyTorch internals and CUDA optimization
+    - Latest papers from arXiv (2024-2025)
+    - Distributed training strategies"""
+)
+```
+
+**Key Point:** When you provide a `system_prompt`, it completely overrides the predefined role behavior, giving you full control over the instance's expertise and personality.
+
+### Customizing Role Prompts
+
+All predefined role prompts are stored as text files in `resources/prompts/` and can be easily customized:
+
+```bash
+# View available prompts
+ls resources/prompts/
+
+# Edit a role's system prompt
+vim resources/prompts/backend_developer.txt
+
+# Changes take effect immediately for new instances
+```
+
+Each prompt file contains comprehensive expertise, best practices, and behavioral guidelines researched from 2025 industry standards. See `resources/prompts/README.md` for details on prompt structure and customization options.
 
 ## 🔗 MCP Protocol Integration
 
@@ -323,7 +380,36 @@ await manager.send_to_multiple_instances([
 ])
 ```
 
-### Example 5: Resource Management
+### Example 5: Task Interruption & Control
+```python
+# Start a long-running task
+instance_id = await manager.spawn_instance(
+    name="Data Processor",
+    role="general"
+)
+
+await manager.send_to_instance(
+    instance_id,
+    "Process this large dataset and generate comprehensive statistics",
+    wait_for_response=False
+)
+
+# Wait a bit, then interrupt the task without terminating the instance
+await asyncio.sleep(10)
+result = await manager.interrupt_instance(instance_id)
+# Instance shows: "⎿ Interrupted · What should Claude do instead?"
+
+# Send a new task - context is preserved
+await manager.send_to_instance(
+    instance_id,
+    "Instead, just summarize the first 100 rows"
+)
+
+# Interrupt multiple instances in parallel
+await manager.interrupt_multiple_instances([instance_id_1, instance_id_2, instance_id_3])
+```
+
+### Example 6: Resource Management
 ```python
 # Spawn with resource limits
 instance_id = await manager.spawn_instance(

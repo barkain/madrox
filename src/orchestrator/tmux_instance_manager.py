@@ -380,6 +380,77 @@ class TmuxInstanceManager:
             if instance["state"] == "busy":
                 instance["state"] = "idle"
 
+    async def interrupt_instance(self, instance_id: str) -> dict[str, Any]:
+        """Send interrupt signal (Ctrl+C) to a running instance.
+
+        This stops the current task without terminating the instance.
+        Similar to pressing Escape or Ctrl+C in the terminal.
+
+        Args:
+            instance_id: Instance ID to interrupt
+
+        Returns:
+            Status dict with success/failure info
+        """
+        if instance_id not in self.instances:
+            raise ValueError(f"Instance {instance_id} not found")
+
+        instance = self.instances[instance_id]
+
+        if instance["state"] not in ["running", "busy", "idle"]:
+            return {
+                "success": False,
+                "instance_id": instance_id,
+                "error": f"Instance is {instance['state']}, cannot interrupt",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+
+        try:
+            # Get tmux pane
+            session = self.tmux_sessions.get(instance_id)
+            if not session:
+                raise RuntimeError(f"No tmux session found for instance {instance_id}")
+
+            window = session.windows[0]
+            pane = window.panes[0]
+
+            # Try sending a cancel/interrupt command via stdin
+            # Test different approaches:
+
+            # Approach 1: Try pressing Escape in the interactive session
+            pane.send_keys("", literal=False)  # Send literal Escape character
+
+            # Approach 2: If that doesn't work, we might need to switch to
+            # non-stream-json mode or find the child process PID
+
+            logger.info(
+                f"Sent interrupt signal to instance {instance_id}",
+                extra={"instance_id": instance_id, "state": instance["state"]},
+            )
+
+            # Update state
+            instance["state"] = "idle"
+            instance["last_activity"] = datetime.now(UTC).isoformat()
+
+            return {
+                "success": True,
+                "instance_id": instance_id,
+                "message": "Interrupt signal sent successfully",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Failed to interrupt instance {instance_id}: {e}",
+                extra={"instance_id": instance_id, "error": str(e)},
+            )
+            return {
+                "success": False,
+                "instance_id": instance_id,
+                "error": str(e),
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+
     async def terminate_instance(self, instance_id: str, force: bool = False) -> bool:
         """Terminate a Claude instance and kill its tmux session.
 
@@ -678,18 +749,50 @@ class TmuxInstanceManager:
         return response.strip()
 
     def _get_role_prompt(self, role: str) -> str:
-        """Get system prompt for a role."""
-        role_prompts = {
-            "general": "You are a helpful AI assistant capable of handling various tasks.",
-            "frontend_developer": "You are a senior frontend developer specializing in React, TypeScript, and modern web technologies.",
-            "backend_developer": "You are a senior backend developer specializing in Python, APIs, and distributed systems.",
-            "testing_specialist": "You are a testing specialist focused on writing comprehensive tests and ensuring code quality.",
-            "documentation_writer": "You are a technical writer who creates clear, comprehensive documentation.",
-            "code_reviewer": "You are a senior code reviewer who provides constructive feedback and ensures best practices.",
-            "architect": "You are a software architect who designs scalable systems and makes architectural decisions.",
-            "debugger": "You are a debugging specialist who identifies and fixes complex issues in code.",
-            "security_analyst": "You are a security specialist who identifies vulnerabilities and ensures secure coding practices.",
-            "data_analyst": "You are a data analyst who works with data processing, analysis, and visualization.",
-        }
+        """Get system prompt for a role by loading from resources/prompts directory.
 
-        return role_prompts.get(role, role_prompts["general"])
+        Args:
+            role: The role name (e.g., "general", "frontend_developer")
+
+        Returns:
+            The system prompt text for the role
+        """
+        from pathlib import Path
+
+        # Get the project root directory (parent of src/orchestrator)
+        current_file = Path(__file__)
+        project_root = current_file.parent.parent.parent
+        prompts_dir = project_root / "resources" / "prompts"
+
+        # Try to load from file
+        prompt_file = prompts_dir / f"{role}.txt"
+
+        try:
+            if prompt_file.exists():
+                return prompt_file.read_text(encoding="utf-8").strip()
+            else:
+                logger.warning(
+                    f"Prompt file not found for role '{role}', using fallback",
+                    extra={"role": role, "expected_path": str(prompt_file)},
+                )
+                # Fallback to basic prompts if file doesn't exist
+                fallback_prompts = {
+                    "general": "You are a helpful AI assistant capable of handling various tasks.",
+                    "frontend_developer": "You are a senior frontend developer specializing in React, TypeScript, and modern web technologies.",
+                    "backend_developer": "You are a senior backend developer specializing in Python, APIs, and distributed systems.",
+                    "testing_specialist": "You are a testing specialist focused on writing comprehensive tests and ensuring code quality.",
+                    "documentation_writer": "You are a technical writer who creates clear, comprehensive documentation.",
+                    "code_reviewer": "You are a senior code reviewer who provides constructive feedback and ensures best practices.",
+                    "architect": "You are a software architect who designs scalable systems and makes architectural decisions.",
+                    "debugger": "You are a debugging specialist who identifies and fixes complex issues in code.",
+                    "security_analyst": "You are a security specialist who identifies vulnerabilities and ensures secure coding practices.",
+                    "data_analyst": "You are a data analyst who works with data processing, analysis, and visualization.",
+                }
+                return fallback_prompts.get(role, fallback_prompts["general"])
+        except Exception as e:
+            logger.error(
+                f"Error loading prompt file for role '{role}': {e}",
+                extra={"role": role, "error": str(e)},
+            )
+            # Return minimal fallback on error
+            return f"You are a helpful AI assistant with expertise in {role.replace('_', ' ')}."

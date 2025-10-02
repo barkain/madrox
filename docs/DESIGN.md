@@ -164,7 +164,7 @@ tools:
   - name: spawn_claude
     description: Create a new Claude instance with specific capabilities
     parameters:
-      model: 
+      model:
         type: string
         enum: [opus-4, sonnet-4, haiku]
         description: Model based on task complexity
@@ -181,7 +181,7 @@ tools:
     returns:
       instance_id: string
       status: string
-      
+
   - name: send_to_instance
     description: Send a message/task to a spawned instance
     parameters:
@@ -190,7 +190,7 @@ tools:
       wait_for_response: boolean
     returns:
       response: string
-      
+
   - name: get_instance_output
     description: Retrieve recent output from an instance
     parameters:
@@ -198,7 +198,7 @@ tools:
       lines: integer
     returns:
       output: string
-      
+
   - name: coordinate_instances
     description: Send tasks to multiple instances in parallel
     parameters:
@@ -209,7 +209,26 @@ tools:
           message: string
     returns:
       responses: array
-      
+
+  - name: interrupt_instance
+    description: Interrupt running task without terminating instance (preserves context)
+    parameters:
+      instance_id: string
+    returns:
+      success: boolean
+      message: string
+      timestamp: string
+
+  - name: interrupt_multiple_instances
+    description: Interrupt multiple instances in parallel
+    parameters:
+      instance_ids:
+        type: array
+        items: string
+    returns:
+      interrupted_instances: array
+      errors: array
+
   - name: terminate_instance
     description: Shut down an instance
     parameters:
@@ -319,8 +338,8 @@ Based on all specialist inputs, here's your complete e-commerce system design:
 ```
 User: "Debug this complex issue in my distributed system"
 
-Claude: This appears to be a complex distributed systems issue that involves 
-multiple components. I'll need to analyze this from different angles. Let me 
+Claude: This appears to be a complex distributed systems issue that involves
+multiple components. I'll need to analyze this from different angles. Let me
 bring in some specialized help:
 
 [🔍 Spawning debugging specialist...]
@@ -331,7 +350,7 @@ bring in some specialized help:
 
 Based on the collaborative analysis:
 
-The issue stems from a race condition in your service mesh. Here's what's 
+The issue stems from a race condition in your service mesh. Here's what's
 happening:
 1. Service A sends a message to the queue
 2. Service B and C both try to process it
@@ -339,6 +358,34 @@ happening:
 
 Here's the fix:
 [... solution ...]
+```
+
+### Pattern 4: Task Interruption & Re-direction
+
+```
+User: "Have the data analyst process the entire dataset and generate a full report"
+
+Claude: I'll have the data analyst work on that comprehensive analysis.
+
+[📊 Data Analyst is processing dataset...]
+[Progress: Analyzing correlations across 1M rows...]
+
+User: "Actually, just give me a quick summary of the first 1000 rows instead"
+
+Claude: I'll redirect the data analyst to focus on just the summary:
+
+[⏸️ Interrupting data analyst's current task...]
+[📊 Data Analyst: Task interrupted, ready for new instructions]
+
+Now processing just the first 1000 rows for a quick summary...
+
+[Data Analyst]: Here's a summary of the first 1000 rows:
+- Key metrics: ...
+- Notable patterns: ...
+- Quick insights: ...
+
+The instance is still active and has retained all context. Would you like to
+continue with any specific analysis on this subset?
 ```
 
 ---
@@ -521,18 +568,36 @@ orchestration:
 ```
 User: "Set orchestration to manual approval only"
 
-Claude: I've updated the orchestration settings. From now on, I'll ask for 
+Claude: I've updated the orchestration settings. From now on, I'll ask for
 your approval before spawning any new instances.
 
 User: "Limit instances to Haiku model only for cost"
 
-Claude: Understood. I'll only use Claude Haiku for spawned instances to 
-minimize costs. This may affect response quality for complex tasks, but 
+Claude: Understood. I'll only use Claude Haiku for spawned instances to
+minimize costs. This may affect response quality for complex tasks, but
 will significantly reduce expenses.
+
+User: "That architect instance is taking too long, interrupt it"
+
+Claude: I've interrupted the architect instance. The task has been stopped,
+but the instance remains active with all context preserved. Would you like me to:
+1. Give it a different, simpler task?
+2. Let you know what it had completed so far?
+3. Terminate it completely?
+
+User: "Stop all running tasks"
+
+Claude: I've interrupted all active instances:
+- Architect (opus-4): Interrupted mid-design
+- Developer (sonnet-4): Interrupted during implementation
+- Tester (haiku): Interrupted during test generation
+
+All instances remain available with preserved context. What would you like them
+to work on instead?
 
 User: "Stop all orchestration"
 
-Claude: I've terminated all spawned instances and disabled orchestration. 
+Claude: I've terminated all spawned instances and disabled orchestration.
 I'll handle all tasks directly without spawning additional instances.
 ```
 
@@ -547,6 +612,66 @@ I'll handle all tasks directly without spawning additional instances.
 5. **Specialized Expertise**: Each instance optimized for its role
 6. **Unified Experience**: User gets synthesized results, not raw instance outputs
 7. **Full Control**: User can guide or override orchestration decisions
+8. **Task Interruption**: Stop long-running tasks without losing context or terminating instances
+
+---
+
+## 🔧 Technical Implementation: Task Interruption
+
+### How It Works
+
+The interrupt feature uses **tmux session management** to send Escape key signals to running instances:
+
+```python
+# Send Escape key to interrupt current task
+pane.send_keys('', literal=False)  # Sends literal Escape character
+```
+
+### Key Characteristics
+
+| Feature | Claude | Codex | Status |
+|---------|--------|-------|--------|
+| **Interrupt Signal** | Escape key | Escape key | ✅ Working |
+| **Instance State** | "⎿ Interrupted · What should Claude do instead?" | "Esc edit prev" | ✅ Different UIs |
+| **Context Preservation** | Full conversation history maintained | Full conversation history maintained | ✅ Verified |
+| **No Restart** | Single initialization header | Single initialization header | ✅ Confirmed |
+| **Ready for New Tasks** | Immediate | Immediate | ✅ Working |
+
+### Testing Results
+
+Both Claude and Codex instances were tested with long-running counting tasks:
+
+```python
+# Test: Count to 1000, interrupt mid-task
+instance = spawn_claude(name="test")
+send_to_instance(instance, "count slowly to 1000. one by one")
+
+# Wait for counting to progress
+await asyncio.sleep(5)
+
+# Interrupt the task
+interrupt_instance(instance)
+# Result: "⎿ Interrupted · What should Claude do instead?"
+
+# Verify context preservation
+send_to_instance(instance, "What number did you reach?")
+# Response: Correctly remembers counting task and can resume
+```
+
+### Interrupt vs Terminate
+
+| Operation | Effect | Context | Cost |
+|-----------|--------|---------|------|
+| **Interrupt** | Stops current task | ✅ Preserved | No additional cost |
+| **Terminate** | Shuts down instance | ❌ Lost | No refund for tokens used |
+
+### Use Cases
+
+1. **Task Re-direction**: User changes requirements mid-execution
+2. **Cost Control**: Stop expensive tasks that are taking too long
+3. **Priority Changes**: Interrupt low-priority task for urgent request
+4. **Debugging**: Stop task to inspect intermediate state
+5. **Batch Control**: Interrupt multiple instances simultaneously
 
 ---
 

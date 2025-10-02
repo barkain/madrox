@@ -8,6 +8,7 @@ from typing import Any
 
 class InstanceState(str, Enum):
     """State of a Claude instance."""
+
     INITIALIZING = "initializing"
     RUNNING = "running"
     IDLE = "idle"
@@ -18,6 +19,7 @@ class InstanceState(str, Enum):
 
 class InstanceRole(str, Enum):
     """Predefined roles for Claude instances."""
+
     GENERAL = "general"
     FRONTEND_DEVELOPER = "frontend_developer"
     BACKEND_DEVELOPER = "backend_developer"

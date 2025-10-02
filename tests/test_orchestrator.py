@@ -73,7 +73,7 @@ class TestInstanceManager:
     def manager(self, config):
         """Create InstanceManager for testing."""
         # Mock subprocess.Popen for CLI processes
-        with patch('subprocess.Popen') as mock_popen:
+        with patch("subprocess.Popen") as mock_popen:
             mock_process = MagicMock()
             mock_process.poll.return_value = None  # Process is running
             mock_process.stdin = MagicMock()
@@ -84,11 +84,7 @@ class TestInstanceManager:
             mock_process.kill = MagicMock()
 
             # Mock stdout.readline to return ready response then end
-            responses = [
-                b'{"type":"message","content":"Ready"}\n',
-                b'{"type":"end"}\n',
-                b''
-            ]
+            responses = [b'{"type":"message","content":"Ready"}\n', b'{"type":"end"}\n', b""]
             mock_process.stdout.readline.side_effect = responses
 
             mock_popen.return_value = mock_process

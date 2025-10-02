@@ -1,19 +1,18 @@
 """MCP Protocol implementation for Claude Orchestrator."""
 
 import logging
-from typing import Any, Sequence
+from collections.abc import Sequence
 
 from mcp.server import Server
-from mcp.server.models import InitializationOptions
 from mcp.types import (
-    Tool,
-    TextContent,
-    ImageContent,
     EmbeddedResource,
+    ImageContent,
+    TextContent,
+    Tool,
 )
 
 from src.orchestrator.instance_manager import InstanceManager
-from src.orchestrator.simple_models import OrchestratorConfig, InstanceRole
+from src.orchestrator.simple_models import InstanceRole, OrchestratorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -46,25 +45,25 @@ class OrchestrationMCPServer:
                         "properties": {
                             "name": {
                                 "type": "string",
-                                "description": "Human-readable name for the instance"
+                                "description": "Human-readable name for the instance",
                             },
                             "role": {
                                 "type": "string",
                                 "enum": [role.value for role in InstanceRole],
-                                "description": "Predefined role for the instance"
+                                "description": "Predefined role for the instance",
                             },
                             "system_prompt": {
                                 "type": "string",
-                                "description": "Optional custom system prompt"
+                                "description": "Optional custom system prompt",
                             },
                             "model": {
                                 "type": "string",
                                 "description": "Claude model to use",
-                                "default": "claude-4-sonnet-20250514"
-                            }
+                                "default": "claude-4-sonnet-20250514",
+                            },
                         },
-                        "required": ["name"]
-                    }
+                        "required": ["name"],
+                    },
                 ),
                 Tool(
                     name="send_to_instance",
@@ -74,25 +73,22 @@ class OrchestrationMCPServer:
                         "properties": {
                             "instance_id": {
                                 "type": "string",
-                                "description": "ID of the target instance"
+                                "description": "ID of the target instance",
                             },
-                            "message": {
-                                "type": "string",
-                                "description": "Message to send"
-                            },
+                            "message": {"type": "string", "description": "Message to send"},
                             "wait_for_response": {
                                 "type": "boolean",
                                 "description": "Whether to wait for response",
-                                "default": True
+                                "default": True,
                             },
                             "timeout_seconds": {
                                 "type": "number",
                                 "description": "Timeout in seconds",
-                                "default": 30
-                            }
+                                "default": 30,
+                            },
                         },
-                        "required": ["instance_id", "message"]
-                    }
+                        "required": ["instance_id", "message"],
+                    },
                 ),
                 Tool(
                     name="get_instance_output",
@@ -100,22 +96,19 @@ class OrchestrationMCPServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "instance_id": {
-                                "type": "string",
-                                "description": "ID of the instance"
-                            },
+                            "instance_id": {"type": "string", "description": "ID of the instance"},
                             "since": {
                                 "type": "string",
-                                "description": "ISO timestamp to get messages since"
+                                "description": "ISO timestamp to get messages since",
                             },
                             "limit": {
                                 "type": "integer",
                                 "description": "Maximum messages to retrieve",
-                                "default": 100
-                            }
+                                "default": 100,
+                            },
                         },
-                        "required": ["instance_id"]
-                    }
+                        "required": ["instance_id"],
+                    },
                 ),
                 Tool(
                     name="coordinate_instances",
@@ -125,26 +118,26 @@ class OrchestrationMCPServer:
                         "properties": {
                             "coordinator_id": {
                                 "type": "string",
-                                "description": "Coordinating instance ID"
+                                "description": "Coordinating instance ID",
                             },
                             "participant_ids": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Participating instance IDs"
+                                "description": "Participating instance IDs",
                             },
                             "task_description": {
                                 "type": "string",
-                                "description": "Description of the task"
+                                "description": "Description of the task",
                             },
                             "coordination_type": {
                                 "type": "string",
                                 "enum": ["sequential", "parallel", "consensus"],
                                 "description": "How to coordinate the instances",
-                                "default": "sequential"
-                            }
+                                "default": "sequential",
+                            },
                         },
-                        "required": ["coordinator_id", "participant_ids", "task_description"]
-                    }
+                        "required": ["coordinator_id", "participant_ids", "task_description"],
+                    },
                 ),
                 Tool(
                     name="terminate_instance",
@@ -154,16 +147,16 @@ class OrchestrationMCPServer:
                         "properties": {
                             "instance_id": {
                                 "type": "string",
-                                "description": "ID of the instance to terminate"
+                                "description": "ID of the instance to terminate",
                             },
                             "force": {
                                 "type": "boolean",
                                 "description": "Force termination even if busy",
-                                "default": False
-                            }
+                                "default": False,
+                            },
                         },
-                        "required": ["instance_id"]
-                    }
+                        "required": ["instance_id"],
+                    },
                 ),
                 Tool(
                     name="get_instance_status",
@@ -173,15 +166,17 @@ class OrchestrationMCPServer:
                         "properties": {
                             "instance_id": {
                                 "type": "string",
-                                "description": "Optional instance ID (omit for all instances)"
+                                "description": "Optional instance ID (omit for all instances)",
                             }
-                        }
-                    }
+                        },
+                    },
                 ),
             ]
 
         @self.server.call_tool()
-        async def handle_call_tool(name: str, arguments: dict | None) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        async def handle_call_tool(
+            name: str, arguments: dict | None
+        ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
             """Handle tool execution requests."""
             try:
                 if name == "spawn_claude":
@@ -194,7 +189,7 @@ class OrchestrationMCPServer:
                     return [
                         TextContent(
                             type="text",
-                            text=f"Successfully spawned Claude instance '{arguments.get('name')}' with ID: {instance_id}"
+                            text=f"Successfully spawned Claude instance '{arguments.get('name')}' with ID: {instance_id}",
                         )
                     ]
 
@@ -209,15 +204,10 @@ class OrchestrationMCPServer:
                         return [
                             TextContent(
                                 type="text",
-                                text=response.get("response", "Message sent successfully")
+                                text=response.get("response", "Message sent successfully"),
                             )
                         ]
-                    return [
-                        TextContent(
-                            type="text",
-                            text="Message sent (no response requested)"
-                        )
-                    ]
+                    return [TextContent(type="text", text="Message sent (no response requested)")]
 
                 elif name == "get_instance_output":
                     output = await self.manager.get_instance_output(
@@ -225,12 +215,7 @@ class OrchestrationMCPServer:
                         since=arguments.get("since"),
                         limit=arguments.get("limit", 100),
                     )
-                    return [
-                        TextContent(
-                            type="text",
-                            text=f"Instance output:\n{output}"
-                        )
-                    ]
+                    return [TextContent(type="text", text=f"Instance output:\n{output}")]
 
                 elif name == "coordinate_instances":
                     result = await self.manager.coordinate_instances(
@@ -239,12 +224,7 @@ class OrchestrationMCPServer:
                         task_description=arguments["task_description"],
                         coordination_type=arguments.get("coordination_type", "sequential"),
                     )
-                    return [
-                        TextContent(
-                            type="text",
-                            text=f"Coordination task completed: {result}"
-                        )
-                    ]
+                    return [TextContent(type="text", text=f"Coordination task completed: {result}")]
 
                 elif name == "terminate_instance":
                     success = await self.manager.terminate_instance(
@@ -255,13 +235,13 @@ class OrchestrationMCPServer:
                         return [
                             TextContent(
                                 type="text",
-                                text=f"Instance {arguments['instance_id']} terminated successfully"
+                                text=f"Instance {arguments['instance_id']} terminated successfully",
                             )
                         ]
                     return [
                         TextContent(
                             type="text",
-                            text=f"Failed to terminate instance {arguments['instance_id']}"
+                            text=f"Failed to terminate instance {arguments['instance_id']}",
                         )
                     ]
 
@@ -269,40 +249,15 @@ class OrchestrationMCPServer:
                     status = self.manager.get_instance_status(
                         instance_id=arguments.get("instance_id")
                     )
-                    return [
-                        TextContent(
-                            type="text",
-                            text=f"Instance status:\n{status}"
-                        )
-                    ]
+                    return [TextContent(type="text", text=f"Instance status:\n{status}")]
 
                 else:
-                    return [
-                        TextContent(
-                            type="text",
-                            text=f"Unknown tool: {name}"
-                        )
-                    ]
+                    return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
             except Exception as e:
                 logger.error(f"Error executing tool {name}: {e}")
-                return [
-                    TextContent(
-                        type="text",
-                        text=f"Error executing {name}: {str(e)}"
-                    )
-                ]
+                return [TextContent(type="text", text=f"Error executing {name}: {str(e)}")]
 
     async def run(self) -> Server:
         """Get the MCP server instance for running."""
-        # Initialize with options
-        init_options = InitializationOptions(
-            server_name="claude-orchestrator",
-            server_version="1.0.0",
-            capabilities=self.server.get_capabilities(
-                notification_options=None,
-                experimental_capabilities={},
-            ),
-        )
-
         return self.server

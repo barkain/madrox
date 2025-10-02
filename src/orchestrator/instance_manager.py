@@ -227,13 +227,15 @@ class InstanceManager:
         children = []
         for instance_id, instance in self.instances.items():
             if instance.get("parent_instance_id") == parent_id:
-                children.append({
-                    "id": instance_id,
-                    "name": instance.get("name"),
-                    "role": instance.get("role"),
-                    "state": instance.get("state"),
-                    "instance_type": instance.get("instance_type"),
-                })
+                children.append(
+                    {
+                        "id": instance_id,
+                        "name": instance.get("name"),
+                        "role": instance.get("role"),
+                        "state": instance.get("state"),
+                        "instance_type": instance.get("instance_type"),
+                    }
+                )
         return children
 
     async def broadcast_to_children(
@@ -272,19 +274,23 @@ class InstanceManager:
         for i, child in enumerate(children):
             result = results[i]
             if isinstance(result, Exception):
-                formatted_results.append({
-                    "child_id": child["id"],
-                    "child_name": child["name"],
-                    "status": "error",
-                    "error": str(result),
-                })
+                formatted_results.append(
+                    {
+                        "child_id": child["id"],
+                        "child_name": child["name"],
+                        "status": "error",
+                        "error": str(result),
+                    }
+                )
             else:
-                formatted_results.append({
-                    "child_id": child["id"],
-                    "child_name": child["name"],
-                    "status": "sent" if not wait_for_responses else "completed",
-                    "response": result if wait_for_responses else None,
-                })
+                formatted_results.append(
+                    {
+                        "child_id": child["id"],
+                        "child_name": child["name"],
+                        "status": "sent" if not wait_for_responses else "completed",
+                        "response": result if wait_for_responses else None,
+                    }
+                )
 
         return {
             "children_count": len(children),
@@ -312,7 +318,7 @@ class InstanceManager:
         # Build tree for each root
         lines = []
         for i, (root_id, _) in enumerate(roots):
-            is_last_root = (i == len(roots) - 1)
+            is_last_root = i == len(roots) - 1
             self._build_tree_recursive(root_id, "", is_last_root, lines, is_root=True)
 
         return "\n".join(lines)
@@ -347,7 +353,7 @@ class InstanceManager:
         children.sort(key=lambda x: x["name"])
 
         for i, child in enumerate(children):
-            is_last_child = (i == child_count - 1)
+            is_last_child = i == child_count - 1
             if is_root:
                 new_prefix = ""
             else:
@@ -453,6 +459,30 @@ class InstanceManager:
 
         return task_id
 
+    async def interrupt_instance(self, instance_id: str) -> dict[str, Any]:
+        """Send interrupt signal (Ctrl+C) to a running instance.
+
+        Args:
+            instance_id: Instance ID to interrupt
+
+        Returns:
+            Status dict with success/failure info
+        """
+        if instance_id not in self.instances:
+            raise ValueError(f"Instance {instance_id} not found")
+
+        instance = self.instances[instance_id]
+
+        # Delegate to TmuxInstanceManager for all instances
+        if instance.get("instance_type") in ["claude", "codex"]:
+            result = await self.tmux_manager.interrupt_instance(instance_id)
+            # Update main instances dict
+            self.instances[instance_id] = self.tmux_manager.instances[instance_id]
+            return result
+
+        # No other instance types supported
+        raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
+
     async def terminate_instance(self, instance_id: str, force: bool = False) -> bool:
         """Terminate a Claude or Codex instance.
 
@@ -508,21 +538,53 @@ class InstanceManager:
             }
 
     def _get_role_prompt(self, role: str) -> str:
-        """Get system prompt for a role."""
-        role_prompts = {
-            "general": "You are a helpful AI assistant capable of handling various tasks.",
-            "frontend_developer": "You are a senior frontend developer specializing in React, TypeScript, and modern web technologies.",
-            "backend_developer": "You are a senior backend developer specializing in Python, APIs, and distributed systems.",
-            "testing_specialist": "You are a testing specialist focused on writing comprehensive tests and ensuring code quality.",
-            "documentation_writer": "You are a technical writer who creates clear, comprehensive documentation.",
-            "code_reviewer": "You are a senior code reviewer who provides constructive feedback and ensures best practices.",
-            "architect": "You are a software architect who designs scalable systems and makes architectural decisions.",
-            "debugger": "You are a debugging specialist who identifies and fixes complex issues in code.",
-            "security_analyst": "You are a security specialist who identifies vulnerabilities and ensures secure coding practices.",
-            "data_analyst": "You are a data analyst who works with data processing, analysis, and visualization.",
-        }
+        """Get system prompt for a role by loading from resources/prompts directory.
 
-        return role_prompts.get(role, role_prompts["general"])
+        Args:
+            role: The role name (e.g., "general", "frontend_developer")
+
+        Returns:
+            The system prompt text for the role
+        """
+        from pathlib import Path
+
+        # Get the project root directory (parent of src/orchestrator)
+        current_file = Path(__file__)
+        project_root = current_file.parent.parent.parent
+        prompts_dir = project_root / "resources" / "prompts"
+
+        # Try to load from file
+        prompt_file = prompts_dir / f"{role}.txt"
+
+        try:
+            if prompt_file.exists():
+                return prompt_file.read_text(encoding="utf-8").strip()
+            else:
+                logger.warning(
+                    f"Prompt file not found for role '{role}', using fallback",
+                    extra={"role": role, "expected_path": str(prompt_file)},
+                )
+                # Fallback to basic prompts if file doesn't exist
+                fallback_prompts = {
+                    "general": "You are a helpful AI assistant capable of handling various tasks.",
+                    "frontend_developer": "You are a senior frontend developer specializing in React, TypeScript, and modern web technologies.",
+                    "backend_developer": "You are a senior backend developer specializing in Python, APIs, and distributed systems.",
+                    "testing_specialist": "You are a testing specialist focused on writing comprehensive tests and ensuring code quality.",
+                    "documentation_writer": "You are a technical writer who creates clear, comprehensive documentation.",
+                    "code_reviewer": "You are a senior code reviewer who provides constructive feedback and ensures best practices.",
+                    "architect": "You are a software architect who designs scalable systems and makes architectural decisions.",
+                    "debugger": "You are a debugging specialist who identifies and fixes complex issues in code.",
+                    "security_analyst": "You are a security specialist who identifies vulnerabilities and ensures secure coding practices.",
+                    "data_analyst": "You are a data analyst who works with data processing, analysis, and visualization.",
+                }
+                return fallback_prompts.get(role, fallback_prompts["general"])
+        except Exception as e:
+            logger.error(
+                f"Error loading prompt file for role '{role}': {e}",
+                extra={"role": role, "error": str(e)},
+            )
+            # Return minimal fallback on error
+            return f"You are a helpful AI assistant with expertise in {role.replace('_', ' ')}."
 
     async def _execute_coordination(self, coordination_task: dict[str, Any]):
         """Execute a coordination task."""
@@ -621,7 +683,9 @@ class InstanceManager:
                         if msg_index > self._last_main_message_index and msg.get("type") == "user":
                             self.main_message_inbox.append(msg)
                             self._last_main_message_index = msg_index
-                            logger.debug(f"Added message to main inbox: {msg.get('content', '')[:100]}")
+                            logger.debug(
+                                f"Added message to main inbox: {msg.get('content', '')[:100]}"
+                            )
                 except Exception as e:
                     logger.error(f"Monitor error getting messages: {e}")
 

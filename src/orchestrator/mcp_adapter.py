@@ -44,10 +44,12 @@ class MCPAdapter:
         if "content" in result:
             main_content = []
             for msg in main_messages:
-                main_content.append({
-                    "type": "text",
-                    "text": f"📨 Message from child instance:\n\n{msg.get('content', '')}"
-                })
+                main_content.append(
+                    {
+                        "type": "text",
+                        "text": f"📨 Message from child instance:\n\n{msg.get('content', '')}",
+                    }
+                )
 
             # Prepend to existing content
             result["content"] = main_content + result["content"]
@@ -329,6 +331,35 @@ class MCPAdapter:
                                 },
                             },
                             {
+                                "name": "interrupt_instance",
+                                "description": "Send interrupt signal (Ctrl+C / Escape) to stop current task without terminating the instance",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "instance_id": {
+                                            "type": "string",
+                                            "description": "Instance ID to interrupt",
+                                        },
+                                    },
+                                    "required": ["instance_id"],
+                                },
+                            },
+                            {
+                                "name": "interrupt_multiple_instances",
+                                "description": "Send interrupt signal to multiple instances in parallel",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "instance_ids": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                            "description": "List of instance IDs to interrupt",
+                                        },
+                                    },
+                                    "required": ["instance_ids"],
+                                },
+                            },
+                            {
                                 "name": "terminate_instance",
                                 "description": "Terminate a Claude instance",
                                 "inputSchema": {
@@ -405,7 +436,7 @@ class MCPAdapter:
                                             "type": "boolean",
                                             "description": "Wait for responses from all children (default: false)",
                                             "default": False,
-                                        }
+                                        },
                                     },
                                     "required": ["parent_id", "message"],
                                 },
@@ -788,6 +819,89 @@ class MCPAdapter:
                             ]
                         }
 
+                    elif tool_name == "interrupt_instance":
+                        interrupt_result = await self.manager.interrupt_instance(
+                            instance_id=tool_args["instance_id"]
+                        )
+                        if interrupt_result["success"]:
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"⏸️ Interrupt signal sent to instance {tool_args['instance_id']}\n"
+                                        f"Current task stopped, instance remains active and ready for new messages.",
+                                    }
+                                ]
+                            }
+                        else:
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"❌ Failed to interrupt instance {tool_args['instance_id']}: "
+                                        f"{interrupt_result.get('error', 'Unknown error')}",
+                                    }
+                                ],
+                                "isError": True,
+                            }
+
+                    elif tool_name == "interrupt_multiple_instances":
+                        instance_ids = tool_args.get("instance_ids", [])
+
+                        # Create interrupt tasks for all instances
+                        interrupt_tasks = []
+                        for instance_id in instance_ids:
+                            interrupt_tasks.append(
+                                self.manager.interrupt_instance(instance_id=instance_id)
+                            )
+
+                        # Execute all interrupts in parallel
+                        results = await asyncio.gather(*interrupt_tasks, return_exceptions=True)
+
+                        # Process results
+                        interrupted_instances = []
+                        errors = []
+
+                        for idx, result_item in enumerate(results):
+                            instance_id = instance_ids[idx]
+                            if isinstance(result_item, Exception):
+                                errors.append(
+                                    {"instance_id": instance_id, "error": str(result_item)}
+                                )
+                            elif isinstance(result_item, dict) and result_item.get("success"):
+                                interrupted_instances.append(instance_id)
+                            else:
+                                errors.append(
+                                    {
+                                        "instance_id": instance_id,
+                                        "error": result_item.get("error", "Unknown error"),
+                                    }
+                                )
+
+                        # Build response message
+                        message_parts = []
+                        if interrupted_instances:
+                            message_parts.append(
+                                f"⏸️ Interrupted {len(interrupted_instances)}/{len(instance_ids)} instances successfully:\n"
+                                + "\n".join(f"  - {iid}" for iid in interrupted_instances)
+                            )
+                        if errors:
+                            message_parts.append(
+                                f"\n❌ Errors ({len(errors)}):\n"
+                                + "\n".join(f"  - {e['instance_id']}: {e['error']}" for e in errors)
+                            )
+
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "\n".join(message_parts)
+                                    if message_parts
+                                    else "No instances interrupted",
+                                }
+                            ]
+                        }
+
                     elif tool_name == "terminate_instance":
                         success = await self.manager.terminate_instance(
                             instance_id=tool_args["instance_id"],
@@ -1047,14 +1161,13 @@ class MCPAdapter:
                         }
 
                     elif tool_name == "get_children":
-                        children = self.manager.get_children(
-                            parent_id=tool_args["parent_id"]
-                        )
+                        children = self.manager.get_children(parent_id=tool_args["parent_id"])
                         result = {
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Found {len(children)} children:\n\n" + json.dumps(children, indent=2)
+                                    "text": f"Found {len(children)} children:\n\n"
+                                    + json.dumps(children, indent=2),
                                 }
                             ]
                         }
@@ -1069,7 +1182,8 @@ class MCPAdapter:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Broadcasted to {broadcast_result['children_count']} children\n\n" + json.dumps(broadcast_result['results'], indent=2)
+                                    "text": f"Broadcasted to {broadcast_result['children_count']} children\n\n"
+                                    + json.dumps(broadcast_result["results"], indent=2),
                                 }
                             ]
                         }
@@ -1078,10 +1192,7 @@ class MCPAdapter:
                         tree_output = self.manager.get_instance_tree()
                         result = {
                             "content": [
-                                {
-                                    "type": "text",
-                                    "text": f"Instance Hierarchy:\n\n{tree_output}"
-                                }
+                                {"type": "text", "text": f"Instance Hierarchy:\n\n{tree_output}"}
                             ]
                         }
 

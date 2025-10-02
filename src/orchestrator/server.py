@@ -1,7 +1,6 @@
 """Claude Orchestrator MCP Server."""
 
 import asyncio
-import json
 import logging
 import os
 from datetime import datetime
@@ -15,15 +14,20 @@ except ImportError:
     class FastAPI:
         def __init__(self, *args, **kwargs):
             pass
+
         def add_middleware(self, *args, **kwargs):
             pass
+
         def get(self, *args, **kwargs):
             def decorator(func):
                 return func
+
             return decorator
+
         def post(self, *args, **kwargs):
             def decorator(func):
                 return func
+
             return decorator
 
     class HTTPException(Exception):
@@ -34,14 +38,12 @@ except ImportError:
     class CORSMiddleware:
         pass
 
+
 from .instance_manager import InstanceManager
 from .mcp_adapter import MCPAdapter
 from .simple_models import (
-    CoordinationTask,
     InstanceRole,
     OrchestratorConfig,
-    SendMessageRequest,
-    SpawnInstanceRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,10 +117,13 @@ class ClaudeOrchestratorServer:
                 "version": "1.0.0",
                 "instances": {
                     "total": len(self.instance_manager.instances),
-                    "running": len([
-                        i for i in self.instance_manager.instances.values()
-                        if i["state"] in ["running", "idle", "busy"]
-                    ]),
+                    "running": len(
+                        [
+                            i
+                            for i in self.instance_manager.instances.values()
+                            if i["state"] in ["running", "idle", "busy"]
+                        ]
+                    ),
                 },
             }
 
@@ -134,19 +139,41 @@ class ClaudeOrchestratorServer:
                         "input_schema": {
                             "type": "object",
                             "properties": {
-                                "name": {"type": "string", "description": "Optional custom name (auto-generates funny name if not provided)"},
-                                "auto_generate_name": {"type": "boolean", "description": "Force funny name generation even if name is provided", "default": False},
+                                "name": {
+                                    "type": "string",
+                                    "description": "Optional custom name (auto-generates funny name if not provided)",
+                                },
+                                "auto_generate_name": {
+                                    "type": "boolean",
+                                    "description": "Force funny name generation even if name is provided",
+                                    "default": False,
+                                },
                                 "role": {
                                     "type": "string",
                                     "enum": [role.value for role in InstanceRole],
                                     "description": "Predefined role for the instance",
                                 },
-                                "system_prompt": {"type": "string", "description": "Custom system prompt"},
+                                "system_prompt": {
+                                    "type": "string",
+                                    "description": "Custom system prompt",
+                                },
                                 "model": {"type": "string", "description": "Claude model to use"},
-                                "max_tokens": {"type": "integer", "description": "Max tokens per request"},
-                                "temperature": {"type": "number", "description": "Temperature setting"},
-                                "workspace_dir": {"type": "string", "description": "Working directory"},
-                                "parent_instance_id": {"type": "string", "description": "Parent instance ID"},
+                                "max_tokens": {
+                                    "type": "integer",
+                                    "description": "Max tokens per request",
+                                },
+                                "temperature": {
+                                    "type": "number",
+                                    "description": "Temperature setting",
+                                },
+                                "workspace_dir": {
+                                    "type": "string",
+                                    "description": "Working directory",
+                                },
+                                "parent_instance_id": {
+                                    "type": "string",
+                                    "description": "Parent instance ID",
+                                },
                             },
                             "required": [],
                         },
@@ -157,10 +184,19 @@ class ClaudeOrchestratorServer:
                         "input_schema": {
                             "type": "object",
                             "properties": {
-                                "instance_id": {"type": "string", "description": "Target instance ID"},
+                                "instance_id": {
+                                    "type": "string",
+                                    "description": "Target instance ID",
+                                },
                                 "message": {"type": "string", "description": "Message to send"},
-                                "wait_for_response": {"type": "boolean", "description": "Wait for response"},
-                                "timeout_seconds": {"type": "integer", "description": "Response timeout"},
+                                "wait_for_response": {
+                                    "type": "boolean",
+                                    "description": "Wait for response",
+                                },
+                                "timeout_seconds": {
+                                    "type": "integer",
+                                    "description": "Response timeout",
+                                },
                                 "priority": {"type": "integer", "description": "Message priority"},
                             },
                             "required": ["instance_id", "message"],
@@ -173,8 +209,14 @@ class ClaudeOrchestratorServer:
                             "type": "object",
                             "properties": {
                                 "instance_id": {"type": "string", "description": "Instance ID"},
-                                "since": {"type": "string", "description": "ISO timestamp to get messages since"},
-                                "limit": {"type": "integer", "description": "Maximum number of messages"},
+                                "since": {
+                                    "type": "string",
+                                    "description": "ISO timestamp to get messages since",
+                                },
+                                "limit": {
+                                    "type": "integer",
+                                    "description": "Maximum number of messages",
+                                },
                             },
                             "required": ["instance_id"],
                         },
@@ -185,13 +227,19 @@ class ClaudeOrchestratorServer:
                         "input_schema": {
                             "type": "object",
                             "properties": {
-                                "coordinator_id": {"type": "string", "description": "Coordinating instance ID"},
+                                "coordinator_id": {
+                                    "type": "string",
+                                    "description": "Coordinating instance ID",
+                                },
                                 "participant_ids": {
                                     "type": "array",
                                     "items": {"type": "string"},
                                     "description": "Participating instance IDs",
                                 },
-                                "task_description": {"type": "string", "description": "Task description"},
+                                "task_description": {
+                                    "type": "string",
+                                    "description": "Task description",
+                                },
                                 "coordination_type": {
                                     "type": "string",
                                     "enum": ["sequential", "parallel", "consensus"],
@@ -207,8 +255,14 @@ class ClaudeOrchestratorServer:
                         "input_schema": {
                             "type": "object",
                             "properties": {
-                                "instance_id": {"type": "string", "description": "Instance ID to terminate"},
-                                "force": {"type": "boolean", "description": "Force termination even if busy"},
+                                "instance_id": {
+                                    "type": "string",
+                                    "description": "Instance ID to terminate",
+                                },
+                                "force": {
+                                    "type": "boolean",
+                                    "description": "Force termination even if busy",
+                                },
                             },
                             "required": ["instance_id"],
                         },
@@ -253,7 +307,7 @@ class ClaudeOrchestratorServer:
 
             except Exception as e:
                 logger.error(f"Error executing tool {tool_name}: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+                raise HTTPException(status_code=500, detail=str(e)) from e
 
         @self.app.get("/instances")
         async def list_instances():
@@ -266,7 +320,7 @@ class ClaudeOrchestratorServer:
             try:
                 return self.instance_manager.get_instance_status(instance_id)
             except ValueError as e:
-                raise HTTPException(status_code=404, detail=str(e))
+                raise HTTPException(status_code=404, detail=str(e)) from e
 
         @self.app.post("/instances/{instance_id}/health")
         async def instance_health_check(instance_id: str):
@@ -283,7 +337,7 @@ class ClaudeOrchestratorServer:
                     ).total_seconds(),
                 }
             except ValueError as e:
-                raise HTTPException(status_code=404, detail=str(e))
+                raise HTTPException(status_code=404, detail=str(e)) from e
 
     async def _spawn_claude(
         self,
@@ -297,17 +351,32 @@ class ClaudeOrchestratorServer:
         workspace_dir: str | None = None,
         parent_instance_id: str | None = None,
         use_pty: bool = False,  # Back to subprocess for reliability
-        **kwargs
+        **kwargs,
     ) -> dict[str, Any]:
         """Spawn a new Claude instance."""
         # Force funny name generation if requested or if name is empty/generic
-        generic_names = ["unnamed", "assistant", "claude_assistant", "auto_instance",
-                        "assistant-1", "assistant-2", "assistant-3", "assistant-4",
-                        "madrox-instance", "instance"]
-        if (auto_generate_name or not name or name == "" or
-            any(name and name.lower().startswith(g) for g in generic_names)):
+        generic_names = [
+            "unnamed",
+            "assistant",
+            "claude_assistant",
+            "auto_instance",
+            "assistant-1",
+            "assistant-2",
+            "assistant-3",
+            "assistant-4",
+            "madrox-instance",
+            "instance",
+        ]
+        if (
+            auto_generate_name
+            or not name
+            or name == ""
+            or any(name and name.lower().startswith(g) for g in generic_names)
+        ):
             name = None
-        logger.info(f"Spawning Claude instance: {name if name else 'auto-generated funny name'} with role {role}")
+        logger.info(
+            f"Spawning Claude instance: {name if name else 'auto-generated funny name'} with role {role}"
+        )
 
         try:
             # Validate role
@@ -324,7 +393,7 @@ class ClaudeOrchestratorServer:
                 workspace_dir=workspace_dir,
                 parent_instance_id=parent_instance_id,
                 use_pty=use_pty,
-                **kwargs
+                **kwargs,
             )
 
             # Get the actual instance to get the generated name
@@ -379,7 +448,8 @@ class ClaudeOrchestratorServer:
                 return {
                     "success": True,
                     "instance_id": instance_id,
-                    "message": "Message sent" + (" (no response requested)" if not wait_for_response else " (timeout)"),
+                    "message": "Message sent"
+                    + (" (no response requested)" if not wait_for_response else " (timeout)"),
                 }
 
         except Exception as e:
@@ -524,14 +594,19 @@ class ClaudeOrchestratorServer:
             class Config:
                 def __init__(self, *args, **kwargs):
                     pass
+
             class Server:
                 def __init__(self, *args, **kwargs):
                     pass
+
                 async def serve(self):
                     pass
-            uvicorn = type('uvicorn', (), {'Config': Config, 'Server': Server})()
 
-        logger.info(f"Starting Claude Orchestrator Server on {self.config.server_host}:{self.config.server_port}")
+            uvicorn = type("uvicorn", (), {"Config": Config, "Server": Server})()
+
+        logger.info(
+            f"Starting Claude Orchestrator Server on {self.config.server_host}:{self.config.server_port}"
+        )
 
         # Start health check background task
         asyncio.create_task(self._health_check_loop())
