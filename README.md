@@ -1,8 +1,8 @@
-# Madrox - Hierarchical Multi-Agent Orchestrator
-
 <p align="center">
   <img src="madrox.png" alt="Madrox Logo" width="400"/>
 </p>
+
+# Madrox - Hierarchical Multi-Agent Orchestrator
 
 A Model Context Protocol (MCP) server that enables AI instances to spawn and manage hierarchical networks of Claude and Codex instances. This system supports sophisticated multi-agent orchestration with parent-child relationships, bidirectional communication, role-based specialization, and intelligent coordination across multiple AI models.
 
