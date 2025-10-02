@@ -6,6 +6,61 @@
 
 A Model Context Protocol (MCP) server that enables AI instances to spawn and manage hierarchical networks of Claude and Codex instances. This system supports sophisticated multi-agent orchestration with parent-child relationships, bidirectional communication, role-based specialization, and intelligent coordination across multiple AI models.
 
+## 🌟 See It In Action
+
+Here's how Madrox orchestrates a real-world workflow: **implementing a feature from a research paper**.
+
+```mermaid
+graph TD
+    User[👤 You: 'Implement transformer attention from this paper']
+
+    User --> Coordinator[🎯 Coordinator Instance<br/>Architect Role]
+
+    Coordinator -->|spawns & delegates| Research[📚 Research Instance<br/>analyze paper]
+    Coordinator -->|spawns & delegates| Design[🏗️ Design Instance<br/>system architecture]
+
+    Research -->|paper analysis| Design
+    Design -->|architecture spec| Coordinator
+
+    Coordinator -->|parallel spawn| Frontend[⚛️ Frontend Dev<br/>UI components]
+    Coordinator -->|parallel spawn| Backend[🔧 Backend Dev<br/>API + logic]
+    Coordinator -->|parallel spawn| Codex[🤖 Codex Instance<br/>optimization]
+
+    Frontend -->|progress updates| Coordinator
+    Backend -->|progress updates| Coordinator
+    Codex -->|optimized code| Backend
+
+    Coordinator -->|spawns when ready| Tester[🧪 Testing Specialist<br/>test suite]
+    Coordinator -->|spawns when ready| DocWriter[📝 Documentation Writer<br/>API docs]
+
+    Backend -->|implementation| Tester
+    Frontend -->|components| Tester
+
+    Tester -->|test results| Coordinator
+    DocWriter -->|documentation| Coordinator
+
+    Coordinator -->|aggregated result| User
+
+    style User fill:#e1f5ff
+    style Coordinator fill:#fff3cd
+    style Research fill:#d4edda
+    style Design fill:#d4edda
+    style Frontend fill:#cce5ff
+    style Backend fill:#cce5ff
+    style Codex fill:#f8d7da
+    style Tester fill:#d1ecf1
+    style DocWriter fill:#d1ecf1
+```
+
+**What's happening:**
+1. **Hierarchical Coordination**: Coordinator spawns specialized instances as needed
+2. **Parallel Execution**: Frontend, Backend, and Codex work simultaneously
+3. **Multi-Model**: Mix Claude instances (architecture, testing) with Codex (optimization)
+4. **Dynamic Workflow**: Testing/docs instances spawn only when implementation is ready
+5. **Bidirectional Communication**: Children report progress, parent aggregates results
+
+**Result**: Complex multi-week task completed through orchestrated collaboration, not monolithic prompting.
+
 ## 🎯 Features
 
 ### Core Orchestration Tools
