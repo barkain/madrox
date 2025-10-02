@@ -182,6 +182,67 @@ graph TD
 
 **Result**: Working keygen with comprehensive validation (1000+ tests) and multi-format documentation - impossible with flat single-instance or even single-level orchestration.
 
+## 🆚 Why Madrox vs Claude's Built-in Subagent?
+
+Claude has a built-in subagent capability, but Madrox transforms it into a **true multi-agent operating system**. Here's what sets it apart:
+
+### Top 10 Advantages (Ranked by Impact)
+
+| Rank | Feature | Madrox | Claude Subagent | User Value |
+|------|---------|--------|-----------------|------------|
+| 🥇 | **Hierarchical Depth** | 3+ levels (recursive spawning) | 2 levels max (flat) | 10x complexity handling - instances spawn their own teams |
+| 🥈 | **Multi-Model Networks** | Claude + Codex + future models | Claude only | Best-of-breed: use optimal model per task |
+| 🥉 | **Task Interruption** | ✅ Stop & redirect without losing context | ❌ Must terminate & restart | Save hours - change direction mid-task |
+| 4️⃣ | **Network Visibility** | Full tree view, status, metrics | ❌ Black box | Debug & monitor complex workflows |
+| 5️⃣ | **Parallel Operations** | Batch spawn/message/interrupt | ❌ Sequential only | 10x faster - spawn 10 instances simultaneously |
+| 6️⃣ | **Bidirectional Comms** | Parent ↔ Child + broadcast | → One-way only | Real coordination - children report back |
+| 7️⃣ | **Workspace Isolation** | Per-instance directories | ❌ Shared workspace | Production-safe - no file conflicts |
+| 8️⃣ | **Expert Roles** | 10 comprehensive roles (70-120 line prompts) | Generic prompts | Quality multiplier - expert-level outputs |
+| 9️⃣ | **Resource Tracking** | Tokens, cost limits, auto-cleanup | ❌ No tracking | Budget protection - prevent runaway costs |
+| 🔟 | **State Persistence** | Cross-session, resume workflows | ❌ Per-conversation only | Resume work days later |
+
+### Key Differentiators Explained
+
+**1. True Hierarchical Orchestration** 🏆
+- **Madrox**: Crypto Analyst spawns Hash Expert + LCG Expert + Constant Matcher (3 levels deep)
+- **Built-in**: Only top-level can spawn, no grandchildren possible
+- **Impact**: Handle exponentially complex tasks with natural delegation trees
+
+**2. Multi-Model Networks** 🤖
+- **Madrox**: Mix Claude Opus (architecture) + Sonnet (implementation) + Codex (optimization)
+- **Built-in**: Claude instances only
+- **Impact**: Cost optimization + best model for each task type
+
+**3. Task Interruption & Control** ⚡
+- **Madrox**: `interrupt_instance()` - stop work, keep context, redirect
+- **Built-in**: No interrupt - must terminate and lose everything
+- **Impact**: "Stop profiling, just fix top 3 issues" - saves hours of rework
+
+**4. Network Management** 📊
+- **Madrox**: `get_instance_tree()` shows entire network topology in real-time
+- **Built-in**: Zero visibility into subagent state
+- **Impact**: Debug which instance is stuck, track progress across 20+ instances
+
+**5. Production Features** 💼
+- **Madrox**: Workspace isolation, resource limits, health monitoring, cross-session persistence
+- **Built-in**: Shared workspace, no limits, ephemeral state
+- **Impact**: Safe for real projects, not just demos
+
+### The Bottom Line
+
+**Claude's subagent** is great for simple delegation (1 parent → 3-5 children).
+
+**Madrox** enables **enterprise-grade multi-agent orchestration**:
+- 🌳 **Recursive hierarchies** (21+ instances across 3 levels)
+- 🎯 **Multi-week workflows** (reverse engineering, feature implementation)
+- 💰 **Cost-controlled** (token limits, auto-cleanup)
+- 🔄 **Resumable** (persist state across sessions)
+- 📊 **Observable** (full network visibility)
+
+**Think of it this way:**
+- Built-in subagent = **You + 5 contractors**
+- Madrox = **You + Engineering Managers + Team Leads + 15 specialists** (with full org chart visibility)
+
 ## 🎯 Features
 
 ### Core Orchestration Tools
