@@ -177,6 +177,7 @@ class OrchestratorConfig:
         workspace_base_dir: str = "/tmp/claude_orchestrator",
         enable_isolation: bool = True,
         database_url: str = "sqlite:///claude_orchestrator.db",
+        log_dir: str = "/tmp/madrox_logs",
         log_level: str = "INFO",
         enable_metrics: bool = True,
         metrics_port: int = 9090,
@@ -192,6 +193,7 @@ class OrchestratorConfig:
         self.workspace_base_dir = workspace_base_dir
         self.enable_isolation = enable_isolation
         self.database_url = database_url
+        self.log_dir = log_dir
         self.log_level = log_level
         self.enable_metrics = enable_metrics
         self.metrics_port = metrics_port
