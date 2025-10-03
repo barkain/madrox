@@ -23,6 +23,7 @@ dependencies = [
     "aiohttp>=3.12.15",
     "sse-starlette>=3.0.2",
     "libtmux>=0.46.2",
+    "psutil>=7.1.0",
 ]
 
 [project.optional-dependencies]
