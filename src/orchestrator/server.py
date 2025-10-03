@@ -339,6 +339,21 @@ class ClaudeOrchestratorServer:
             except ValueError as e:
                 raise HTTPException(status_code=404, detail=str(e)) from e
 
+        @self.app.get("/logs/audit")
+        async def get_audit_logs(limit: int = 100, since: str | None = None):
+            """Get audit logs with optional filtering."""
+            return await self._get_audit_logs(limit=limit, since=since)
+
+        @self.app.get("/logs/instances/{instance_id}")
+        async def get_instance_logs(instance_id: str, limit: int = 100, since: str | None = None):
+            """Get logs for a specific instance."""
+            return await self._get_instance_logs(instance_id=instance_id, limit=limit, since=since)
+
+        @self.app.get("/logs/communication/{instance_id}")
+        async def get_communication_logs(instance_id: str, limit: int = 100, since: str | None = None):
+            """Get communication logs for a specific instance."""
+            return await self._get_communication_logs(instance_id=instance_id, limit=limit, since=since)
+
     async def _spawn_claude(
         self,
         name: str | None = None,
@@ -620,6 +635,85 @@ class ClaudeOrchestratorServer:
         )
         server = uvicorn.Server(config)
         await server.serve()
+
+    async def _get_audit_logs(self, limit: int = 100, since: str | None = None) -> dict[str, Any]:
+        """Get audit logs from the logging system."""
+        from pathlib import Path
+        import json
+
+        log_dir = Path(self.config.log_dir) / "audit"
+        today = datetime.utcnow().strftime("%Y%m%d")
+        audit_file = log_dir / f"audit_{today}.jsonl"
+
+        logs = []
+        if audit_file.exists():
+            with open(audit_file) as f:
+                for line in f:
+                    if line.strip():
+                        log_entry = json.loads(line)
+                        if since:
+                            if log_entry["timestamp"] >= since:
+                                logs.append(log_entry)
+                        else:
+                            logs.append(log_entry)
+
+        return {
+            "logs": logs[-limit:] if logs else [],
+            "total": len(logs),
+            "file": str(audit_file)
+        }
+
+    async def _get_instance_logs(self, instance_id: str, limit: int = 100, since: str | None = None) -> dict[str, Any]:
+        """Get instance logs."""
+        from pathlib import Path
+
+        log_dir = Path(self.config.log_dir) / "instances" / instance_id
+        instance_log = log_dir / "instance.log"
+
+        if not instance_log.exists():
+            raise HTTPException(status_code=404, detail=f"No logs found for instance {instance_id}")
+
+        logs = []
+        with open(instance_log) as f:
+            for line in f:
+                if line.strip():
+                    logs.append(line.strip())
+
+        return {
+            "logs": logs[-limit:] if logs else [],
+            "total": len(logs),
+            "instance_id": instance_id,
+            "file": str(instance_log)
+        }
+
+    async def _get_communication_logs(self, instance_id: str, limit: int = 100, since: str | None = None) -> dict[str, Any]:
+        """Get communication logs for an instance."""
+        from pathlib import Path
+        import json
+
+        log_dir = Path(self.config.log_dir) / "instances" / instance_id
+        comm_log = log_dir / "communication.jsonl"
+
+        if not comm_log.exists():
+            raise HTTPException(status_code=404, detail=f"No communication logs found for instance {instance_id}")
+
+        logs = []
+        with open(comm_log) as f:
+            for line in f:
+                if line.strip():
+                    log_entry = json.loads(line)
+                    if since:
+                        if log_entry["timestamp"] >= since:
+                            logs.append(log_entry)
+                    else:
+                        logs.append(log_entry)
+
+        return {
+            "logs": logs[-limit:] if logs else [],
+            "total": len(logs),
+            "instance_id": instance_id,
+            "file": str(comm_log)
+        }
 
     async def _health_check_loop(self):
         """Background health check loop."""
