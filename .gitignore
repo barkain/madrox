@@ -65,3 +65,8 @@ uv.lock
 # Test scripts in root (use tests/ directory for real tests)
 /test_*.py
 /*.txt
+# Debug artifacts
+debug_network_run.log
+debug_summary_initial.md
+network_monitor_history.json
+debug_network.log
