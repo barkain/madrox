@@ -328,7 +328,13 @@ class TmuxInstanceManager:
             pane = window.panes[0]
 
             # Send the message
-            pane.send_keys(message, enter=True)
+            # For Codex instances, send_keys with enter=True doesn't work reliably
+            # Need to send Enter as separate command
+            if instance.get("instance_type") == "codex":
+                pane.send_keys(message, enter=False)
+                pane.send_keys("", enter=True)  # Send Enter separately
+            else:
+                pane.send_keys(message, enter=True)
             logger.debug(f"Sent message to instance {instance_id} via tmux")
 
             if not wait_for_response:
