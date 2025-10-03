@@ -620,6 +620,35 @@ I'll handle all tasks directly without spawning additional instances.
 
 Madrox supports **dual transport modes** (HTTP and stdio) with a unified instance registry.
 
+### Unified View
+
+Both transports share the same instance registry:
+
+```
+┌─────────────────────────────────────────────────┐
+│         HTTP Server (:8001)                     │
+│         Single Source of Truth                  │
+│  ┌───────────────────────────────────────────┐  │
+│  │   Instance Manager                        │  │
+│  │   - All instances tracked here            │  │
+│  │   - Parent-child relationships            │  │
+│  │   - Resource tracking                     │  │
+│  └───────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────┘
+         ▲                           ▲
+         │                           │
+         │                           │
+    HTTP requests              Proxied requests
+         │                           │
+         │                           │
+┌────────┴────────┐         ┌────────┴────────────┐
+│  Claude Code    │         │  Stdio Server       │
+│  (HTTP)         │         │  (proxies to HTTP)  │
+│                 │         │                     │
+│  curl commands  │         │  Codex CLI          │
+└─────────────────┘         └─────────────────────┘
+```
+
 ### Transport Modes
 
 | Transport | Port/Protocol | Use Cases | Role |
