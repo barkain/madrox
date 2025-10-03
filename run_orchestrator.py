@@ -22,6 +22,7 @@ def main():
             server_port=int(os.getenv("ORCHESTRATOR_PORT", "8001")),
             max_concurrent_instances=int(os.getenv("MAX_INSTANCES", "10")),
             workspace_base_dir=os.getenv("WORKSPACE_DIR", "/tmp/claude_orchestrator"),
+            log_dir=os.getenv("LOG_DIR", "/tmp/madrox_logs"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
         )
 

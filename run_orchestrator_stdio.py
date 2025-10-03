@@ -12,11 +12,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import aiohttp
+
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.orchestrator.instance_manager import InstanceManager
-from src.orchestrator.simple_models import InstanceRole, OrchestratorConfig
+from src.orchestrator.simple_models import InstanceRole
 
 # Setup logging to stderr to avoid interfering with stdio
 logging.basicConfig(
@@ -28,24 +29,32 @@ logger = logging.getLogger(__name__)
 
 
 class MadroxStdioServer:
-    """Stdio MCP Server for Madrox orchestrator using JSON-RPC."""
+    """Stdio MCP Server for Madrox orchestrator using JSON-RPC.
+
+    This server proxies all operations to the HTTP server to maintain
+    a unified view of all instances regardless of which server spawned them.
+    """
 
     def __init__(self):
         """Initialize the stdio MCP server."""
-        # Load configuration from environment
-        self.config = OrchestratorConfig(
-            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-            server_host="stdio",
-            server_port=0,  # Not used for stdio
-            max_concurrent_instances=int(os.getenv("MAX_INSTANCES", "10")),
-            workspace_base_dir=os.getenv("WORKSPACE_DIR", "/tmp/claude_orchestrator"),
-            log_level=os.getenv("LOG_LEVEL", "INFO"),
-        )
+        # HTTP server endpoint for proxying requests
+        self.http_server_url = os.getenv("MADROX_HTTP_SERVER", "http://localhost:8001")
 
-        self.instance_manager = InstanceManager(self.config.to_dict())
         self.server_info = {"name": "madrox", "version": "1.0.0", "vendor": "claude-orchestrator"}
 
-        logger.info("Madrox Stdio MCP Server initialized")
+        logger.info(f"Madrox Stdio MCP Server initialized (proxying to {self.http_server_url})")
+
+    async def _http_request(self, method: str, endpoint: str, **kwargs) -> dict:
+        """Make HTTP request to the main orchestrator server."""
+        url = f"{self.http_server_url}{endpoint}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.request(method, url, **kwargs) as response:
+                    response.raise_for_status()
+                    return await response.json()
+        except Exception as e:
+            logger.error(f"HTTP request failed: {method} {url} - {e}")
+            raise
 
     def create_response(self, id: Any, result: Any = None, error: Any = None) -> dict:
         """Create a JSON-RPC response."""
@@ -190,33 +199,77 @@ class MadroxStdioServer:
         name: str,
         role: str = "general",
         system_prompt: str | None = None,
-        model: str = "claude-4-sonnet-20250514",
-        use_pty: bool = True,  # Force PTY mode for interactive Claude CLI
+        model: str | None = None,
         **kwargs,
     ) -> dict:
-        """Spawn a new Claude instance."""
+        """Spawn a new Claude instance (proxied to HTTP server)."""
         try:
-            if role not in [r.value for r in InstanceRole]:
-                role = InstanceRole.GENERAL.value
+            # Normalize parameter names (Codex uses parent_id, HTTP server expects parent_instance_id)
+            if "parent_id" in kwargs:
+                kwargs["parent_instance_id"] = kwargs.pop("parent_id")
 
-            instance_id = await self.instance_manager.spawn_instance(
-                name=name, role=role, system_prompt=system_prompt,
-                model=model, use_pty=use_pty, **kwargs
+            # Proxy request to HTTP server
+            payload = {
+                "name": name,
+                "role": role,
+                "system_prompt": system_prompt,
+                "model": model,
+                **kwargs
+            }
+            # Remove None values
+            payload = {k: v for k, v in payload.items() if v is not None}
+
+            result = await self._http_request(
+                "POST",
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "spawn_claude",
+                        "arguments": payload
+                    }
+                }
             )
 
-            instance = self.instance_manager.instances[instance_id]
-
-            return {
-                "success": True,
-                "instance_id": instance_id,
-                "name": instance["name"],
-                "role": role,
-                "model": model,
-                "message": f"Successfully spawned Claude instance '{instance['name']}'",
-            }
+            # Extract result from JSON-RPC response
+            if "result" in result and "content" in result["result"]:
+                content = result["result"]["content"][0]["text"]
+                return json.loads(content)
+            else:
+                return {"success": False, "error": "Invalid response from HTTP server"}
 
         except Exception as e:
             logger.error(f"Failed to spawn instance: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _proxy_tool(self, tool_name: str, arguments: dict) -> dict:
+        """Proxy any tool call to HTTP server."""
+        try:
+            result = await self._http_request(
+                "POST",
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": tool_name,
+                        "arguments": arguments
+                    }
+                }
+            )
+
+            # Extract result from JSON-RPC response
+            if "result" in result and "content" in result["result"]:
+                content = result["result"]["content"][0]["text"]
+                return json.loads(content)
+            else:
+                return {"success": False, "error": "Invalid response from HTTP server"}
+
+        except Exception as e:
+            logger.error(f"Failed to proxy tool {tool_name}: {e}")
             return {"success": False, "error": str(e)}
 
     async def send_to_instance(
@@ -227,49 +280,25 @@ class MadroxStdioServer:
         timeout_seconds: int = 30,
         **kwargs,
     ) -> dict:
-        """Send message to Claude instance."""
-        try:
-            response = await self.instance_manager.send_to_instance(
-                instance_id=instance_id,
-                message=message,
-                wait_for_response=wait_for_response,
-                timeout_seconds=timeout_seconds,
-                **kwargs,
-            )
-
-            if response:
-                return {
-                    "success": True,
-                    "instance_id": instance_id,
-                    "response": response,
-                    "message": "Message sent and response received",
-                }
-            else:
-                return {"success": True, "instance_id": instance_id, "message": "Message sent"}
-
-        except Exception as e:
-            logger.error(f"Failed to send message: {e}")
-            return {"success": False, "error": str(e)}
+        """Send message to Claude instance (proxied to HTTP server)."""
+        return await self._proxy_tool("send_to_instance", {
+            "instance_id": instance_id,
+            "message": message,
+            "wait_for_response": wait_for_response,
+            "timeout_seconds": timeout_seconds,
+            **kwargs
+        })
 
     async def get_instance_output(
         self, instance_id: str, since: str | None = None, limit: int = 100, **kwargs
     ) -> dict:
-        """Get instance output."""
-        try:
-            output = await self.instance_manager.get_instance_output(
-                instance_id=instance_id, since=since, limit=limit
-            )
-
-            return {
-                "success": True,
-                "instance_id": instance_id,
-                "output": output,
-                "count": len(output),
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to get output: {e}")
-            return {"success": False, "error": str(e)}
+        """Get instance output (proxied to HTTP server)."""
+        return await self._proxy_tool("get_instance_output", {
+            "instance_id": instance_id,
+            "since": since,
+            "limit": limit,
+            **kwargs
+        })
 
     async def coordinate_instances(
         self,
@@ -279,60 +308,29 @@ class MadroxStdioServer:
         coordination_type: str = "sequential",
         **kwargs,
     ) -> dict:
-        """Coordinate multiple instances."""
-        try:
-            task_id = await self.instance_manager.coordinate_instances(
-                coordinator_id=coordinator_id,
-                participant_ids=participant_ids,
-                task_description=task_description,
-                coordination_type=coordination_type,
-            )
-
-            return {
-                "success": True,
-                "task_id": task_id,
-                "coordinator_id": coordinator_id,
-                "participant_ids": participant_ids,
-                "coordination_type": coordination_type,
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to start coordination: {e}")
-            return {"success": False, "error": str(e)}
+        """Coordinate multiple instances (proxied to HTTP server)."""
+        return await self._proxy_tool("coordinate_instances", {
+            "coordinator_id": coordinator_id,
+            "participant_ids": participant_ids,
+            "task_description": task_description,
+            "coordination_type": coordination_type,
+            **kwargs
+        })
 
     async def terminate_instance(self, instance_id: str, force: bool = False, **kwargs) -> dict:
-        """Terminate Claude instance."""
-        try:
-            success = await self.instance_manager.terminate_instance(
-                instance_id=instance_id, force=force
-            )
-
-            if success:
-                return {
-                    "success": True,
-                    "instance_id": instance_id,
-                    "message": f"Successfully terminated instance {instance_id}",
-                }
-            else:
-                return {
-                    "success": False,
-                    "instance_id": instance_id,
-                    "message": f"Failed to terminate instance {instance_id}",
-                }
-
-        except Exception as e:
-            logger.error(f"Failed to terminate instance: {e}")
-            return {"success": False, "error": str(e)}
+        """Terminate Claude instance (proxied to HTTP server)."""
+        return await self._proxy_tool("terminate_instance", {
+            "instance_id": instance_id,
+            "force": force,
+            **kwargs
+        })
 
     async def get_instance_status(self, instance_id: str | None = None, **kwargs) -> dict:
-        """Get instance status."""
-        try:
-            status = self.instance_manager.get_instance_status(instance_id)
-            return {"success": True, "status": status}
-
-        except Exception as e:
-            logger.error(f"Failed to get instance status: {e}")
-            return {"success": False, "error": str(e)}
+        """Get instance status (proxied to HTTP server)."""
+        args = {**kwargs}
+        if instance_id is not None:
+            args["instance_id"] = instance_id
+        return await self._proxy_tool("get_instance_status", args)
 
     async def handle_request(self, request: dict) -> dict | None:
         """Handle a JSON-RPC request."""

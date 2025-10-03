@@ -23,16 +23,18 @@ logger = logging.getLogger(__name__)
 class TmuxInstanceManager:
     """Manages Claude instances via tmux sessions."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any], logging_manager=None):
         """Initialize the tmux instance manager.
 
         Args:
             config: Configuration dictionary
+            logging_manager: Optional LoggingManager instance for structured logging
         """
         self.config = config
         self.instances: dict[str, dict[str, Any]] = {}
         self.tmux_sessions: dict[str, libtmux.Session] = {}
         self.message_history: dict[str, list[dict]] = {}
+        self.logging_manager = logging_manager
 
         # Resource tracking
         self.total_tokens_used = 0
@@ -172,6 +174,25 @@ class TmuxInstanceManager:
         self.instances[instance_id] = instance
         self.message_history[instance_id] = []
 
+        # Setup instance-specific logger
+        if self.logging_manager:
+            instance_logger = self.logging_manager.get_instance_logger(instance_id, instance_name)
+            instance_logger.info(f"Instance created with role: {role}, type: {instance_type}")
+
+            # Log audit event
+            self.logging_manager.log_audit_event(
+                event_type="instance_spawn",
+                instance_id=instance_id,
+                details={
+                    "instance_name": instance_name,
+                    "role": role,
+                    "instance_type": instance_type,
+                    "model": model,
+                    "enable_madrox": enable_madrox,
+                    "bypass_isolation": bypass_isolation,
+                },
+            )
+
         # Start the tmux session
         if wait_for_ready:
             # Blocking: wait for full initialization
@@ -184,9 +205,16 @@ class TmuxInstanceManager:
                         "instance_id": instance_id,
                         "instance_type": instance_type,
                         "role": role,
-                        "name": instance_name,
+                        "instance_name": instance_name,
                     },
                 )
+
+                if self.logging_manager:
+                    instance_logger = self.logging_manager.get_instance_logger(
+                        instance_id, instance_name
+                    )
+                    instance_logger.info("Instance initialization completed successfully")
+
             except Exception as e:
                 instance["state"] = "error"
                 instance["error_message"] = str(e)
@@ -194,6 +222,13 @@ class TmuxInstanceManager:
                     f"Failed to initialize tmux instance {instance_id}: {e}",
                     extra={"instance_id": instance_id, "error": str(e)},
                 )
+
+                if self.logging_manager:
+                    instance_logger = self.logging_manager.get_instance_logger(
+                        instance_id, instance_name
+                    )
+                    instance_logger.error(f"Initialization failed: {e}")
+
                 raise
         else:
             # Non-blocking: launch initialization in background
@@ -221,7 +256,7 @@ class TmuxInstanceManager:
             instance["state"] = "running"
             logger.info(
                 f"Background initialization completed for instance {instance_id} ({instance['name']})",
-                extra={"instance_id": instance_id, "name": instance["name"]},
+                extra={"instance_id": instance_id, "instance_name": instance["name"]},
             )
         except Exception as e:
             instance["state"] = "error"
@@ -262,11 +297,30 @@ class TmuxInstanceManager:
         instance["state"] = "busy"
         instance["last_activity"] = datetime.now(UTC).isoformat()
 
+        # Generate message ID for tracking
+        message_id = str(uuid.uuid4())
+        send_timestamp = datetime.now(UTC)
+
         try:
             # Record message in history
             self.message_history[instance_id].append(
-                {"role": "user", "content": message, "timestamp": datetime.now(UTC).isoformat()}
+                {"role": "user", "content": message, "timestamp": send_timestamp.isoformat()}
             )
+
+            # Log communication event
+            if self.logging_manager:
+                instance_logger = self.logging_manager.get_instance_logger(
+                    instance_id, instance.get("name")
+                )
+                instance_logger.info(
+                    f"Sending message (wait={wait_for_response}): {message[:100]}...",
+                    extra={
+                        "event_type": "message_sent",
+                        "message_id": message_id,
+                        "direction": "outbound",
+                        "content": message,
+                    },
+                )
 
             # Send message via tmux
             session = self.tmux_sessions[instance_id]
@@ -274,7 +328,13 @@ class TmuxInstanceManager:
             pane = window.panes[0]
 
             # Send the message
-            pane.send_keys(message, enter=True)
+            # For Codex instances, send_keys with enter=True doesn't work reliably
+            # Need to send Enter as separate command
+            if instance.get("instance_type") == "codex":
+                pane.send_keys(message, enter=False)
+                pane.send_keys("", enter=True)  # Send Enter separately
+            else:
+                pane.send_keys(message, enter=True)
             logger.debug(f"Sent message to instance {instance_id} via tmux")
 
             if not wait_for_response:
@@ -288,38 +348,43 @@ class TmuxInstanceManager:
             await asyncio.sleep(0.3)
             initial_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
 
-            # Poll with progressive intervals
+            # Activity-based response detection with stability monitoring
             start_time = time.time()
-            last_output = initial_output
+            last_size = len(initial_output)
+            stable_count = 0
             poll_count = 0
+            response_started = False
 
             while time.time() - start_time < timeout_seconds:
-                # Progressive intervals: 0.5s for first 10s, then 2s
-                elapsed = time.time() - start_time
-                poll_interval = 0.5 if elapsed < 10 else 2
-                await asyncio.sleep(poll_interval)
+                await asyncio.sleep(0.3)  # Faster consistent polling
                 poll_count += 1
 
                 # Capture current visible pane only (not full scrollback - faster)
                 current_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+                current_size = len(current_output)
 
-                # Check for response ready indicators
-                if "⏺" in current_output and "⏺" not in last_output:
-                    # Response marker appeared
-                    logger.debug(f"Response ready: marker detected (poll #{poll_count})")
-                    break
-                if "0.0%" not in current_output and "0.0%" in last_output:
-                    # Token usage changed
-                    logger.debug(f"Response ready: token usage changed (poll #{poll_count})")
-                    break
-                if len(current_output) > len(last_output) + 100:
-                    # Significant new content
-                    logger.debug(
-                        f"Response ready: +{len(current_output) - len(last_output)} chars (poll #{poll_count})"
-                    )
-                    break
+                # Check if response has started (output growing)
+                if current_size > last_size:
+                    response_started = True
+                    stable_count = 0  # Reset stability counter
+                    last_size = current_size
+                    continue
 
-                last_output = current_output
+                # If response started and output is now stable
+                if response_started:
+                    stable_count += 1
+
+                    # Declare complete after output stable for 1 second (3-4 polls at 0.3s)
+                    if stable_count >= 3:
+                        logger.debug(
+                            f"Response complete: stable for {stable_count * 0.3:.1f}s after {time.time() - start_time:.1f}s total (poll #{poll_count})"
+                        )
+                        break
+
+            if not response_started:
+                logger.warning(
+                    f"No response activity detected after {poll_count} polls, {time.time() - start_time:.1f}s"
+                )
 
             logger.debug(
                 f"Polling completed after {poll_count} polls, {time.time() - start_time:.1f}s"
@@ -332,13 +397,17 @@ class TmuxInstanceManager:
             response_text = self._extract_response(full_output, initial_output)
 
             # Add response to history
+            response_timestamp = datetime.now(UTC)
             self.message_history[instance_id].append(
                 {
                     "role": "assistant",
                     "content": response_text,
-                    "timestamp": datetime.now(UTC).isoformat(),
+                    "timestamp": response_timestamp.isoformat(),
                 }
             )
+
+            # Calculate response time
+            response_time = (response_timestamp - send_timestamp).total_seconds()
 
             # Update usage statistics (estimates)
             estimated_tokens = len(message.split()) + len(response_text.split())
@@ -351,6 +420,41 @@ class TmuxInstanceManager:
             self.total_tokens_used += estimated_tokens
             self.total_cost += estimated_cost
 
+            # Log response with structured data
+            if self.logging_manager:
+                instance_logger = self.logging_manager.get_instance_logger(
+                    instance_id, instance.get("name")
+                )
+                instance_logger.info(
+                    f"Received response ({len(response_text)} chars, {estimated_tokens} tokens, {response_time:.2f}s)",
+                    extra={
+                        "event_type": "message_received",
+                        "message_id": message_id,
+                        "direction": "inbound",
+                        "content": response_text,
+                        "tokens": estimated_tokens,
+                        "cost": estimated_cost,
+                        "response_time": response_time,
+                    },
+                )
+
+                # Log tmux output for debugging
+                self.logging_manager.log_tmux_output(instance_id, full_output)
+
+                # Log audit event
+                self.logging_manager.log_audit_event(
+                    event_type="message_exchange",
+                    instance_id=instance_id,
+                    details={
+                        "message_id": message_id,
+                        "message_length": len(message),
+                        "response_length": len(response_text),
+                        "tokens": estimated_tokens,
+                        "cost": estimated_cost,
+                        "response_time_seconds": response_time,
+                    },
+                )
+
             logger.info(
                 f"Received response from instance {instance_id}",
                 extra={
@@ -362,9 +466,9 @@ class TmuxInstanceManager:
 
             return {
                 "instance_id": instance_id,
-                "message_id": str(uuid.uuid4()),
+                "message_id": message_id,
                 "response": response_text,
-                "timestamp": datetime.now(UTC).isoformat(),
+                "timestamp": response_timestamp.isoformat(),
                 "tokens_used": estimated_tokens,
                 "cost": estimated_cost,
             }
@@ -414,19 +518,30 @@ class TmuxInstanceManager:
             window = session.windows[0]
             pane = window.panes[0]
 
-            # Try sending a cancel/interrupt command via stdin
-            # Test different approaches:
+            # Send Ctrl+C to interrupt the current operation
+            # This works in both Claude and Codex CLI modes
+            pane.send_keys("C-c", literal=False)  # Send Ctrl+C
 
-            # Approach 1: Try pressing Escape in the interactive session
-            pane.send_keys("", literal=False)  # Send literal Escape character
+            # Wait briefly for interrupt to take effect
+            await asyncio.sleep(0.5)
 
-            # Approach 2: If that doesn't work, we might need to switch to
-            # non-stream-json mode or find the child process PID
-
-            logger.info(
-                f"Sent interrupt signal to instance {instance_id}",
-                extra={"instance_id": instance_id, "state": instance["state"]},
+            # Verify the interrupt was processed by checking output
+            output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+            interrupted = any(
+                indicator in output.lower()
+                for indicator in ["interrupt", "cancel", "stopped", "^c"]
             )
+
+            if interrupted:
+                logger.info(
+                    f"Successfully interrupted instance {instance_id}",
+                    extra={"instance_id": instance_id, "state": instance["state"]},
+                )
+            else:
+                logger.warning(
+                    f"Interrupt signal sent but no confirmation detected for instance {instance_id}",
+                    extra={"instance_id": instance_id},
+                )
 
             # Update state
             instance["state"] = "idle"
@@ -436,6 +551,7 @@ class TmuxInstanceManager:
                 "success": True,
                 "instance_id": instance_id,
                 "message": "Interrupt signal sent successfully",
+                "confirmed": interrupted,
                 "timestamp": datetime.now(UTC).isoformat(),
             }
 
@@ -473,6 +589,28 @@ class TmuxInstanceManager:
             )
             return False
 
+        # First, terminate all child instances (cascade)
+        children_to_terminate = [
+            child_id
+            for child_id, child_instance in self.instances.items()
+            if child_instance.get("parent_instance_id") == instance_id
+            and child_instance.get("state") != "terminated"
+        ]
+
+        if children_to_terminate:
+            logger.info(
+                f"Cascade terminating {len(children_to_terminate)} child instances of {instance_id}",
+                extra={"instance_id": instance_id, "children": children_to_terminate}
+            )
+            for child_id in children_to_terminate:
+                try:
+                    await self.terminate_instance(child_id, force=True)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to terminate child instance {child_id}: {e}",
+                        extra={"parent_id": instance_id, "child_id": child_id}
+                    )
+
         try:
             # Kill tmux session
             if instance_id in self.tmux_sessions:
@@ -503,6 +641,38 @@ class TmuxInstanceManager:
             # Remove message history
             if instance_id in self.message_history:
                 del self.message_history[instance_id]
+
+            # Log termination
+            if self.logging_manager:
+                instance_logger = self.logging_manager.get_instance_logger(
+                    instance_id, instance.get("name")
+                )
+                instance_logger.info(
+                    f"Instance terminated (force={force})",
+                    extra={
+                        "total_requests": instance.get("request_count", 0),
+                        "total_tokens": instance.get("total_tokens_used", 0),
+                        "total_cost": instance.get("total_cost", 0.0),
+                    },
+                )
+
+                # Log audit event
+                self.logging_manager.log_audit_event(
+                    event_type="instance_terminate",
+                    instance_id=instance_id,
+                    details={
+                        "instance_name": instance.get("name"),
+                        "force": force,
+                        "final_state": "terminated",
+                        "total_requests": instance.get("request_count", 0),
+                        "total_tokens": instance.get("total_tokens_used", 0),
+                        "total_cost": instance.get("total_cost", 0.0),
+                        "uptime_seconds": (
+                            datetime.now(UTC)
+                            - datetime.fromisoformat(instance["created_at"])
+                        ).total_seconds(),
+                    },
+                )
 
             logger.info(
                 f"Successfully terminated instance {instance_id}",
@@ -617,8 +787,35 @@ class TmuxInstanceManager:
         pane.send_keys(cmd, enter=True)
         logger.debug(f"Started {instance_type} CLI in tmux session: {cmd}")
 
-        # Wait for CLI to initialize
-        await asyncio.sleep(10)
+        # Adaptive wait - poll until CLI is ready
+        max_init_wait = 30
+        init_start = time.time()
+        cli_ready = False
+
+        while time.time() - init_start < max_init_wait:
+            await asyncio.sleep(0.5)
+            output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+
+            # Detect ready state by checking for interactive indicators
+            # Claude CLI shows various prompts, Codex shows ready state
+            if instance_type == "codex":
+                # Codex ready when it shows prompt or waits for input
+                if any(indicator in output for indicator in ["codex>", "Working on:", "Thinking..."]):
+                    cli_ready = True
+                    break
+            else:
+                # Claude ready when it shows response or is waiting for input
+                # Look for thinking indicators or response completion
+                if any(indicator in output for indicator in ["Thinking", "⏺", ">", "│"]):
+                    cli_ready = True
+                    break
+
+        if not cli_ready:
+            logger.warning(
+                f"CLI initialization may not be complete after {time.time() - init_start:.1f}s, proceeding anyway"
+            )
+        else:
+            logger.debug(f"CLI initialized in {time.time() - init_start:.1f}s")
 
         # Handle initial prompts based on instance type
         if instance_type == "codex":
@@ -796,3 +993,107 @@ class TmuxInstanceManager:
             )
             # Return minimal fallback on error
             return f"You are a helpful AI assistant with expertise in {role.replace('_', ' ')}."
+
+    async def check_pane_health(self, instance_id: str) -> dict[str, Any]:
+        """Check if tmux pane and underlying process are healthy.
+
+        Args:
+            instance_id: Instance ID to check
+
+        Returns:
+            Health status dict with details
+        """
+        if instance_id not in self.instances:
+            return {
+                "healthy": False,
+                "instance_id": instance_id,
+                "error": "Instance not found",
+            }
+
+        if instance_id not in self.tmux_sessions:
+            return {
+                "healthy": False,
+                "instance_id": instance_id,
+                "error": "No tmux session found",
+            }
+
+        try:
+            session = self.tmux_sessions[instance_id]
+            window = session.windows[0]
+            pane = window.panes[0]
+
+            # Check if pane is still active
+            pane_info = pane.cmd("display-message", "-p", "#{pane_active}")
+            is_active = pane_info.stdout[0].strip() == "1"
+
+            if not is_active:
+                logger.warning(f"Pane for instance {instance_id} is not active")
+                return {
+                    "healthy": False,
+                    "instance_id": instance_id,
+                    "error": "Pane is not active",
+                }
+
+            # Check if underlying process is alive
+            pane_pid_result = pane.cmd("display-message", "-p", "#{pane_pid}")
+            if not pane_pid_result.stdout:
+                return {
+                    "healthy": False,
+                    "instance_id": instance_id,
+                    "error": "Could not get pane PID",
+                }
+
+            pid = int(pane_pid_result.stdout[0].strip())
+
+            # Check process existence using psutil
+            try:
+                import psutil
+
+                if not psutil.pid_exists(pid):
+                    logger.error(f"Process {pid} for instance {instance_id} no longer exists")
+                    return {
+                        "healthy": False,
+                        "instance_id": instance_id,
+                        "error": f"Process {pid} no longer exists",
+                    }
+
+                # Get process info for additional diagnostics
+                proc = psutil.Process(pid)
+                proc_status = proc.status()
+
+                return {
+                    "healthy": True,
+                    "instance_id": instance_id,
+                    "pane_active": is_active,
+                    "process_id": pid,
+                    "process_status": proc_status,
+                }
+
+            except ImportError:
+                # Fallback: check if PID exists using os.kill with signal 0
+                import os
+
+                try:
+                    os.kill(pid, 0)  # Signal 0 doesn't kill, just checks existence
+                    return {
+                        "healthy": True,
+                        "instance_id": instance_id,
+                        "pane_active": is_active,
+                        "process_id": pid,
+                        "process_status": "unknown (psutil not available)",
+                    }
+                except OSError:
+                    logger.error(f"Process {pid} for instance {instance_id} no longer exists")
+                    return {
+                        "healthy": False,
+                        "instance_id": instance_id,
+                        "error": f"Process {pid} no longer exists",
+                    }
+
+        except Exception as e:
+            logger.error(f"Health check failed for instance {instance_id}: {e}")
+            return {
+                "healthy": False,
+                "instance_id": instance_id,
+                "error": str(e),
+            }

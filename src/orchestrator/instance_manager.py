@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from .logging_manager import LoggingManager
 from .tmux_instance_manager import TmuxInstanceManager
 
 logger = logging.getLogger(__name__)
@@ -35,8 +36,14 @@ class InstanceManager:
         self.workspace_base = Path(config.get("workspace_base_dir", "/tmp/claude_orchestrator"))
         self.workspace_base.mkdir(parents=True, exist_ok=True)
 
+        # Initialize logging manager
+        log_dir = config.get("log_dir", "/tmp/madrox_logs")
+        log_level = config.get("log_level", "INFO")
+        self.logging_manager = LoggingManager(log_dir=log_dir, log_level=log_level)
+        logger.info(f"Logging manager initialized: {log_dir}")
+
         # Initialize Tmux instance manager for Claude and Codex instances
-        self.tmux_manager = TmuxInstanceManager(config)
+        self.tmux_manager = TmuxInstanceManager(config, logging_manager=self.logging_manager)
 
         # Main instance tracking - will be populated after spawning real main instance
         self.main_instance_id: str | None = None
@@ -827,3 +834,110 @@ class InstanceManager:
         except Exception as e:
             logger.error(f"Failed to list files: {e}")
             return []
+
+    async def get_instance_logs(
+        self, instance_id: str, log_type: str = "instance", tail: int = 100
+    ) -> list[str]:
+        """Retrieve logs for a specific instance.
+
+        Args:
+            instance_id: Instance ID
+            log_type: Type of log (instance, communication, tmux_output)
+            tail: Number of recent lines to return (0 for all)
+
+        Returns:
+            List of log lines
+        """
+        if not self.logging_manager:
+            logger.warning("Logging manager not initialized")
+            return []
+
+        return self.logging_manager.get_instance_logs(instance_id, log_type, tail)
+
+    async def get_audit_logs(self, since: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        """Retrieve audit trail logs.
+
+        Args:
+            since: ISO timestamp to get logs since (optional)
+            limit: Maximum number of log entries to return
+
+        Returns:
+            List of audit log entries as dicts
+        """
+        if not self.logging_manager:
+            logger.warning("Logging manager not initialized")
+            return []
+
+        import json
+        from datetime import datetime
+
+        audit_dir = self.logging_manager.audit_dir
+        audit_logs = []
+
+        # Read audit files (newest first)
+        audit_files = sorted(audit_dir.glob("audit_*.jsonl"), reverse=True)
+
+        since_dt = datetime.fromisoformat(since) if since else None
+
+        for audit_file in audit_files:
+            try:
+                with audit_file.open("r") as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+
+                        try:
+                            log_entry = json.loads(line)
+
+                            # Filter by timestamp if specified
+                            if since_dt:
+                                log_timestamp = datetime.fromisoformat(log_entry["timestamp"])
+                                if log_timestamp < since_dt:
+                                    continue
+
+                            audit_logs.append(log_entry)
+
+                            if len(audit_logs) >= limit:
+                                break
+                        except json.JSONDecodeError:
+                            continue
+
+                if len(audit_logs) >= limit:
+                    break
+            except Exception as e:
+                logger.error(f"Failed to read audit file {audit_file}: {e}")
+                continue
+
+        # Return most recent first
+        return list(reversed(audit_logs[-limit:]))
+
+    async def list_logged_instances(self) -> list[dict[str, Any]]:
+        """List all instances that have logs.
+
+        Returns:
+            List of instance info dicts
+        """
+        if not self.logging_manager:
+            logger.warning("Logging manager not initialized")
+            return []
+
+        instance_ids = self.logging_manager.get_all_instance_ids()
+        instances_info = []
+
+        for instance_id in instance_ids:
+            # Try to get metadata
+            instance_dir = self.logging_manager.instances_dir / instance_id
+            metadata_file = instance_dir / "metadata.json"
+
+            if metadata_file.exists():
+                try:
+                    import json
+
+                    metadata = json.loads(metadata_file.read_text())
+                    instances_info.append(metadata)
+                except Exception:
+                    instances_info.append({"instance_id": instance_id})
+            else:
+                instances_info.append({"instance_id": instance_id})
+
+        return instances_info

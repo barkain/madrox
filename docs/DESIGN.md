@@ -616,6 +616,191 @@ I'll handle all tasks directly without spawning additional instances.
 
 ---
 
+## 🏗️ Transport Architecture: Unified Registry
+
+Madrox supports **dual transport modes** (HTTP and stdio) with a unified instance registry.
+
+### Unified View
+
+Both transports share the same instance registry:
+
+```
+┌─────────────────────────────────────────────────┐
+│         HTTP Server (:8001)                     │
+│         Single Source of Truth                  │
+│  ┌───────────────────────────────────────────┐  │
+│  │   Instance Manager                        │  │
+│  │   - All instances tracked here            │  │
+│  │   - Parent-child relationships            │  │
+│  │   - Resource tracking                     │  │
+│  └───────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────┘
+         ▲                           ▲
+         │                           │
+         │                           │
+    HTTP requests              Proxied requests
+         │                           │
+         │                           │
+┌────────┴────────┐         ┌────────┴────────────┐
+│  Claude Code    │         │  Stdio Server       │
+│  (HTTP)         │         │  (proxies to HTTP)  │
+│                 │         │                     │
+│  curl commands  │         │  Codex CLI          │
+└─────────────────┘         └─────────────────────┘
+```
+
+### Transport Modes
+
+| Transport | Port/Protocol | Use Cases | Role |
+|-----------|---------------|-----------|------|
+| **HTTP** | `http://localhost:8001` | Claude Code CLI, Claude Desktop, REST APIs, Web integrations | **Primary** - Single source of truth |
+| **Stdio** | JSON-RPC over stdin/stdout | Codex CLI (required), Claude Desktop (alternative) | **Proxy** - Forwards to HTTP server |
+
+### Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        CC[Claude Code CLI<br/>HTTP Transport]
+        CD[Claude Desktop<br/>HTTP or Stdio]
+        Codex[Codex CLI<br/>Stdio Only]
+        REST[REST APIs<br/>curl, etc.]
+    end
+
+    subgraph "Server Layer"
+        HTTP[HTTP Server :8001<br/>FastAPI + Uvicorn]
+        Stdio[Stdio Server<br/>JSON-RPC Proxy]
+    end
+
+    subgraph "Core Layer"
+        Manager[Instance Manager<br/>Single Source of Truth]
+        Health[Health Monitor]
+        Audit[Audit Logger]
+    end
+
+    subgraph "Instance Network"
+        Claude1[Claude Instance]
+        Claude2[Claude Instance]
+        Codex1[Codex Instance]
+    end
+
+    CC --> HTTP
+    CD --> HTTP
+    CD -.alternative.-> Stdio
+    Codex --> Stdio
+    REST --> HTTP
+
+    Stdio -.proxies all requests.-> HTTP
+
+    HTTP --> Manager
+    Manager --> Health
+    Manager --> Audit
+
+    Manager --> Claude1
+    Manager --> Claude2
+    Manager --> Codex1
+
+    Claude1 -.parent-child.-> Claude2
+    Claude2 -.spawns.-> Codex1
+
+    style HTTP fill:#cce5ff
+    style Stdio fill:#fff3cd
+    style Manager fill:#d4edda
+    style Codex fill:#f8d7da
+```
+
+### Why Dual Transport?
+
+**Problem**: Codex CLI only supports stdio transport (not HTTP/SSE)
+
+**Solution**: Stdio server proxies all operations to HTTP server for unified registry
+
+```python
+# run_orchestrator_stdio.py - Thin proxy implementation
+async def _proxy_tool(self, tool_name: str, arguments: dict) -> dict:
+    """Forward all tool calls to HTTP server."""
+    return await self._http_request(
+        "POST",
+        f"{self.http_server_url}/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": tool_name, "arguments": arguments}
+        }
+    )
+```
+
+### Key Benefits
+
+| Feature | HTTP Only | Stdio Only | Unified (HTTP + Stdio Proxy) |
+|---------|-----------|------------|------------------------------|
+| Codex support | ❌ No | ✅ Yes | ✅ Yes |
+| Claude support | ✅ Yes | ✅ Yes | ✅ Yes |
+| Unified visibility | ✅ Yes | ❌ Isolated state | ✅ Yes (proxied) |
+| Direct REST API | ✅ Yes | ❌ No | ✅ Yes |
+| Single instance registry | ✅ Yes | ❌ Separate managers | ✅ Yes (HTTP is source of truth) |
+| Network hierarchy | ✅ Yes | ❌ Partial | ✅ Complete view |
+
+### Parameter Normalization
+
+Stdio proxy handles parameter name differences between transports:
+
+```python
+# Codex uses parent_id, HTTP expects parent_instance_id
+if "parent_id" in kwargs:
+    kwargs["parent_instance_id"] = kwargs.pop("parent_id")
+```
+
+### Configuration Examples
+
+**HTTP Transport (Claude Code CLI)**:
+```bash
+claude mcp add madrox http://localhost:8001/mcp --transport http
+```
+
+**HTTP Transport (Claude Desktop)**:
+```json
+{
+  "mcpServers": {
+    "madrox": {
+      "url": "http://localhost:8001",
+      "transport": "http"
+    }
+  }
+}
+```
+
+**Stdio Transport (Claude Desktop - alternative)**:
+```json
+{
+  "mcpServers": {
+    "madrox": {
+      "command": "uv",
+      "args": ["run", "python", "run_orchestrator_stdio.py"]
+    }
+  }
+}
+```
+
+**Stdio Transport (Codex - automatic)**:
+```python
+# Codex instances spawned with enable_madrox=true automatically
+# connect to stdio server, which proxies to HTTP
+spawn_codex_instance(name="codex-worker", enable_madrox=True)
+```
+
+### Validation
+
+Unified architecture validated through comprehensive stress testing:
+- ✅ Codex-spawned children visible in HTTP hierarchy
+- ✅ Parent-child relationships correct across transports
+- ✅ No duplicate instance registries
+- ✅ Parameter normalization working correctly
+
+See [STRESS_TESTING.md](STRESS_TESTING.md#test-1-unified-visibility-with-multiple-codex-instances) for detailed validation results.
+
+---
+
 ## 🔧 Technical Implementation: Task Interruption
 
 ### How It Works
