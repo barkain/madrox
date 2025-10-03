@@ -353,7 +353,8 @@ This demo shows a complete workflow building a task management app with 3 specia
 - `ORCHESTRATOR_PORT` - Server port (default: 8001)
 - `MAX_INSTANCES` - Maximum concurrent instances (default: 10)
 - `WORKSPACE_DIR` - Base workspace directory (default: /tmp/claude_orchestrator)
-- `LOG_LEVEL` - Logging level (default: INFO)
+- `LOG_DIR` - Log storage directory (default: /tmp/madrox_logs)
+- `LOG_LEVEL` - Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)
 
 ### Configuration Options
 ```python
@@ -366,6 +367,8 @@ config = OrchestratorConfig(
     max_total_cost=100.0,
     instance_timeout_minutes=60,
     workspace_base_dir="/tmp/claude_orchestrator",
+    log_dir="/tmp/madrox_logs",        # Log storage directory
+    log_level="INFO",                   # DEBUG, INFO, WARNING, ERROR
     enable_isolation=True,
 )
 ```
@@ -679,19 +682,92 @@ The system performs automatic health checks every minute:
 - Resource limit enforcement
 - Error tracking and recovery
 - Automatic cleanup of terminated instances
+- Process liveness monitoring with psutil
 
-### Logging
-Comprehensive logging with structured output:
-- Instance lifecycle events
-- Message passing and responses
-- Resource usage tracking
-- Error conditions and recovery
+### Comprehensive Logging & Audit System
+
+Madrox provides enterprise-grade logging for full instance auditability and debugging:
+
+#### Per-Instance Logs
+
+Each instance maintains isolated log files in `/tmp/madrox_logs/instances/{instance_id}/`:
+
+| Log File | Format | Purpose | Retention |
+|----------|--------|---------|-----------|
+| **instance.log** | Text | Lifecycle events (spawn, init, terminate) | 5MB rotating, 3 backups |
+| **communication.jsonl** | JSON Lines | Message I/O with timing and costs | Full history |
+| **tmux_output.log** | Text | Raw tmux captures for debugging | Append-only |
+| **metadata.json** | JSON | Instance configuration and details | Single file |
+
+#### Audit Trail
+
+System-wide audit logs in `/tmp/madrox_logs/audit/`:
+
+```jsonl
+{"timestamp": "2025-10-03T12:30:45", "event": "instance_spawn", "instance_id": "abc123", ...}
+{"timestamp": "2025-10-03T12:31:10", "event": "message_exchange", "instance_id": "abc123", ...}
+{"timestamp": "2025-10-03T12:35:20", "event": "instance_terminate", "instance_id": "abc123", ...}
+```
+
+**Features:**
+- JSON Lines format for structured queries
+- Daily rotation with 30-day retention
+- Captures: spawn, terminate, message_exchange events
+- Tracks: tokens, cost, response times, uptime
+
+#### Query Examples
+
+```python
+# Get instance logs
+logs = await manager.get_instance_logs(
+    instance_id="abc123",
+    log_type="communication",  # or "instance", "tmux_output"
+    tail=100  # last 100 lines, 0 for all
+)
+
+# Query audit trail
+audit = await manager.get_audit_logs(
+    since="2025-10-03T00:00:00",  # optional timestamp filter
+    limit=100
+)
+
+# List all instances with logs
+instances = await manager.list_logged_instances()
+# Returns: [{"instance_id": "...", "instance_name": "...", "created_at": "..."}, ...]
+```
+
+#### Log Configuration
+
+```python
+config = OrchestratorConfig(
+    log_dir="/tmp/madrox_logs",  # Log storage location
+    log_level="INFO",             # DEBUG, INFO, WARNING, ERROR
+    # ... other config
+)
+```
+
+#### Communication Log Example
+
+```jsonl
+{"timestamp": "2025-10-03T12:31:10.123", "event_type": "message_sent", "message_id": "msg-001", "direction": "outbound", "content": "What is 2+2?", "tokens": 5}
+{"timestamp": "2025-10-03T12:31:12.456", "event_type": "message_received", "message_id": "msg-001", "direction": "inbound", "content": "4", "tokens": 8, "cost": 0.00008, "response_time": 2.333}
+```
+
+#### Benefits
+
+- ✅ **Full Audit Trail** - Complete history of all instance operations
+- ✅ **Debugging Support** - Raw tmux outputs for stuck instance analysis
+- ✅ **Performance Metrics** - Response times, token usage per message
+- ✅ **Cost Tracking** - Per-instance and aggregate cost monitoring
+- ✅ **Compliance** - Structured logs for audit requirements
+- ✅ **Programmatic Access** - JSON format for automated analysis
 
 ### Metrics
 - Total instances created/active/terminated
 - Token usage and cost tracking per instance
 - Response times and success rates
 - Health scores and error counts
+- Full message exchange history with timestamps
 
 ## 🚨 Error Handling
 
