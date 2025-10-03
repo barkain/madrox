@@ -204,6 +204,10 @@ class MadroxStdioServer:
     ) -> dict:
         """Spawn a new Claude instance (proxied to HTTP server)."""
         try:
+            # Normalize parameter names (Codex uses parent_id, HTTP server expects parent_instance_id)
+            if "parent_id" in kwargs:
+                kwargs["parent_instance_id"] = kwargs.pop("parent_id")
+
             # Proxy request to HTTP server
             payload = {
                 "name": name,
