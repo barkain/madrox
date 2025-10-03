@@ -354,6 +354,11 @@ class ClaudeOrchestratorServer:
             """Get communication logs for a specific instance."""
             return await self._get_communication_logs(instance_id=instance_id, limit=limit, since=since)
 
+        @self.app.get("/network/hierarchy")
+        async def get_network_hierarchy():
+            """Get complete network hierarchy with all instances."""
+            return await self._get_network_hierarchy()
+
     async def _spawn_claude(
         self,
         name: str | None = None,
@@ -714,6 +719,48 @@ class ClaudeOrchestratorServer:
             "instance_id": instance_id,
             "file": str(comm_log)
         }
+
+    async def _get_network_hierarchy(self) -> dict[str, Any]:
+        """Get complete network hierarchy with parent-child relationships."""
+        instances = self.instance_manager.instances
+
+        # Build hierarchy structure
+        hierarchy = {
+            "total_instances": len(instances),
+            "root_instances": [],
+            "all_instances": []
+        }
+
+        # Create instance info map
+        instance_map = {}
+        for instance_id, instance_data in instances.items():
+            instance_info = {
+                "id": instance_id,
+                "name": instance_data.get("name", "unknown"),
+                "type": instance_data.get("instance_type", "unknown"),
+                "role": instance_data.get("role", "unknown"),
+                "state": instance_data.get("state", "unknown"),
+                "parent_id": instance_data.get("parent_instance_id"),
+                "children": [],
+                "created_at": instance_data.get("created_at"),
+                "total_tokens": instance_data.get("total_tokens_used", 0),
+                "total_cost": instance_data.get("total_cost", 0.0),
+                "request_count": instance_data.get("request_count", 0)
+            }
+            instance_map[instance_id] = instance_info
+            hierarchy["all_instances"].append(instance_info)
+
+        # Build parent-child relationships
+        for instance_id, instance_info in instance_map.items():
+            parent_id = instance_info["parent_id"]
+            if parent_id and parent_id in instance_map:
+                # Add to parent's children
+                instance_map[parent_id]["children"].append(instance_info)
+            else:
+                # Root instance (no parent or parent not found)
+                hierarchy["root_instances"].append(instance_info)
+
+        return hierarchy
 
     async def _health_check_loop(self):
         """Background health check loop."""

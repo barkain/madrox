@@ -1,5 +1,79 @@
 # Madrox API Endpoints
 
+## Network Hierarchy Endpoint
+
+### GET /network/hierarchy
+
+Get complete network topology showing all instances and their parent-child relationships.
+
+**Response:**
+```json
+{
+  "total_instances": 3,
+  "root_instances": [
+    {
+      "id": "48cbbfda-f75a-43b2-9bc0-a1ff173b1dee",
+      "name": "parent-coordinator-aka-NetworkRoot",
+      "type": "claude",
+      "role": "architect",
+      "state": "running",
+      "parent_id": null,
+      "children": [
+        {
+          "id": "1e65b11a-807f-40a0-a226-c87af93cdd70",
+          "name": "child-worker-1-aka-Analyzer",
+          "type": "claude",
+          "role": "security_analyst",
+          "state": "running",
+          "parent_id": "48cbbfda-f75a-43b2-9bc0-a1ff173b1dee",
+          "children": [],
+          "created_at": "2025-10-03T10:59:47.198432+00:00",
+          "total_tokens": 0,
+          "total_cost": 0.0,
+          "request_count": 0
+        }
+      ],
+      "created_at": "2025-10-03T10:59:25.422151+00:00",
+      "total_tokens": 0,
+      "total_cost": 0.0,
+      "request_count": 0
+    }
+  ],
+  "all_instances": [...]
+}
+```
+
+**Fields:**
+- `total_instances`: Total number of active instances
+- `root_instances`: Array of instances with no parent (top-level coordinators)
+- `all_instances`: Flat array of all instances for easy iteration
+
+**Instance Object:**
+- `id`: Instance UUID
+- `name`: Human-readable instance name
+- `type`: Instance type (claude, codex)
+- `role`: Assigned role (architect, security_analyst, etc.)
+- `state`: Current state (running, idle, busy, terminated)
+- `parent_id`: Parent instance ID (null for root instances)
+- `children`: Array of child instances (recursive structure)
+- `created_at`: ISO timestamp of creation
+- `total_tokens`: Total tokens used
+- `total_cost`: Total cost in USD
+- `request_count`: Number of requests processed
+
+**Example:**
+```bash
+curl "http://localhost:8001/network/hierarchy"
+```
+
+**Use Cases:**
+- Visualize multi-agent network topology
+- Monitor hierarchical coordination patterns
+- Track resource usage across instance tree
+- Debug parent-child communication issues
+
+---
+
 ## Log Streaming Endpoints
 
 Madrox provides HTTP endpoints to access logging data from the orchestrator and instances.
