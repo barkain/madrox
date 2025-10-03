@@ -23,16 +23,18 @@ logger = logging.getLogger(__name__)
 class TmuxInstanceManager:
     """Manages Claude instances via tmux sessions."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any], logging_manager=None):
         """Initialize the tmux instance manager.
 
         Args:
             config: Configuration dictionary
+            logging_manager: Optional LoggingManager instance for structured logging
         """
         self.config = config
         self.instances: dict[str, dict[str, Any]] = {}
         self.tmux_sessions: dict[str, libtmux.Session] = {}
         self.message_history: dict[str, list[dict]] = {}
+        self.logging_manager = logging_manager
 
         # Resource tracking
         self.total_tokens_used = 0
@@ -172,6 +174,25 @@ class TmuxInstanceManager:
         self.instances[instance_id] = instance
         self.message_history[instance_id] = []
 
+        # Setup instance-specific logger
+        if self.logging_manager:
+            instance_logger = self.logging_manager.get_instance_logger(instance_id, instance_name)
+            instance_logger.info(f"Instance created with role: {role}, type: {instance_type}")
+
+            # Log audit event
+            self.logging_manager.log_audit_event(
+                event_type="instance_spawn",
+                instance_id=instance_id,
+                details={
+                    "instance_name": instance_name,
+                    "role": role,
+                    "instance_type": instance_type,
+                    "model": model,
+                    "enable_madrox": enable_madrox,
+                    "bypass_isolation": bypass_isolation,
+                },
+            )
+
         # Start the tmux session
         if wait_for_ready:
             # Blocking: wait for full initialization
@@ -187,6 +208,13 @@ class TmuxInstanceManager:
                         "instance_name": instance_name,
                     },
                 )
+
+                if self.logging_manager:
+                    instance_logger = self.logging_manager.get_instance_logger(
+                        instance_id, instance_name
+                    )
+                    instance_logger.info("Instance initialization completed successfully")
+
             except Exception as e:
                 instance["state"] = "error"
                 instance["error_message"] = str(e)
@@ -194,6 +222,13 @@ class TmuxInstanceManager:
                     f"Failed to initialize tmux instance {instance_id}: {e}",
                     extra={"instance_id": instance_id, "error": str(e)},
                 )
+
+                if self.logging_manager:
+                    instance_logger = self.logging_manager.get_instance_logger(
+                        instance_id, instance_name
+                    )
+                    instance_logger.error(f"Initialization failed: {e}")
+
                 raise
         else:
             # Non-blocking: launch initialization in background
@@ -262,11 +297,30 @@ class TmuxInstanceManager:
         instance["state"] = "busy"
         instance["last_activity"] = datetime.now(UTC).isoformat()
 
+        # Generate message ID for tracking
+        message_id = str(uuid.uuid4())
+        send_timestamp = datetime.now(UTC)
+
         try:
             # Record message in history
             self.message_history[instance_id].append(
-                {"role": "user", "content": message, "timestamp": datetime.now(UTC).isoformat()}
+                {"role": "user", "content": message, "timestamp": send_timestamp.isoformat()}
             )
+
+            # Log communication event
+            if self.logging_manager:
+                instance_logger = self.logging_manager.get_instance_logger(
+                    instance_id, instance.get("name")
+                )
+                instance_logger.info(
+                    f"Sending message (wait={wait_for_response}): {message[:100]}...",
+                    extra={
+                        "event_type": "message_sent",
+                        "message_id": message_id,
+                        "direction": "outbound",
+                        "content": message,
+                    },
+                )
 
             # Send message via tmux
             session = self.tmux_sessions[instance_id]
@@ -337,13 +391,17 @@ class TmuxInstanceManager:
             response_text = self._extract_response(full_output, initial_output)
 
             # Add response to history
+            response_timestamp = datetime.now(UTC)
             self.message_history[instance_id].append(
                 {
                     "role": "assistant",
                     "content": response_text,
-                    "timestamp": datetime.now(UTC).isoformat(),
+                    "timestamp": response_timestamp.isoformat(),
                 }
             )
+
+            # Calculate response time
+            response_time = (response_timestamp - send_timestamp).total_seconds()
 
             # Update usage statistics (estimates)
             estimated_tokens = len(message.split()) + len(response_text.split())
@@ -356,6 +414,41 @@ class TmuxInstanceManager:
             self.total_tokens_used += estimated_tokens
             self.total_cost += estimated_cost
 
+            # Log response with structured data
+            if self.logging_manager:
+                instance_logger = self.logging_manager.get_instance_logger(
+                    instance_id, instance.get("name")
+                )
+                instance_logger.info(
+                    f"Received response ({len(response_text)} chars, {estimated_tokens} tokens, {response_time:.2f}s)",
+                    extra={
+                        "event_type": "message_received",
+                        "message_id": message_id,
+                        "direction": "inbound",
+                        "content": response_text,
+                        "tokens": estimated_tokens,
+                        "cost": estimated_cost,
+                        "response_time": response_time,
+                    },
+                )
+
+                # Log tmux output for debugging
+                self.logging_manager.log_tmux_output(instance_id, full_output)
+
+                # Log audit event
+                self.logging_manager.log_audit_event(
+                    event_type="message_exchange",
+                    instance_id=instance_id,
+                    details={
+                        "message_id": message_id,
+                        "message_length": len(message),
+                        "response_length": len(response_text),
+                        "tokens": estimated_tokens,
+                        "cost": estimated_cost,
+                        "response_time_seconds": response_time,
+                    },
+                )
+
             logger.info(
                 f"Received response from instance {instance_id}",
                 extra={
@@ -367,9 +460,9 @@ class TmuxInstanceManager:
 
             return {
                 "instance_id": instance_id,
-                "message_id": str(uuid.uuid4()),
+                "message_id": message_id,
                 "response": response_text,
-                "timestamp": datetime.now(UTC).isoformat(),
+                "timestamp": response_timestamp.isoformat(),
                 "tokens_used": estimated_tokens,
                 "cost": estimated_cost,
             }
@@ -520,6 +613,38 @@ class TmuxInstanceManager:
             # Remove message history
             if instance_id in self.message_history:
                 del self.message_history[instance_id]
+
+            # Log termination
+            if self.logging_manager:
+                instance_logger = self.logging_manager.get_instance_logger(
+                    instance_id, instance.get("name")
+                )
+                instance_logger.info(
+                    f"Instance terminated (force={force})",
+                    extra={
+                        "total_requests": instance.get("request_count", 0),
+                        "total_tokens": instance.get("total_tokens_used", 0),
+                        "total_cost": instance.get("total_cost", 0.0),
+                    },
+                )
+
+                # Log audit event
+                self.logging_manager.log_audit_event(
+                    event_type="instance_terminate",
+                    instance_id=instance_id,
+                    details={
+                        "instance_name": instance.get("name"),
+                        "force": force,
+                        "final_state": "terminated",
+                        "total_requests": instance.get("request_count", 0),
+                        "total_tokens": instance.get("total_tokens_used", 0),
+                        "total_cost": instance.get("total_cost", 0.0),
+                        "uptime_seconds": (
+                            datetime.now(UTC)
+                            - datetime.fromisoformat(instance["created_at"])
+                        ).total_seconds(),
+                    },
+                )
 
             logger.info(
                 f"Successfully terminated instance {instance_id}",
