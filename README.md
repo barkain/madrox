@@ -338,12 +338,21 @@ uv run python tests/integration_demo.py
 
 This demo shows a complete workflow building a task management app with 3 specialized instances.
 
+### Run stress tests:
+See [docs/STRESS_TESTING.md](docs/STRESS_TESTING.md) for comprehensive stress testing schemes including:
+- Unified visibility testing (stdio→HTTP proxy validation)
+- Cascade termination testing (2-level and 3-level hierarchies)
+- Hierarchy filtering (terminated instance exclusion)
+- Multi-level hierarchy validation (grandparent→parent→child)
+- Concurrent operations testing (parallel spawning, messaging)
+
 ## 📊 Test Coverage
 
 - **Instance Manager**: 86% coverage
 - **Core Models**: 50% coverage
-- **Total Tests**: 26 tests (25 passing, 1 minor failure)
-- **Test Categories**: Unit tests, integration tests, error handling, resource limits
+- **Total Tests**: 26 unit tests (25 passing, 1 minor failure)
+- **Stress Tests**: 5 comprehensive integration tests validating production scenarios
+- **Test Categories**: Unit tests, integration tests, error handling, resource limits, multi-level hierarchies, concurrent operations
 
 ## 🔧 Configuration
 
