@@ -724,16 +724,23 @@ class ClaudeOrchestratorServer:
         """Get complete network hierarchy with parent-child relationships."""
         instances = self.instance_manager.instances
 
+        # Filter out terminated instances
+        active_instances = {
+            instance_id: instance_data
+            for instance_id, instance_data in instances.items()
+            if instance_data.get("state") != "terminated"
+        }
+
         # Build hierarchy structure
         hierarchy = {
-            "total_instances": len(instances),
+            "total_instances": len(active_instances),
             "root_instances": [],
             "all_instances": []
         }
 
         # Create instance info map
         instance_map = {}
-        for instance_id, instance_data in instances.items():
+        for instance_id, instance_data in active_instances.items():
             instance_info = {
                 "id": instance_id,
                 "name": instance_data.get("name", "unknown"),

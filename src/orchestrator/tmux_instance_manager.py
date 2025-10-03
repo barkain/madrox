@@ -583,6 +583,28 @@ class TmuxInstanceManager:
             )
             return False
 
+        # First, terminate all child instances (cascade)
+        children_to_terminate = [
+            child_id
+            for child_id, child_instance in self.instances.items()
+            if child_instance.get("parent_instance_id") == instance_id
+            and child_instance.get("state") != "terminated"
+        ]
+
+        if children_to_terminate:
+            logger.info(
+                f"Cascade terminating {len(children_to_terminate)} child instances of {instance_id}",
+                extra={"instance_id": instance_id, "children": children_to_terminate}
+            )
+            for child_id in children_to_terminate:
+                try:
+                    await self.terminate_instance(child_id, force=True)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to terminate child instance {child_id}: {e}",
+                        extra={"parent_id": instance_id, "child_id": child_id}
+                    )
+
         try:
             # Kill tmux session
             if instance_id in self.tmux_sessions:
