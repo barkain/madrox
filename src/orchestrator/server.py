@@ -340,9 +340,15 @@ class ClaudeOrchestratorServer:
                 raise HTTPException(status_code=404, detail=str(e)) from e
 
         @self.app.get("/logs/audit")
-        async def get_audit_logs(limit: int = 100, since: str | None = None):
-            """Get audit logs with optional filtering."""
-            return await self._get_audit_logs(limit=limit, since=since)
+        async def get_audit_logs(limit: int = 100, since: str | None = None, root_instance_id: str | None = None):
+            """Get audit logs with optional filtering.
+
+            Args:
+                limit: Maximum number of logs to return
+                since: Filter logs after this timestamp
+                root_instance_id: Optional root instance ID to filter logs by specific network
+            """
+            return await self._get_audit_logs(limit=limit, since=since, root_instance_id=root_instance_id)
 
         @self.app.get("/logs/instances/{instance_id}")
         async def get_instance_logs(instance_id: str, limit: int = 100, since: str | None = None):
@@ -355,9 +361,13 @@ class ClaudeOrchestratorServer:
             return await self._get_communication_logs(instance_id=instance_id, limit=limit, since=since)
 
         @self.app.get("/network/hierarchy")
-        async def get_network_hierarchy():
-            """Get complete network hierarchy with all instances."""
-            return await self._get_network_hierarchy()
+        async def get_network_hierarchy(root_instance_id: str | None = None):
+            """Get complete network hierarchy with all instances.
+
+            Args:
+                root_instance_id: Optional root instance ID to filter hierarchy by specific network
+            """
+            return await self._get_network_hierarchy(root_instance_id=root_instance_id)
 
     async def _spawn_claude(
         self,
@@ -641,8 +651,14 @@ class ClaudeOrchestratorServer:
         server = uvicorn.Server(config)
         await server.serve()
 
-    async def _get_audit_logs(self, limit: int = 100, since: str | None = None) -> dict[str, Any]:
-        """Get audit logs from the logging system."""
+    async def _get_audit_logs(self, limit: int = 100, since: str | None = None, root_instance_id: str | None = None) -> dict[str, Any]:
+        """Get audit logs from the logging system.
+
+        Args:
+            limit: Maximum number of logs to return
+            since: Filter logs after this timestamp
+            root_instance_id: Optional root instance ID to filter logs by specific network
+        """
         from pathlib import Path
         import json
 
@@ -650,12 +666,30 @@ class ClaudeOrchestratorServer:
         today = datetime.utcnow().strftime("%Y%m%d")
         audit_file = log_dir / f"audit_{today}.jsonl"
 
+        # Get network instance IDs if filtering by root
+        network_instance_ids = None
+        if root_instance_id:
+            active_instances = {
+                instance_id: instance_data
+                for instance_id, instance_data in self.instance_manager.instances.items()
+                if instance_data.get("state") != "terminated"
+            }
+            network_instance_ids = self._get_network_instances(active_instances, root_instance_id)
+
         logs = []
         if audit_file.exists():
             with open(audit_file) as f:
                 for line in f:
                     if line.strip():
                         log_entry = json.loads(line)
+
+                        # Filter by network if specified
+                        if network_instance_ids is not None:
+                            log_instance_id = log_entry.get("instance_id")
+                            if log_instance_id and log_instance_id not in network_instance_ids:
+                                continue
+
+                        # Filter by timestamp
                         if since:
                             if log_entry["timestamp"] >= since:
                                 logs.append(log_entry)
@@ -665,7 +699,8 @@ class ClaudeOrchestratorServer:
         return {
             "logs": logs[-limit:] if logs else [],
             "total": len(logs),
-            "file": str(audit_file)
+            "file": str(audit_file),
+            "filtered_by_network": root_instance_id is not None
         }
 
     async def _get_instance_logs(self, instance_id: str, limit: int = 100, since: str | None = None) -> dict[str, Any]:
@@ -720,8 +755,12 @@ class ClaudeOrchestratorServer:
             "file": str(comm_log)
         }
 
-    async def _get_network_hierarchy(self) -> dict[str, Any]:
-        """Get complete network hierarchy with parent-child relationships."""
+    async def _get_network_hierarchy(self, root_instance_id: str | None = None) -> dict[str, Any]:
+        """Get complete network hierarchy with parent-child relationships.
+
+        Args:
+            root_instance_id: Optional root instance ID to filter hierarchy by specific network
+        """
         instances = self.instance_manager.instances
 
         # Filter out terminated instances
@@ -731,12 +770,14 @@ class ClaudeOrchestratorServer:
             if instance_data.get("state") != "terminated"
         }
 
-        # Build hierarchy structure
-        hierarchy = {
-            "total_instances": len(active_instances),
-            "root_instances": [],
-            "all_instances": []
-        }
+        # If root_instance_id specified, filter to only that network
+        if root_instance_id:
+            network_instances = self._get_network_instances(active_instances, root_instance_id)
+            active_instances = {
+                instance_id: instance_data
+                for instance_id, instance_data in active_instances.items()
+                if instance_id in network_instances
+            }
 
         # Create instance info map
         instance_map = {}
@@ -748,16 +789,16 @@ class ClaudeOrchestratorServer:
                 "role": instance_data.get("role", "unknown"),
                 "state": instance_data.get("state", "unknown"),
                 "parent_id": instance_data.get("parent_instance_id"),
-                "children": [],
                 "created_at": instance_data.get("created_at"),
                 "total_tokens": instance_data.get("total_tokens_used", 0),
                 "total_cost": instance_data.get("total_cost", 0.0),
-                "request_count": instance_data.get("request_count", 0)
+                "request_count": instance_data.get("request_count", 0),
+                "children": [],
             }
             instance_map[instance_id] = instance_info
-            hierarchy["all_instances"].append(instance_info)
 
-        # Build parent-child relationships
+        # Build parent-child relationships and identify roots
+        root_instances = []
         for instance_id, instance_info in instance_map.items():
             parent_id = instance_info["parent_id"]
             if parent_id and parent_id in instance_map:
@@ -765,9 +806,40 @@ class ClaudeOrchestratorServer:
                 instance_map[parent_id]["children"].append(instance_info)
             else:
                 # Root instance (no parent or parent not found)
-                hierarchy["root_instances"].append(instance_info)
+                root_instances.append(instance_info)
 
-        return hierarchy
+        # Return only hierarchical tree (roots with nested children)
+        return {
+            "total_instances": len(active_instances),
+            "instances": root_instances
+        }
+
+    def _get_network_instances(self, instances: dict[str, dict], root_id: str) -> set[str]:
+        """Get all instance IDs in a network (root + all descendants).
+
+        Args:
+            instances: Dictionary of instance_id -> instance_data
+            root_id: Root instance ID to start from
+
+        Returns:
+            Set of instance IDs in the network
+        """
+        if root_id not in instances:
+            return set()
+
+        network = {root_id}
+        to_process = [root_id]
+
+        while to_process:
+            current_id = to_process.pop()
+            # Find all children of current instance
+            for instance_id, instance_data in instances.items():
+                if instance_data.get("parent_instance_id") == current_id:
+                    if instance_id not in network:
+                        network.add(instance_id)
+                        to_process.append(instance_id)
+
+        return network
 
     async def _health_check_loop(self):
         """Background health check loop."""
