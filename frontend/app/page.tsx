@@ -34,22 +34,24 @@ export default function MadroxMonitor() {
       <ConnectionStatus status={connectionStatus} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Compact Header - Single Row */}
-        <div className="border-b border-border px-4 py-2">
-          <div className="flex items-center justify-between gap-4">
-            {/* Title and Stats in one row */}
-            <div className="flex items-center gap-6">
+        {/* Elegant Header - Two Rows */}
+        <div className="border-b border-border">
+          {/* Top Row - Title and Stats */}
+          <div className="px-6 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-8">
               <div>
-                <h1 className="text-lg font-semibold text-foreground">Madrox Monitor</h1>
-                <p className="text-xs text-muted-foreground">Real-time network</p>
+                <h1 className="text-xl font-semibold text-foreground">Madrox Monitor</h1>
+                <p className="text-sm text-muted-foreground">Real-time agent network</p>
               </div>
 
-              <div className="h-10 w-px bg-border" />
+              <div className="h-10 w-px bg-border/50" />
 
               <StatsHeader stats={stats} />
             </div>
+          </div>
 
-            {/* Filters on the right */}
+          {/* Bottom Row - Filters */}
+          <div className="px-6 pb-3">
             <FilterBar
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
