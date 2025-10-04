@@ -34,28 +34,39 @@ export default function MadroxMonitor() {
       <ConnectionStatus status={connectionStatus} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="border-b border-border">
-          <div className="px-6 py-4">
-            <h1 className="text-2xl font-semibold text-foreground">Madrox Monitor</h1>
-            <p className="text-sm text-muted-foreground mt-1">Real-time agent network visualization</p>
+        {/* Compact Header - Single Row */}
+        <div className="border-b border-border px-4 py-2">
+          <div className="flex items-center justify-between gap-4">
+            {/* Title and Stats in one row */}
+            <div className="flex items-center gap-6">
+              <div>
+                <h1 className="text-lg font-semibold text-foreground">Madrox Monitor</h1>
+                <p className="text-xs text-muted-foreground">Real-time network</p>
+              </div>
+
+              <div className="h-10 w-px bg-border" />
+
+              <StatsHeader stats={stats} />
+            </div>
+
+            {/* Filters on the right */}
+            <FilterBar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
+              typeFilter={typeFilter}
+              onTypeFilterChange={setTypeFilter}
+            />
           </div>
-
-          <StatsHeader stats={stats} />
-
-          <FilterBar
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            statusFilter={statusFilter}
-            onStatusFilterChange={setStatusFilter}
-            typeFilter={typeFilter}
-            onTypeFilterChange={setTypeFilter}
-          />
         </div>
 
+        {/* Network Graph - Takes most of the space */}
         <div className="flex-1 overflow-hidden">
           <NetworkGraph instances={filteredInstances} />
         </div>
 
+        {/* Compact Audit Log */}
         <AuditLog logs={auditLogs} />
       </div>
     </div>

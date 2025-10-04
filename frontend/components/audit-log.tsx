@@ -22,22 +22,23 @@ export function AuditLog({ logs }: AuditLogProps) {
   }
 
   return (
-    <div className="border-t border-border bg-card/50 h-48">
-      <div className="px-6 py-3 border-b border-border">
-        <h2 className="text-sm font-semibold text-foreground">Audit Log</h2>
+    <div className="border-t border-border bg-card/50 h-32">
+      <div className="px-4 py-1.5 border-b border-border flex items-center justify-between">
+        <h2 className="text-xs font-semibold text-foreground">Audit Log</h2>
+        <span className="text-xs text-muted-foreground">{logs.length} events</span>
       </div>
 
-      <ScrollArea className="h-[calc(100%-3rem)]">
-        <div className="px-6 py-2 space-y-1">
+      <ScrollArea className="h-[calc(100%-2rem)]">
+        <div className="px-4 py-1 space-y-0.5">
           {logs.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4">No activity yet</p>
+            <p className="text-xs text-muted-foreground py-3">No activity yet</p>
           ) : (
             logs.map((log) => (
-              <div key={log.id} className="flex items-start gap-3 py-2 text-sm hover:bg-muted/50 rounded px-2 -mx-2">
-                <Clock className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-                <span className="font-mono text-xs text-muted-foreground min-w-[80px]">{log.timestamp}</span>
+              <div key={log.id} className="flex items-center gap-2 py-1 text-xs hover:bg-muted/50 rounded px-1.5 -mx-1.5">
+                <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                <span className="font-mono text-muted-foreground min-w-[70px]">{log.timestamp}</span>
                 <span className={`font-medium ${getEventColor(log.type)}`}>{log.type.replace(/_/g, " ")}</span>
-                <span className="text-muted-foreground flex-1">{log.message}</span>
+                <span className="text-muted-foreground flex-1 truncate">{log.message}</span>
               </div>
             ))
           )}

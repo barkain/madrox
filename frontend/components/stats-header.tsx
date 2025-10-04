@@ -10,36 +10,32 @@ interface StatsHeaderProps {
 
 export function StatsHeader({ stats }: StatsHeaderProps) {
   return (
-    <div className="px-6 py-4 border-t border-border">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10">
-            <Activity className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Active Instances</p>
-            <p className="text-2xl font-semibold font-mono text-foreground">{stats.activeInstances}</p>
-          </div>
+    <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2">
+        <Activity className="h-4 w-4 text-muted-foreground" />
+        <div>
+          <p className="text-xs text-muted-foreground">Active</p>
+          <p className="text-lg font-semibold font-mono text-foreground">{stats.activeInstances}</p>
         </div>
+      </div>
 
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10">
-            <Zap className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Total Tokens</p>
-            <p className="text-2xl font-semibold font-mono text-foreground">{stats.totalTokens.toLocaleString()}</p>
-          </div>
+      <div className="h-8 w-px bg-border" />
+
+      <div className="flex items-center gap-2">
+        <Zap className="h-4 w-4 text-muted-foreground" />
+        <div>
+          <p className="text-xs text-muted-foreground">Tokens</p>
+          <p className="text-lg font-semibold font-mono text-foreground">{stats.totalTokens.toLocaleString()}</p>
         </div>
+      </div>
 
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10">
-            <Coins className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Total Cost</p>
-            <p className="text-2xl font-semibold font-mono text-foreground">${stats.totalCost.toFixed(4)}</p>
-          </div>
+      <div className="h-8 w-px bg-border" />
+
+      <div className="flex items-center gap-2">
+        <Coins className="h-4 w-4 text-muted-foreground" />
+        <div>
+          <p className="text-xs text-muted-foreground">Cost</p>
+          <p className="text-lg font-semibold font-mono text-foreground">${stats.totalCost.toFixed(4)}</p>
         </div>
       </div>
     </div>
