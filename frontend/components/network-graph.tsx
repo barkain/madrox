@@ -28,51 +28,62 @@ interface NetworkGraphProps {
   instances: AgentInstance[]
 }
 
-// Hierarchical tree layout algorithm
+// Tree layout algorithm that respects parent-child structure
 function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { x: number; y: number }> {
   const positions = new Map<string, { x: number; y: number }>()
-  const levelMap = new Map<string, number>()
-
-  // Calculate depth levels for each instance
-  const calculateLevel = (instance: AgentInstance, level = 0): void => {
-    const currentLevel = levelMap.get(instance.id) || 0
-    if (level > currentLevel) {
-      levelMap.set(instance.id, level)
-    }
-
-    const children = instances.filter(i => i.parentId === instance.id)
-    children.forEach(child => calculateLevel(child, level + 1))
-  }
-
-  // Start from root nodes (no parent)
-  const rootNodes = instances.filter(i => !i.parentId)
-  rootNodes.forEach(root => calculateLevel(root, 0))
-
-  // Group instances by level
-  const levelGroups = new Map<number, AgentInstance[]>()
-  instances.forEach(instance => {
-    const level = levelMap.get(instance.id) || 0
-    if (!levelGroups.has(level)) {
-      levelGroups.set(level, [])
-    }
-    levelGroups.get(level)!.push(instance)
-  })
-
-  // Position nodes in each level
   const horizontalSpacing = 300
   const verticalSpacing = 200
-  const startY = 100
 
-  levelGroups.forEach((levelInstances, level) => {
-    const totalWidth = (levelInstances.length - 1) * horizontalSpacing
-    const startX = -totalWidth / 2
+  // Track next available X position at each level
+  let nextXByLevel = new Map<number, number>()
 
-    levelInstances.forEach((instance, index) => {
-      positions.set(instance.id, {
-        x: startX + index * horizontalSpacing,
-        y: startY + level * verticalSpacing,
-      })
+  // Recursive function to layout a subtree
+  const layoutSubtree = (instance: AgentInstance, level: number, startX: number): number => {
+    // Get all children of this instance
+    const children = instances.filter(i => i.parentId === instance.id)
+
+    if (children.length === 0) {
+      // Leaf node - position it at the next available X for this level
+      const x = nextXByLevel.get(level) || startX
+      positions.set(instance.id, { x, y: level * verticalSpacing + 100 })
+      nextXByLevel.set(level, x + horizontalSpacing)
+      return x
+    }
+
+    // Layout all children first
+    const childPositions: number[] = []
+    let currentX = nextXByLevel.get(level + 1) || startX
+
+    children.forEach(child => {
+      const childX = layoutSubtree(child, level + 1, currentX)
+      childPositions.push(childX)
+      currentX = nextXByLevel.get(level + 1) || currentX
     })
+
+    // Position parent centered above children
+    const leftmostChild = Math.min(...childPositions)
+    const rightmostChild = Math.max(...childPositions)
+    const parentX = (leftmostChild + rightmostChild) / 2
+
+    positions.set(instance.id, { x: parentX, y: level * verticalSpacing + 100 })
+
+    return parentX
+  }
+
+  // Find root nodes and layout each tree
+  const rootNodes = instances.filter(i => !i.parentId)
+  let currentRootX = 0
+
+  rootNodes.forEach((root, index) => {
+    if (index > 0) {
+      // Add spacing between separate trees
+      const maxX = nextXByLevel.get(0) || 0
+      currentRootX = maxX + horizontalSpacing * 2
+      // Reset X tracking for new tree
+      nextXByLevel = new Map()
+    }
+
+    layoutSubtree(root, 0, currentRootX)
   })
 
   return positions
