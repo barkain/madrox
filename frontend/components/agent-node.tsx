@@ -22,6 +22,12 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
     terminated: "bg-[var(--status-terminated)]",
   }
 
+  // Different background colors for Claude vs Codex
+  const instanceTypeBackground = {
+    claude: "bg-gray-50 dark:bg-gray-900/50",
+    codex: "bg-gray-200 dark:bg-gray-800/80",
+  }
+
   const calculateUptime = () => {
     if (!data.createdAt) return "0m"
     const now = new Date()
@@ -37,7 +43,7 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
   }
 
   return (
-    <div className={`px-4 py-3 rounded-lg border-2 bg-card min-w-[240px] ${statusColors[data.status]}`}>
+    <div className={`px-4 py-3 rounded-lg border-2 min-w-[240px] ${instanceTypeBackground[data.type]} ${statusColors[data.status]}`}>
       <Handle type="target" position={Position.Top} className="w-3 h-3" />
 
       <div className="flex items-start justify-between gap-2 mb-2">
