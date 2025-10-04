@@ -60,14 +60,24 @@ function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { 
     })
 
     // Calculate parent position (centered above children)
-    const leftmostChildX = childResults[0].x
-    const rightmostChildX = childResults[childResults.length - 1].x
-    const parentX = (leftmostChildX + rightmostChildX) / 2
+    let parentX: number
+    if (childResults.length === 1) {
+      // Single child - parent directly above child
+      parentX = childResults[0].x
+    } else {
+      // Multiple children - center parent above all children
+      const leftmostChildX = childResults[0].x
+      const rightmostChildX = childResults[childResults.length - 1].x
+      parentX = (leftmostChildX + rightmostChildX) / 2
+    }
 
     positions.set(instance.id, { x: parentX, y: level * verticalSpacing + 100 })
 
     // Return parent position and total width
-    return { x: parentX, width: rightmostChildX - leftmostChildX }
+    const totalWidth = childResults.length > 1
+      ? childResults[childResults.length - 1].x - childResults[0].x
+      : 0
+    return { x: parentX, width: totalWidth }
   }
 
   // Find root nodes and layout each tree
