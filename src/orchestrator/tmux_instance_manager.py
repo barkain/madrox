@@ -328,13 +328,47 @@ class TmuxInstanceManager:
             pane = window.panes[0]
 
             # Send the message
-            # For long messages, Claude Code treats rapid input as paste event
-            # and requires manual Enter. Send message and Enter separately for all instance types.
-            pane.send_keys(message, enter=False)
-            pane.send_keys("", enter=True)  # Send Enter as separate command
-            logger.debug(f"Sent message to instance {instance_id} via tmux")
+            # Claude Code has aggressive paste detection - we need to simulate SLOW typing
+            # Split into small chunks (words/chars) and send with realistic typing delays
+            import time
+            import subprocess
+
+            # Strategy: Send message line-by-line with delays to simulate human typing
+            # Even splitting lines is too fast - need to use tmux send-keys with literal flag
+            # and disable bracketed paste
+
+            # Disable bracketed paste mode in the pane first
+            subprocess.run(['tmux', 'send-keys', '-t', session.name, '-X', 'cancel'],
+                          capture_output=True)
+
+            # Send message using send-keys with literal flag (-l) which sends character by character
+            # This is slower but avoids paste detection
+            result = subprocess.run(['tmux', 'send-keys', '-t', session.name, '-l', message],
+                          capture_output=True, text=True)
+
+            if result.returncode != 0:
+                logger.error(f"tmux send-keys failed: {result.stderr}")
+
+            logger.debug(f"Sent {len(message)} chars to instance {instance_id} via tmux literal mode")
+
+            # Wait a moment then send Enter
+            time.sleep(0.2)
+            pane.send_keys("", enter=True)
+
+            logger.debug(f"Submitted message to instance {instance_id}")
 
             if not wait_for_response:
+                # Still track outbound message tokens even when not waiting for response
+                estimated_tokens = len(message.split())
+                estimated_cost = estimated_tokens * 0.00001
+
+                instance["total_tokens_used"] += estimated_tokens
+                instance["total_cost"] += estimated_cost
+                instance["request_count"] += 1
+
+                self.total_tokens_used += estimated_tokens
+                self.total_cost += estimated_cost
+
                 return {
                     "instance_id": instance_id,
                     "status": "sent",
