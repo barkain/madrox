@@ -9,17 +9,19 @@ interface AgentNodeProps {
 
 export const AgentNode = memo(({ data }: AgentNodeProps) => {
   const statusColors = {
-    running: "border-[var(--status-running)] bg-[var(--status-running)]/10",
-    pending: "border-[var(--status-pending)] bg-[var(--status-pending)]/10",
-    error: "border-[var(--status-error)] bg-[var(--status-error)]/10",
-    terminated: "border-[var(--status-terminated)] bg-[var(--status-terminated)]/10",
+    running: "border-green-500 bg-green-500/10",
+    idle: "border-blue-400 bg-blue-400/10",
+    pending: "border-yellow-500 bg-yellow-500/10",
+    error: "border-red-500 bg-red-500/10",
+    terminated: "border-gray-400 bg-gray-400/10",
   }
 
   const statusDotColors = {
-    running: "bg-[var(--status-running)]",
-    pending: "bg-[var(--status-pending)]",
-    error: "bg-[var(--status-error)]",
-    terminated: "bg-[var(--status-terminated)]",
+    running: "bg-green-500",
+    idle: "bg-blue-400",
+    pending: "bg-yellow-500",
+    error: "bg-red-500",
+    terminated: "bg-gray-400",
   }
 
   // Different background colors for Claude vs Codex
