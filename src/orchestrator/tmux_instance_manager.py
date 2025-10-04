@@ -328,31 +328,31 @@ class TmuxInstanceManager:
             pane = window.panes[0]
 
             # Send the message
-            # Claude Code has aggressive paste detection - we need to simulate SLOW typing
-            # Split into small chunks (words/chars) and send with realistic typing delays
+            # Claude Code has VERY aggressive paste detection
+            # Strategy: Send line-by-line with small delays to simulate realistic typing
             import time
-            import subprocess
 
-            # Strategy: Send message line-by-line with delays to simulate human typing
-            # Even splitting lines is too fast - need to use tmux send-keys with literal flag
-            # and disable bracketed paste
+            lines = message.split('\n')
+            total_lines = len(lines)
 
-            # Disable bracketed paste mode in the pane first
-            subprocess.run(['tmux', 'send-keys', '-t', session.name, '-X', 'cancel'],
-                          capture_output=True)
+            logger.debug(f"Sending {total_lines} lines to instance {instance_id}")
 
-            # Send message using send-keys with literal flag (-l) which sends character by character
-            # This is slower but avoids paste detection
-            result = subprocess.run(['tmux', 'send-keys', '-t', session.name, '-l', message],
-                          capture_output=True, text=True)
+            # Send each line individually with a small delay
+            for i, line in enumerate(lines):
+                # Send the line content
+                pane.send_keys(line, enter=False, literal=True)
 
-            if result.returncode != 0:
-                logger.error(f"tmux send-keys failed: {result.stderr}")
+                # Add newline character (except for last line)
+                # Use C-j (newline) instead of Enter to avoid submitting
+                if i < total_lines - 1:
+                    pane.send_keys('C-j', enter=False, literal=False)
+                    # Small delay between lines to avoid paste detection
+                    time.sleep(0.01)  # 10ms between lines
 
-            logger.debug(f"Sent {len(message)} chars to instance {instance_id} via tmux literal mode")
+            logger.debug(f"Sent all {total_lines} lines to instance {instance_id}")
 
-            # Wait a moment then send Enter
-            time.sleep(0.2)
+            # Now send final Enter to submit the entire message
+            time.sleep(0.05)
             pane.send_keys("", enter=True)
 
             logger.debug(f"Submitted message to instance {instance_id}")
