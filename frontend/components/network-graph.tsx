@@ -34,56 +34,53 @@ function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { 
   const horizontalSpacing = 300
   const verticalSpacing = 200
 
-  // Track next available X position at each level
-  let nextXByLevel = new Map<number, number>()
+  // Global X counter to ensure left-to-right ordering
+  let globalX = 0
 
   // Recursive function to layout a subtree
-  const layoutSubtree = (instance: AgentInstance, level: number, startX: number): number => {
-    // Get all children of this instance
-    const children = instances.filter(i => i.parentId === instance.id)
+  const layoutSubtree = (instance: AgentInstance, level: number): { x: number; width: number } => {
+    // Get all children of this instance, sorted by creation time for consistent ordering
+    const children = instances
+      .filter(i => i.parentId === instance.id)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
     if (children.length === 0) {
-      // Leaf node - position it at the next available X for this level
-      const x = nextXByLevel.get(level) || startX
+      // Leaf node - position it at the next available X
+      const x = globalX
       positions.set(instance.id, { x, y: level * verticalSpacing + 100 })
-      nextXByLevel.set(level, x + horizontalSpacing)
-      return x
+      globalX += horizontalSpacing
+      return { x, width: 0 }
     }
 
-    // Layout all children first
-    const childPositions: number[] = []
-    let currentX = nextXByLevel.get(level + 1) || startX
-
+    // Layout all children first (left to right)
+    const childResults: { x: number; width: number }[] = []
     children.forEach(child => {
-      const childX = layoutSubtree(child, level + 1, currentX)
-      childPositions.push(childX)
-      currentX = nextXByLevel.get(level + 1) || currentX
+      const result = layoutSubtree(child, level + 1)
+      childResults.push(result)
     })
 
-    // Position parent centered above children
-    const leftmostChild = Math.min(...childPositions)
-    const rightmostChild = Math.max(...childPositions)
-    const parentX = (leftmostChild + rightmostChild) / 2
+    // Calculate parent position (centered above children)
+    const leftmostChildX = childResults[0].x
+    const rightmostChildX = childResults[childResults.length - 1].x
+    const parentX = (leftmostChildX + rightmostChildX) / 2
 
     positions.set(instance.id, { x: parentX, y: level * verticalSpacing + 100 })
 
-    return parentX
+    // Return parent position and total width
+    return { x: parentX, width: rightmostChildX - leftmostChildX }
   }
 
   // Find root nodes and layout each tree
-  const rootNodes = instances.filter(i => !i.parentId)
-  let currentRootX = 0
+  const rootNodes = instances
+    .filter(i => !i.parentId)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
   rootNodes.forEach((root, index) => {
     if (index > 0) {
-      // Add spacing between separate trees
-      const maxX = nextXByLevel.get(0) || 0
-      currentRootX = maxX + horizontalSpacing * 2
-      // Reset X tracking for new tree
-      nextXByLevel = new Map()
+      // Add extra spacing between separate trees
+      globalX += horizontalSpacing
     }
-
-    layoutSubtree(root, 0, currentRootX)
+    layoutSubtree(root, 0)
   })
 
   return positions
