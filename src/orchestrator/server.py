@@ -173,7 +173,7 @@ class ClaudeOrchestratorServer:
                 audit_logs = await self.instance_manager.get_audit_logs(
                     since=self.server_start_time, limit=100
                 )
-                for idx, log in enumerate(audit_logs):
+                for log in audit_logs:
                     # Generate human-readable message from event
                     event_type = log.get("event_type", "")
                     details = log.get("details", {})
@@ -190,13 +190,16 @@ class ClaudeOrchestratorServer:
                     else:
                         message = event_type.replace("_", " ").title()
 
+                    # Use timestamp + instance_id + event_type for unique ID
+                    log_id = f"{log.get('timestamp', '')}_{log.get('instance_id', '')}_{log.get('event_type', '')}"
+
                     await websocket.send_json(
                         {
                             "type": "audit_log",
                             "timestamp": datetime.utcnow().isoformat(),
                             "data": {
                                 "log": {
-                                    "id": f"{log.get('timestamp', '')}_{log.get('instance_id', '')}_{idx}",
+                                    "id": log_id,
                                     "timestamp": log.get("timestamp", ""),
                                     "type": log.get("event_type", ""),
                                     "message": message,
@@ -257,7 +260,7 @@ class ClaudeOrchestratorServer:
                         since=last_audit_check, limit=100
                     )
                     if new_audit_logs:
-                        for idx, log in enumerate(new_audit_logs):
+                        for log in new_audit_logs:
                             # Generate human-readable message from event
                             event_type = log.get("event_type", "")
                             details = log.get("details", {})
@@ -272,13 +275,16 @@ class ClaudeOrchestratorServer:
                             else:
                                 message = event_type.replace("_", " ").title()
 
+                            # Use timestamp + instance_id + event_type for unique ID
+                            log_id = f"{log.get('timestamp', '')}_{log.get('instance_id', '')}_{log.get('event_type', '')}"
+
                             await websocket.send_json(
                                 {
                                     "type": "audit_log",
                                     "timestamp": datetime.utcnow().isoformat(),
                                     "data": {
                                         "log": {
-                                            "id": f"{log.get('timestamp', '')}_{log.get('instance_id', '')}_{idx}",
+                                            "id": log_id,
                                             "timestamp": log.get("timestamp", ""),
                                             "type": log.get("event_type", ""),
                                             "message": message,
