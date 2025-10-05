@@ -10,6 +10,7 @@ interface InstanceStore {
   updateInstance: (id: string, updates: Partial<AgentInstance>) => void
   removeInstance: (id: string) => void
   addAuditLog: (log: AuditLogEntry) => void
+  clearAuditLogs: () => void
   setStats: (stats: Stats) => void
 }
 
@@ -88,5 +89,6 @@ export const useInstanceStore = create<InstanceStore>((set) => ({
     set((state) => ({
       auditLogs: [log, ...state.auditLogs].slice(0, 100), // Keep last 100 logs
     })),
+  clearAuditLogs: () => set({ auditLogs: [] }),
   setStats: (stats) => set({ stats }),
 }))

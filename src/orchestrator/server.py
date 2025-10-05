@@ -61,6 +61,9 @@ class ClaudeOrchestratorServer:
         self.config = config
         self.instance_manager = InstanceManager(config.to_dict())
 
+        # Track server start time for session-only audit logs
+        self.server_start_time = datetime.utcnow().isoformat()
+
         # Initialize FastAPI app
         self.app = FastAPI(
             title="Claude Conversational Orchestrator",
@@ -166,8 +169,10 @@ class ClaudeOrchestratorServer:
                     }
                 )
 
-                # Send initial audit logs
-                audit_logs = await self.instance_manager.get_audit_logs(limit=50)
+                # Send initial audit logs (only from current session)
+                audit_logs = await self.instance_manager.get_audit_logs(
+                    since=self.server_start_time, limit=100
+                )
                 for idx, log in enumerate(audit_logs):
                     # Generate human-readable message from event
                     event_type = log.get("event_type", "")
