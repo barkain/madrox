@@ -26,6 +26,7 @@ const nodeTypes = {
 
 interface NetworkGraphProps {
   instances: AgentInstance[]
+  onNodeClick?: (instance: AgentInstance) => void
 }
 
 // Tree layout algorithm that respects parent-child structure
@@ -96,10 +97,21 @@ function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { 
   return positions
 }
 
-function NetworkGraphInner({ instances }: NetworkGraphProps) {
+function NetworkGraphInner({ instances, onNodeClick }: NetworkGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const { fitView } = useReactFlow()
+
+  // Handle node clicks
+  const handleNodeClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      const instance = instances.find((i) => i.id === node.id)
+      if (instance && onNodeClick) {
+        onNodeClick(instance)
+      }
+    },
+    [instances, onNodeClick],
+  )
 
   // Watch for container resize and re-fit the view
   useEffect(() => {
@@ -189,6 +201,7 @@ function NetworkGraphInner({ instances }: NetworkGraphProps) {
       edges={edges}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
+      onNodeClick={handleNodeClick}
       nodeTypes={nodeTypes}
       fitView
       minZoom={0.1}
@@ -217,11 +230,11 @@ function NetworkGraphInner({ instances }: NetworkGraphProps) {
   )
 }
 
-export function NetworkGraph({ instances }: NetworkGraphProps) {
+export function NetworkGraph({ instances, onNodeClick }: NetworkGraphProps) {
   return (
     <div className="w-full h-full bg-background">
       <ReactFlowProvider>
-        <NetworkGraphInner instances={instances} />
+        <NetworkGraphInner instances={instances} onNodeClick={onNodeClick} />
       </ReactFlowProvider>
     </div>
   )

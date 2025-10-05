@@ -1,11 +1,13 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { X } from "lucide-react"
 import { ConnectionStatus } from "@/components/connection-status"
 import { StatsHeader } from "@/components/stats-header"
 import { FilterBar } from "@/components/filter-bar"
 import { NetworkGraph } from "@/components/network-graph"
 import { AuditLog } from "@/components/audit-log"
+import { TerminalViewer } from "@/components/terminal-viewer"
 import { useWebSocket } from "@/hooks/use-websocket"
 
 export default function MadroxMonitor() {
@@ -14,9 +16,29 @@ export default function MadroxMonitor() {
   const [typeFilter, setTypeFilter] = useState<string[]>([])
   const [auditLogHeight, setAuditLogHeight] = useState(240) // Default 240px (~15rem)
   const [isDragging, setIsDragging] = useState(false)
+  const [activeTab, setActiveTab] = useState<"graph" | "terminals">("graph")
+  const [openTerminals, setOpenTerminals] = useState<Array<{ id: string; name: string }>>([])
+  const [expandedTerminal, setExpandedTerminal] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const { connectionStatus, instances, auditLogs, stats } = useWebSocket()
+
+  const handleNodeClick = (instance: { id: string; name: string }) => {
+    // Add to open terminals if not already there
+    if (!openTerminals.find((t) => t.id === instance.id)) {
+      setOpenTerminals([...openTerminals, instance])
+    }
+    // Switch to terminals tab and expand this terminal
+    setActiveTab("terminals")
+    setExpandedTerminal(instance.id)
+  }
+
+  const closeTerminal = (instanceId: string) => {
+    setOpenTerminals(openTerminals.filter((t) => t.id !== instanceId))
+    if (expandedTerminal === instanceId) {
+      setExpandedTerminal(null)
+    }
+  }
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -88,8 +110,8 @@ export default function MadroxMonitor() {
             </div>
           </div>
 
-          {/* Bottom Row - Filters */}
-          <div className="px-6 pb-3">
+          {/* Bottom Row - Filters and Tabs */}
+          <div className="px-6 pb-3 flex items-center justify-between gap-4">
             <FilterBar
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
@@ -98,12 +120,91 @@ export default function MadroxMonitor() {
               typeFilter={typeFilter}
               onTypeFilterChange={setTypeFilter}
             />
+
+            {/* Tab Switcher */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveTab("graph")}
+                className={`px-4 py-1.5 text-sm font-medium rounded transition-colors ${
+                  activeTab === "graph"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                Network Graph
+              </button>
+              <button
+                onClick={() => setActiveTab("terminals")}
+                className={`px-4 py-1.5 text-sm font-medium rounded transition-colors ${
+                  activeTab === "terminals"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                Terminals ({openTerminals.length})
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Network Graph - Dynamic height based on audit log */}
+        {/* Content Area - Tabbed */}
         <div className="overflow-hidden" style={{ flex: `1 1 calc(100% - ${auditLogHeight}px)` }}>
-          <NetworkGraph instances={filteredInstances} />
+          {activeTab === "graph" ? (
+            <NetworkGraph instances={filteredInstances} onNodeClick={handleNodeClick} />
+          ) : (
+            <div className="h-full p-4 overflow-auto bg-background">
+              {openTerminals.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  <div className="text-center">
+                    <p className="text-lg">No terminals open</p>
+                    <p className="text-sm mt-2">Click on an instance node in the Network Graph to open its terminal</p>
+                  </div>
+                </div>
+              ) : expandedTerminal ? (
+                <div className="h-full">
+                  <TerminalViewer
+                    instanceId={expandedTerminal}
+                    instanceName={openTerminals.find((t) => t.id === expandedTerminal)?.name || expandedTerminal}
+                    onClose={() => setExpandedTerminal(null)}
+                  />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr">
+                  {openTerminals.map((terminal) => (
+                    <div
+                      key={terminal.id}
+                      className="border border-border rounded-lg overflow-hidden bg-card hover:border-primary transition-colors cursor-pointer h-80"
+                      onClick={() => setExpandedTerminal(terminal.id)}
+                    >
+                      <div className="px-3 py-2 border-b border-border bg-muted/50 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold truncate">{terminal.name}</span>
+                          <span className="text-xs text-muted-foreground font-mono">{terminal.id.slice(0, 8)}</span>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            closeTerminal(terminal.id)
+                          }}
+                          className="p-1 rounded hover:bg-muted transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <div className="p-2 h-[calc(100%-2.5rem)] bg-[#1e1e1e] overflow-hidden">
+                        <TerminalViewer
+                          instanceId={terminal.id}
+                          instanceName={terminal.name}
+                          onClose={() => {}}
+                          compact
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Resizable Divider */}

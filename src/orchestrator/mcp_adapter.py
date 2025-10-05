@@ -522,6 +522,22 @@ class MCPAdapter:
                                 },
                             },
                             {
+                                "name": "get_tmux_pane_content",
+                                "description": "Capture the current tmux pane content for an instance",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "instance_id": {"type": "string", "description": "Instance ID"},
+                                        "lines": {
+                                            "type": "integer",
+                                            "description": "Number of lines to capture (default: 100, -1 for all)",
+                                            "default": 100,
+                                        },
+                                    },
+                                    "required": ["instance_id"],
+                                },
+                            },
+                            {
                                 "name": "spawn_codex_instance",
                                 "description": "Spawn a new Codex CLI instance with specific configuration",
                                 "inputSchema": {
@@ -1242,6 +1258,20 @@ class MCPAdapter:
                                 {
                                     "type": "text",
                                     "text": f"Spawned Codex instance '{tool_args.get('name')}' with ID: {instance_id}",
+                                }
+                            ]
+                        }
+
+                    elif tool_name == "get_tmux_pane_content":
+                        content = await self.manager.get_tmux_pane_content(
+                            instance_id=tool_args["instance_id"],
+                            lines=tool_args.get("lines", 100),
+                        )
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": content,
                                 }
                             ]
                         }
