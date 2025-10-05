@@ -134,9 +134,13 @@ class ClaudeOrchestratorServer:
             logger.info("WebSocket client connected to /ws/monitor")
 
             try:
-                # Send initial state with instances
+                # Send initial state with instances (exclude terminated)
                 instances_data = []
                 for instance_id, instance in self.instance_manager.instances.items():
+                    # Skip terminated instances
+                    if instance.get("state") == "terminated":
+                        continue
+
                     instances_data.append(
                         {
                             "id": instance_id,
@@ -211,9 +215,13 @@ class ClaudeOrchestratorServer:
                         # Send periodic updates even without client ping
                         pass
 
-                    # Send current instance state
+                    # Send current instance state (exclude terminated)
                     instances_data = []
                     for instance_id, instance in self.instance_manager.instances.items():
+                        # Skip terminated instances
+                        if instance.get("state") == "terminated":
+                            continue
+
                         instances_data.append(
                             {
                                 "id": instance_id,
