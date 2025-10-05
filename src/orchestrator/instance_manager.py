@@ -881,30 +881,27 @@ class InstanceManager:
 
         for audit_file in audit_files:
             try:
-                # Read all lines from the file
+                # Read all lines from the file in order (oldest first in file)
                 with audit_file.open("r") as f:
-                    lines = f.readlines()
+                    for line in f:
+                        if not line.strip():
+                            continue
 
-                # Process lines in reverse order (newest last in file, so reverse to get newest first)
-                for line in reversed(lines):
-                    if not line.strip():
-                        continue
+                        try:
+                            log_entry = json.loads(line)
 
-                    try:
-                        log_entry = json.loads(line)
+                            # Filter by timestamp if specified
+                            if since_dt:
+                                log_timestamp = datetime.fromisoformat(log_entry["timestamp"])
+                                if log_timestamp < since_dt:
+                                    continue
 
-                        # Filter by timestamp if specified
-                        if since_dt:
-                            log_timestamp = datetime.fromisoformat(log_entry["timestamp"])
-                            if log_timestamp < since_dt:
-                                continue
+                            audit_logs.append(log_entry)
 
-                        audit_logs.append(log_entry)
-
-                        if len(audit_logs) >= limit:
-                            break
-                    except json.JSONDecodeError:
-                        continue
+                            if len(audit_logs) >= limit:
+                                break
+                        except json.JSONDecodeError:
+                            continue
 
                 if len(audit_logs) >= limit:
                     break
@@ -912,8 +909,9 @@ class InstanceManager:
                 logger.error(f"Failed to read audit file {audit_file}: {e}")
                 continue
 
-        # Already in newest-first order from reversed iteration
-        return audit_logs[:limit]
+        # Return in chronological order (oldest first)
+        # Frontend will reverse when displaying
+        return audit_logs[-limit:] if audit_logs else []
 
     async def list_logged_instances(self) -> list[dict[str, Any]]:
         """List all instances that have logs.
