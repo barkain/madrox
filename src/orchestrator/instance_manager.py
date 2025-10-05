@@ -890,10 +890,10 @@ class InstanceManager:
                         try:
                             log_entry = json.loads(line)
 
-                            # Filter by timestamp if specified
+                            # Filter by timestamp if specified (exclude logs at or before since timestamp)
                             if since_dt:
                                 log_timestamp = datetime.fromisoformat(log_entry["timestamp"])
-                                if log_timestamp < since_dt:
+                                if log_timestamp <= since_dt:
                                     continue
 
                             audit_logs.append(log_entry)

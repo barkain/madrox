@@ -101,6 +101,30 @@ function NetworkGraphInner({ instances }: NetworkGraphProps) {
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const { fitView } = useReactFlow()
 
+  // Watch for container resize and re-fit the view
+  useEffect(() => {
+    const handleResize = () => {
+      fitView({ padding: 0.2, duration: 300 })
+    }
+
+    window.addEventListener("resize", handleResize)
+
+    // Also set up a mutation observer to detect container size changes
+    const observer = new ResizeObserver(() => {
+      fitView({ padding: 0.2, duration: 300 })
+    })
+
+    const container = document.querySelector(".react-flow")
+    if (container) {
+      observer.observe(container)
+    }
+
+    return () => {
+      window.removeEventListener("resize", handleResize)
+      observer.disconnect()
+    }
+  }, [fitView])
+
   // Layout reset function
   const resetLayout = useCallback(() => {
     const positions = calculateHierarchicalLayout(instances)

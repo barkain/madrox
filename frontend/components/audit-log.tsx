@@ -5,9 +5,10 @@ import { useInstanceStore } from "@/store/instance-store"
 
 interface AuditLogProps {
   logs: AuditLogEntry[]
+  height: number
 }
 
-export function AuditLog({ logs }: AuditLogProps) {
+export function AuditLog({ logs, height }: AuditLogProps) {
   const clearAuditLogs = useInstanceStore((state) => state.clearAuditLogs)
 
   const getEventColor = (type: string) => {
@@ -27,7 +28,7 @@ export function AuditLog({ logs }: AuditLogProps) {
   }
 
   return (
-    <div className="border-t border-border bg-card/50 h-32">
+    <div className="border-t border-border bg-card/50" style={{ height: `${height}px` }}>
       <div className="px-4 py-1.5 border-b border-border flex items-center justify-between">
         <h2 className="text-xs font-semibold text-foreground">Audit Log</h2>
         <div className="flex items-center gap-2">
