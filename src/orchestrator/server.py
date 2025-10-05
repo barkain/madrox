@@ -61,8 +61,8 @@ class ClaudeOrchestratorServer:
         self.config = config
         self.instance_manager = InstanceManager(config.to_dict())
 
-        # Track server start time for session-only audit logs
-        self.server_start_time = datetime.utcnow().isoformat()
+        # Track server start time for session-only audit logs (use local time to match audit log timestamps)
+        self.server_start_time = datetime.now().isoformat()
 
         # Initialize FastAPI app
         self.app = FastAPI(
