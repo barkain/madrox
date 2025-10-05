@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
 except ImportError:
     # Fallback for type checking
@@ -126,6 +126,171 @@ class ClaudeOrchestratorServer:
                     ),
                 },
             }
+
+        @self.app.websocket("/ws/monitor")
+        async def monitor_websocket(websocket: WebSocket):
+            """WebSocket endpoint for real-time monitoring."""
+            await websocket.accept()
+            logger.info("WebSocket client connected to /ws/monitor")
+
+            try:
+                # Send initial state with instances
+                instances_data = []
+                for instance_id, instance in self.instance_manager.instances.items():
+                    instances_data.append(
+                        {
+                            "id": instance_id,
+                            "name": instance.get("name", instance_id),
+                            "type": instance.get("instance_type", "claude"),
+                            "status": instance.get("state", "unknown"),
+                            "role": instance.get("role", "general"),
+                            "parentId": instance.get("parent_instance_id"),
+                            "createdAt": instance.get("created_at", datetime.utcnow().isoformat()),
+                            "lastActivity": instance.get(
+                                "last_activity", datetime.utcnow().isoformat()
+                            ),
+                            "totalTokens": instance.get("total_tokens_used", 0),
+                            "totalCost": instance.get("total_cost", 0.0),
+                        }
+                    )
+
+                await websocket.send_json(
+                    {
+                        "type": "initial_state",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "data": {"instances": instances_data},
+                    }
+                )
+
+                # Send initial audit logs
+                audit_logs = await self.instance_manager.get_audit_logs(limit=50)
+                for log in audit_logs:
+                    # Generate human-readable message from event
+                    event_type = log.get("event_type", "")
+                    details = log.get("details", {})
+                    instance_name = details.get("instance_name", log.get("instance_id", ""))
+
+                    if event_type == "instance_spawn":
+                        message = (
+                            f"Spawned instance '{instance_name}' ({details.get('role', 'general')})"
+                        )
+                    elif event_type == "message_exchange":
+                        message = f"Message sent to '{instance_name}'"
+                    elif event_type == "instance_terminated":
+                        message = f"Terminated instance '{instance_name}'"
+                    else:
+                        message = event_type.replace("_", " ").title()
+
+                    await websocket.send_json(
+                        {
+                            "type": "audit_log",
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "data": {
+                                "log": {
+                                    "id": log.get("timestamp", "")
+                                    + "_"
+                                    + log.get("event_type", ""),
+                                    "timestamp": log.get("timestamp", ""),
+                                    "type": log.get("event_type", ""),
+                                    "message": message,
+                                    "instanceId": log.get("instance_id"),
+                                }
+                            },
+                        }
+                    )
+
+                # Track last known audit log timestamp
+                last_audit_check = datetime.utcnow().isoformat()
+
+                # Keep connection alive and send updates
+                while True:
+                    # Wait for ping from client (heartbeat)
+                    try:
+                        message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                    except asyncio.TimeoutError:
+                        # Send periodic updates even without client ping
+                        pass
+
+                    # Send current instance state
+                    instances_data = []
+                    for instance_id, instance in self.instance_manager.instances.items():
+                        instances_data.append(
+                            {
+                                "id": instance_id,
+                                "name": instance.get("name", instance_id),
+                                "type": instance.get("instance_type", "claude"),
+                                "status": instance.get("state", "unknown"),
+                                "role": instance.get("role", "general"),
+                                "parentId": instance.get("parent_instance_id"),
+                                "createdAt": instance.get(
+                                    "created_at", datetime.utcnow().isoformat()
+                                ),
+                                "lastActivity": instance.get(
+                                    "last_activity", datetime.utcnow().isoformat()
+                                ),
+                                "totalTokens": instance.get("total_tokens_used", 0),
+                                "totalCost": instance.get("total_cost", 0.0),
+                            }
+                        )
+
+                    await websocket.send_json(
+                        {
+                            "type": "instance_update",
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "data": {"instances": instances_data},
+                        }
+                    )
+
+                    # Send new audit logs since last check
+                    new_audit_logs = await self.instance_manager.get_audit_logs(
+                        since=last_audit_check, limit=100
+                    )
+                    if new_audit_logs:
+                        for log in new_audit_logs:
+                            # Generate human-readable message from event
+                            event_type = log.get("event_type", "")
+                            details = log.get("details", {})
+                            instance_name = details.get("instance_name", log.get("instance_id", ""))
+
+                            if event_type == "instance_spawn":
+                                message = f"Spawned instance '{instance_name}' ({details.get('role', 'general')})"
+                            elif event_type == "message_exchange":
+                                message = f"Message sent to '{instance_name}'"
+                            elif event_type == "instance_terminated":
+                                message = f"Terminated instance '{instance_name}'"
+                            else:
+                                message = event_type.replace("_", " ").title()
+
+                            await websocket.send_json(
+                                {
+                                    "type": "audit_log",
+                                    "timestamp": datetime.utcnow().isoformat(),
+                                    "data": {
+                                        "log": {
+                                            "id": log.get("timestamp", "")
+                                            + "_"
+                                            + log.get("event_type", ""),
+                                            "timestamp": log.get("timestamp", ""),
+                                            "type": log.get("event_type", ""),
+                                            "message": message,
+                                            "instanceId": log.get("instance_id"),
+                                        }
+                                    },
+                                }
+                            )
+                        # Update last check timestamp to the newest log
+                        last_audit_check = new_audit_logs[-1].get("timestamp", last_audit_check)
+
+                    await asyncio.sleep(2)  # Update every 2 seconds
+
+            except WebSocketDisconnect:
+                logger.info("WebSocket client disconnected from /ws/monitor")
+            except Exception as e:
+                logger.error(f"WebSocket error: {e}")
+                try:
+                    await websocket.close()
+                except:
+                    pass
 
         # MCP Protocol endpoints
         @self.app.get("/tools")
@@ -340,7 +505,9 @@ class ClaudeOrchestratorServer:
                 raise HTTPException(status_code=404, detail=str(e)) from e
 
         @self.app.get("/logs/audit")
-        async def get_audit_logs(limit: int = 100, since: str | None = None, root_instance_id: str | None = None):
+        async def get_audit_logs(
+            limit: int = 100, since: str | None = None, root_instance_id: str | None = None
+        ):
             """Get audit logs with optional filtering.
 
             Args:
@@ -348,7 +515,9 @@ class ClaudeOrchestratorServer:
                 since: Filter logs after this timestamp
                 root_instance_id: Optional root instance ID to filter logs by specific network
             """
-            return await self._get_audit_logs(limit=limit, since=since, root_instance_id=root_instance_id)
+            return await self._get_audit_logs(
+                limit=limit, since=since, root_instance_id=root_instance_id
+            )
 
         @self.app.get("/logs/instances/{instance_id}")
         async def get_instance_logs(instance_id: str, limit: int = 100, since: str | None = None):
@@ -356,9 +525,13 @@ class ClaudeOrchestratorServer:
             return await self._get_instance_logs(instance_id=instance_id, limit=limit, since=since)
 
         @self.app.get("/logs/communication/{instance_id}")
-        async def get_communication_logs(instance_id: str, limit: int = 100, since: str | None = None):
+        async def get_communication_logs(
+            instance_id: str, limit: int = 100, since: str | None = None
+        ):
             """Get communication logs for a specific instance."""
-            return await self._get_communication_logs(instance_id=instance_id, limit=limit, since=since)
+            return await self._get_communication_logs(
+                instance_id=instance_id, limit=limit, since=since
+            )
 
         @self.app.get("/network/hierarchy")
         async def get_network_hierarchy(root_instance_id: str | None = None):
@@ -651,7 +824,9 @@ class ClaudeOrchestratorServer:
         server = uvicorn.Server(config)
         await server.serve()
 
-    async def _get_audit_logs(self, limit: int = 100, since: str | None = None, root_instance_id: str | None = None) -> dict[str, Any]:
+    async def _get_audit_logs(
+        self, limit: int = 100, since: str | None = None, root_instance_id: str | None = None
+    ) -> dict[str, Any]:
         """Get audit logs from the logging system.
 
         Args:
@@ -700,10 +875,12 @@ class ClaudeOrchestratorServer:
             "logs": logs[-limit:] if logs else [],
             "total": len(logs),
             "file": str(audit_file),
-            "filtered_by_network": root_instance_id is not None
+            "filtered_by_network": root_instance_id is not None,
         }
 
-    async def _get_instance_logs(self, instance_id: str, limit: int = 100, since: str | None = None) -> dict[str, Any]:
+    async def _get_instance_logs(
+        self, instance_id: str, limit: int = 100, since: str | None = None
+    ) -> dict[str, Any]:
         """Get instance logs."""
         from pathlib import Path
 
@@ -723,10 +900,12 @@ class ClaudeOrchestratorServer:
             "logs": logs[-limit:] if logs else [],
             "total": len(logs),
             "instance_id": instance_id,
-            "file": str(instance_log)
+            "file": str(instance_log),
         }
 
-    async def _get_communication_logs(self, instance_id: str, limit: int = 100, since: str | None = None) -> dict[str, Any]:
+    async def _get_communication_logs(
+        self, instance_id: str, limit: int = 100, since: str | None = None
+    ) -> dict[str, Any]:
         """Get communication logs for an instance."""
         from pathlib import Path
         import json
@@ -735,7 +914,9 @@ class ClaudeOrchestratorServer:
         comm_log = log_dir / "communication.jsonl"
 
         if not comm_log.exists():
-            raise HTTPException(status_code=404, detail=f"No communication logs found for instance {instance_id}")
+            raise HTTPException(
+                status_code=404, detail=f"No communication logs found for instance {instance_id}"
+            )
 
         logs = []
         with open(comm_log) as f:
@@ -752,7 +933,7 @@ class ClaudeOrchestratorServer:
             "logs": logs[-limit:] if logs else [],
             "total": len(logs),
             "instance_id": instance_id,
-            "file": str(comm_log)
+            "file": str(comm_log),
         }
 
     async def _get_network_hierarchy(self, root_instance_id: str | None = None) -> dict[str, Any]:
@@ -809,10 +990,7 @@ class ClaudeOrchestratorServer:
                 root_instances.append(instance_info)
 
         # Return only hierarchical tree (roots with nested children)
-        return {
-            "total_instances": len(active_instances),
-            "instances": root_instances
-        }
+        return {"total_instances": len(active_instances), "instances": root_instances}
 
     def _get_network_instances(self, instances: dict[str, dict], root_id: str) -> set[str]:
         """Get all instance IDs in a network (root + all descendants).
