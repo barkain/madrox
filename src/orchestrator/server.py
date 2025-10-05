@@ -206,8 +206,8 @@ class ClaudeOrchestratorServer:
                         }
                     )
 
-                # Track last known audit log timestamp
-                last_audit_check = datetime.utcnow().isoformat()
+                # Track last known audit log timestamp (use local time to match audit logs)
+                last_audit_check = datetime.now().isoformat()
 
                 # Keep connection alive and send updates
                 while True:
