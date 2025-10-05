@@ -30,6 +30,12 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
     codex: "bg-gray-200 dark:bg-gray-800/80",
   }
 
+  // Text colors for instance types (Claude brand colors)
+  const instanceTypeTextColor = {
+    claude: "text-[#C15F3C]", // Claude's warm orange-brown/terra cotta
+    codex: "text-[#00A67E]",  // OpenAI's green-blue/teal
+  }
+
   const calculateUptime = () => {
     if (!data.createdAt) return "0m"
     const now = new Date()
@@ -52,7 +58,7 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <div className={`w-2 h-2 rounded-full ${statusDotColors[data.status]}`} />
-            <span className="text-xs font-medium text-muted-foreground uppercase">{data.type}</span>
+            <span className={`text-xs font-medium uppercase ${instanceTypeTextColor[data.type]}`}>{data.type}</span>
           </div>
           <h3 className="font-mono text-sm font-semibold text-foreground truncate">{data.name || data.id}</h3>
           {data.role && <p className="text-xs text-muted-foreground truncate">{data.role}</p>}

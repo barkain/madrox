@@ -229,11 +229,11 @@ class InstanceManager:
             parent_id: Parent instance ID
 
         Returns:
-            List of child instance details
+            List of child instance details (excludes terminated instances)
         """
         children = []
         for instance_id, instance in self.instances.items():
-            if instance.get("parent_instance_id") == parent_id:
+            if instance.get("parent_instance_id") == parent_id and instance.get("state") != "terminated":
                 children.append(
                     {
                         "id": instance_id,
@@ -310,10 +310,10 @@ class InstanceManager:
         Returns:
             Formatted tree string showing instance hierarchy
         """
-        # Find root instances (no parent)
+        # Find root instances (no parent) that are not terminated
         roots = []
         for instance_id, instance in self.instances.items():
-            if not instance.get("parent_instance_id"):
+            if not instance.get("parent_instance_id") and instance.get("state") != "terminated":
                 roots.append((instance_id, instance.get("name", "unknown")))
 
         if not roots:

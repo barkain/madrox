@@ -23,7 +23,7 @@ export const useInstanceStore = create<InstanceStore>((set) => ({
   },
   setInstances: (instances) =>
     set(() => {
-      const activeCount = instances.filter((i) => i.status === "running").length
+      const activeCount = instances.filter((i) => i.status === "running" || i.status === "idle").length
       const totalTokens = instances.reduce((sum, i) => sum + i.totalTokens, 0)
       const totalCost = instances.reduce((sum, i) => sum + i.totalCost, 0)
 
@@ -39,7 +39,7 @@ export const useInstanceStore = create<InstanceStore>((set) => ({
   addInstance: (instance) =>
     set((state) => {
       const instances = [...state.instances, instance]
-      const activeCount = instances.filter((i) => i.status === "running").length
+      const activeCount = instances.filter((i) => i.status === "running" || i.status === "idle").length
       const totalTokens = instances.reduce((sum, i) => sum + i.totalTokens, 0)
       const totalCost = instances.reduce((sum, i) => sum + i.totalCost, 0)
 
@@ -55,7 +55,7 @@ export const useInstanceStore = create<InstanceStore>((set) => ({
   updateInstance: (id, updates) =>
     set((state) => {
       const instances = state.instances.map((i) => (i.id === id ? { ...i, ...updates } : i))
-      const activeCount = instances.filter((i) => i.status === "running").length
+      const activeCount = instances.filter((i) => i.status === "running" || i.status === "idle").length
       const totalTokens = instances.reduce((sum, i) => sum + i.totalTokens, 0)
       const totalCost = instances.reduce((sum, i) => sum + i.totalCost, 0)
 
@@ -71,7 +71,7 @@ export const useInstanceStore = create<InstanceStore>((set) => ({
   removeInstance: (id) =>
     set((state) => {
       const instances = state.instances.filter((i) => i.id !== id)
-      const activeCount = instances.filter((i) => i.status === "running").length
+      const activeCount = instances.filter((i) => i.status === "running" || i.status === "idle").length
       const totalTokens = instances.reduce((sum, i) => sum + i.totalTokens, 0)
       const totalCost = instances.reduce((sum, i) => sum + i.totalCost, 0)
 

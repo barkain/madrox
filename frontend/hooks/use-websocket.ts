@@ -47,8 +47,8 @@ export function useWebSocket() {
             break
 
           case "instance_update":
-            if (message.data.instance) {
-              updateInstance(message.data.instance.id, message.data.instance)
+            if (message.data.instances) {
+              setInstances(message.data.instances)
             }
             break
 
