@@ -168,7 +168,7 @@ class ClaudeOrchestratorServer:
 
                 # Send initial audit logs
                 audit_logs = await self.instance_manager.get_audit_logs(limit=50)
-                for log in audit_logs:
+                for idx, log in enumerate(audit_logs):
                     # Generate human-readable message from event
                     event_type = log.get("event_type", "")
                     details = log.get("details", {})
@@ -180,7 +180,7 @@ class ClaudeOrchestratorServer:
                         )
                     elif event_type == "message_exchange":
                         message = f"Message sent to '{instance_name}'"
-                    elif event_type == "instance_terminated":
+                    elif event_type == "instance_terminate":
                         message = f"Terminated instance '{instance_name}'"
                     else:
                         message = event_type.replace("_", " ").title()
@@ -191,9 +191,7 @@ class ClaudeOrchestratorServer:
                             "timestamp": datetime.utcnow().isoformat(),
                             "data": {
                                 "log": {
-                                    "id": log.get("timestamp", "")
-                                    + "_"
-                                    + log.get("event_type", ""),
+                                    "id": f"{log.get('timestamp', '')}_{log.get('instance_id', '')}_{idx}",
                                     "timestamp": log.get("timestamp", ""),
                                     "type": log.get("event_type", ""),
                                     "message": message,
@@ -254,7 +252,7 @@ class ClaudeOrchestratorServer:
                         since=last_audit_check, limit=100
                     )
                     if new_audit_logs:
-                        for log in new_audit_logs:
+                        for idx, log in enumerate(new_audit_logs):
                             # Generate human-readable message from event
                             event_type = log.get("event_type", "")
                             details = log.get("details", {})
@@ -264,7 +262,7 @@ class ClaudeOrchestratorServer:
                                 message = f"Spawned instance '{instance_name}' ({details.get('role', 'general')})"
                             elif event_type == "message_exchange":
                                 message = f"Message sent to '{instance_name}'"
-                            elif event_type == "instance_terminated":
+                            elif event_type == "instance_terminate":
                                 message = f"Terminated instance '{instance_name}'"
                             else:
                                 message = event_type.replace("_", " ").title()
@@ -275,9 +273,7 @@ class ClaudeOrchestratorServer:
                                     "timestamp": datetime.utcnow().isoformat(),
                                     "data": {
                                         "log": {
-                                            "id": log.get("timestamp", "")
-                                            + "_"
-                                            + log.get("event_type", ""),
+                                            "id": f"{log.get('timestamp', '')}_{log.get('instance_id', '')}_{idx}",
                                             "timestamp": log.get("timestamp", ""),
                                             "type": log.get("event_type", ""),
                                             "message": message,
