@@ -53,6 +53,146 @@ class TmuxInstanceManager:
         self.tmux_server = libtmux.Server()
         logger.info("Connected to tmux server")
 
+        # Store server port for MCP config generation
+        import os
+        self.server_port = int(os.getenv("ORCHESTRATOR_PORT", "8001"))
+
+    def _configure_mcp_servers(self, pane, instance: dict[str, Any]):
+        """Configure MCP servers in the tmux session before spawning Claude/Codex CLI.
+
+        For Claude: Creates a JSON config file and uses --mcp-config flag
+        For Codex: Runs `codex mcp add` commands in the tmux pane
+
+        Args:
+            pane: libtmux pane object
+            instance: Instance metadata dict
+        """
+        import json
+        import time
+
+        workspace_dir = Path(instance["workspace_dir"])
+        mcp_servers = instance.get("mcp_servers", {})
+        instance_type = instance.get("instance_type", "claude")
+
+        # Handle case where mcp_servers might be a JSON string (from MCP protocol)
+        if isinstance(mcp_servers, str):
+            try:
+                import json
+                mcp_servers = json.loads(mcp_servers)
+                # Update instance dict with parsed value
+                instance["mcp_servers"] = mcp_servers
+            except json.JSONDecodeError:
+                logger.error(f"Invalid mcp_servers JSON string: {mcp_servers}")
+                mcp_servers = {}
+
+        # Ensure mcp_servers is a dict
+        if not isinstance(mcp_servers, dict):
+            logger.error(f"mcp_servers is not a dict: {type(mcp_servers)}, value: {mcp_servers}")
+            mcp_servers = {}
+
+        # Auto-add Madrox if enable_madrox=True and not explicitly configured
+        if instance.get("enable_madrox") and "madrox" not in mcp_servers:
+            mcp_servers["madrox"] = {
+                "transport": "http",
+                "url": f"http://localhost:{self.server_port}/mcp"
+            }
+
+        # Handle Codex instances differently - use `codex mcp add` commands
+        if instance_type == "codex":
+            if not mcp_servers:
+                logger.debug(f"No MCP servers to configure for Codex instance {instance['id']}")
+                return
+
+            logger.info(f"Configuring {len(mcp_servers)} MCP servers for Codex instance {instance['id']}")
+
+            for server_name, server_config in mcp_servers.items():
+                try:
+                    has_command = "command" in server_config
+                    transport = server_config.get("transport", "stdio" if has_command else "http")
+
+                    if transport == "stdio":
+                        command = server_config.get("command")
+                        if not command:
+                            logger.warning(f"Skipping MCP server '{server_name}' - no command provided")
+                            continue
+
+                        args = server_config.get("args", [])
+                        if not isinstance(args, list):
+                            args = [args] if args else []
+
+                        # Build codex mcp add command
+                        codex_cmd_parts = ["codex", "mcp", "add", server_name, command] + args
+
+                        # Add environment variables if specified
+                        env_vars = server_config.get("env", {})
+                        for key, value in env_vars.items():
+                            codex_cmd_parts.extend(["--env", f"{key}={value}"])
+
+                        codex_cmd = " ".join(codex_cmd_parts)
+                        logger.info(f"Adding Codex MCP server: {codex_cmd}")
+
+                        pane.send_keys(codex_cmd, enter=True)
+                        time.sleep(0.5)  # Wait for command to complete
+
+                    elif transport == "http":
+                        logger.warning(f"Codex does not support HTTP MCP servers yet ('{server_name}'), skipping")
+                        continue
+
+                except Exception as e:
+                    logger.error(f"Error configuring Codex MCP server '{server_name}': {e}", exc_info=True)
+                    raise
+
+            logger.info(f"Configured MCP servers for Codex instance {instance['id']}")
+            return  # Codex doesn't use _mcp_config_path
+
+        # Handle Claude instances - create JSON config file
+        mcp_config_path = workspace_dir / ".claude_mcp_config.json"
+        mcp_config = {"mcpServers": {}}
+
+        # Build config from mcp_servers parameter
+        for server_name, server_config in mcp_servers.items():
+            # Auto-detect transport type:
+            # - If "command" is present, default to "stdio"
+            # - Otherwise default to "http"
+            has_command = "command" in server_config
+            transport = server_config.get("transport", "stdio" if has_command else "http")
+
+            if transport == "http":
+                url = server_config.get("url")
+                if not url:
+                    logger.warning(f"Skipping MCP server '{server_name}' - no URL provided for http transport")
+                    continue
+
+                mcp_config["mcpServers"][server_name] = {
+                    "type": "http",  # Claude Code uses "type" not "transport"
+                    "url": url
+                }
+
+            elif transport == "stdio":
+                command = server_config.get("command")
+                if not command:
+                    logger.warning(f"Skipping MCP server '{server_name}' - no command provided for stdio transport")
+                    continue
+
+                args = server_config.get("args", [])
+                # Claude Code expects stdio servers WITHOUT a "type" field
+                # It infers stdio from the presence of "command"
+                mcp_config["mcpServers"][server_name] = {
+                    "command": command,
+                    "args": args if isinstance(args, list) else [args]
+                }
+
+            else:
+                logger.warning(f"Skipping MCP server '{server_name}' - unsupported transport '{transport}'")
+                continue
+
+        # Write config file
+        mcp_config_path.write_text(json.dumps(mcp_config, indent=2))
+        logger.info(f"Created MCP config for instance {instance['id']}: {len(mcp_config['mcpServers'])} servers")
+
+        # Store the config path so we can use --mcp-config flag when starting Claude
+        instance["_mcp_config_path"] = str(mcp_config_path)
+
     async def spawn_instance(
         self,
         name: str | None = None,
@@ -108,33 +248,6 @@ class TmuxInstanceManager:
         metadata_file = workspace_dir / ".madrox_instance_id"
         metadata_file.write_text(instance_id)
 
-        # Register madrox MCP if enabled
-        if enable_madrox:
-            try:
-                result = subprocess.run(
-                    [
-                        "claude",
-                        "mcp",
-                        "add",
-                        "madrox",
-                        "http://localhost:8001/mcp",
-                        "--transport",
-                        "http",
-                        "--scope",
-                        "local",
-                    ],
-                    cwd=str(workspace_dir),
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0:
-                    logger.info(f"Registered madrox MCP for instance {instance_id}")
-                else:
-                    logger.warning(f"Failed to register madrox MCP: {result.stderr}")
-            except Exception as e:
-                logger.warning(f"Could not register madrox MCP: {e}")
-
         # Build system prompt based on role
         has_custom_prompt = bool(system_prompt)
         if not system_prompt:
@@ -172,6 +285,7 @@ class TmuxInstanceManager:
             "environment_vars": kwargs.get("environment_vars", {}),
             "resource_limits": kwargs.get("resource_limits", {}),
             "parent_instance_id": kwargs.get("parent_instance_id"),
+            "mcp_servers": kwargs.get("mcp_servers", {}),
             "error_message": None,
             "retry_count": 0,
         }
@@ -226,6 +340,7 @@ class TmuxInstanceManager:
                 logger.error(
                     f"Failed to initialize tmux instance {instance_id}: {e}",
                     extra={"instance_id": instance_id, "error": str(e)},
+                    exc_info=True,  # This will print the full stack trace
                 )
 
                 if self.logging_manager:
@@ -340,6 +455,28 @@ class TmuxInstanceManager:
             # Initialize response queue for this instance if needed
             if instance_id not in self.response_queues:
                 self.response_queues[instance_id] = asyncio.Queue()
+
+            # Check if system prompt is pending (first message after spawn)
+            if instance.get("_system_prompt_pending"):
+                logger.info(f"Sending pending system prompt with first message to instance {instance_id}")
+                # Get the pending system prompt
+                system_prompt = instance.get("_pending_system_prompt", "")
+
+                # Send system prompt first (without correlation ID)
+                session = self.tmux_sessions[instance_id]
+                window = session.windows[0]
+                pane = window.panes[0]
+
+                if system_prompt:
+                    self._send_multiline_message_to_pane(pane, system_prompt)
+                    logger.debug("Sent pending system prompt")
+
+                    # Wait for Claude to process system prompt
+                    await asyncio.sleep(8)
+
+                # Clear the pending flag
+                instance["_system_prompt_pending"] = False
+                instance.pop("_pending_system_prompt", None)
 
             # Format message with correlation ID for bidirectional tracking
             formatted_message = f"[MSG:{message_id}] {message}"
@@ -852,6 +989,9 @@ class TmuxInstanceManager:
         window = session.windows[0]
         pane = window.panes[0]
 
+        # Configure MCP servers before spawning CLI
+        self._configure_mcp_servers(pane, instance)
+
         # Build CLI command based on instance type
         if instance_type == "codex":
             cmd_parts = ["codex"]
@@ -876,6 +1016,10 @@ class TmuxInstanceManager:
                 "--dangerously-skip-permissions",
             ]
 
+            # Add MCP config if configured
+            if mcp_config_path := instance.get("_mcp_config_path"):
+                cmd_parts.extend(["--mcp-config", mcp_config_path])
+
             # Add model if specified
             if model := instance.get("model"):
                 cmd_parts.extend(["--model", model])
@@ -886,12 +1030,13 @@ class TmuxInstanceManager:
         logger.debug(f"Started {instance_type} CLI in tmux session: {cmd}")
 
         # Adaptive wait - poll until CLI is ready
-        max_init_wait = 30
+        # MCP configuration can take 45+ seconds to load
+        max_init_wait = 60  # Increased from 30 to handle MCP server loading
         init_start = time.time()
         cli_ready = False
 
         while time.time() - init_start < max_init_wait:
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)  # Check every second
             output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
 
             # Detect ready state by checking for interactive indicators
@@ -904,10 +1049,15 @@ class TmuxInstanceManager:
                     cli_ready = True
                     break
             else:
-                # Claude ready when it shows response or is waiting for input
-                # Look for thinking indicators or response completion
-                if any(indicator in output for indicator in ["Thinking", "⏺", ">", "│"]):
+                # Claude ready when it shows "What would you like" or similar ready prompt
+                # CRITICAL: Must see the actual ready message, not just initialization output
+                if any(indicator in output for indicator in [
+                    "What would you like",  # Standard ready prompt
+                    "How can I help",        # Alternative ready prompt
+                    "ready to assist",       # Another variant
+                ]):
                     cli_ready = True
+                    logger.debug(f"Claude CLI ready - detected ready prompt")
                     break
 
         if not cli_ready:
@@ -917,6 +1067,13 @@ class TmuxInstanceManager:
         else:
             logger.debug(f"CLI initialized in {time.time() - init_start:.1f}s")
 
+        # CRITICAL: Additional safety wait to ensure CLI is FULLY ready for multiline input
+        # Even after showing ready prompt, Claude needs time to be ready for C-j sequences
+        if instance_type != "codex":
+            logger.debug("Additional safety wait for multiline input readiness...")
+            await asyncio.sleep(3)  # Extra 3 seconds after ready detection
+            logger.debug("Ready for multiline input")
+
         # Handle initial prompts based on instance type
         if instance_type == "codex":
             # For Codex, send initial_prompt if provided
@@ -925,9 +1082,15 @@ class TmuxInstanceManager:
                 logger.debug("Sent initial prompt to Codex instance")
                 await asyncio.sleep(5)
         else:
-            # For Claude, send system prompt as before
+            # For Claude, DEFER system prompt until first message
+            # This ensures Claude is fully ready and avoids shell execution
             system_prompt = instance.get("system_prompt")
             if system_prompt:
+                logger.debug("System prompt will be sent with first user message")
+                # Flag that system prompt is pending
+                instance["_system_prompt_pending"] = True
+
+                # BUILD the system prompt now for later use
                 # Send context as first message
                 workspace_path = instance["workspace_dir"]
                 has_custom_prompt = instance.get("has_custom_prompt", False)
@@ -1013,12 +1176,9 @@ class TmuxInstanceManager:
 
                 full_prompt = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}{bidirectional_instructions}"
 
-                # Use multiline-safe sending to avoid getting stuck
-                self._send_multiline_message_to_pane(pane, full_prompt)
-                logger.debug("Sent initial system prompt to Claude instance (multiline-safe)")
-
-                # Wait for initial response
-                await asyncio.sleep(5)
+                # Store the system prompt for later (send with first message)
+                instance["_pending_system_prompt"] = full_prompt
+                logger.debug("System prompt stored for sending with first user message")
 
         logger.info(f"Tmux session initialized for {instance_type} instance {instance_id}")
 

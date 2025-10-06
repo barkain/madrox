@@ -1,0 +1,8 @@
+{
+  "name": "memory",
+  "description": "Memory MCP server for persistent memory/knowledge graphs",
+  "config": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-memory"]
+  }
+}

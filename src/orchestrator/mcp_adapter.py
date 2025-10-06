@@ -120,6 +120,10 @@ class MCPAdapter:
                                             "type": "string",
                                             "description": "Parent instance ID for tracking bidirectional communication (optional)",
                                         },
+                                        "mcp_servers": {
+                                            "type": "object",
+                                            "description": "MCP servers to configure for this instance. Example: {'madrox': {'transport': 'http', 'url': 'http://localhost:8001/mcp'}}",
+                                        },
                                     },
                                     "required": ["name"],
                                 },
@@ -172,6 +176,10 @@ class MCPAdapter:
                                                     "parent_instance_id": {
                                                         "type": "string",
                                                         "description": "Parent instance ID for tracking bidirectional communication (optional)",
+                                                    },
+                                                    "mcp_servers": {
+                                                        "type": "object",
+                                                        "description": "MCP servers to configure for this instance. Example: {'madrox': {'transport': 'http', 'url': 'http://localhost:8001/mcp'}}",
                                                     },
                                                 },
                                                 "required": ["name"],
@@ -573,6 +581,10 @@ class MCPAdapter:
                                             "type": "string",
                                             "description": "Parent instance ID for tracking bidirectional communication (optional)",
                                         },
+                                        "mcp_servers": {
+                                            "type": "object",
+                                            "description": "MCP servers to configure for this instance. Example: {'playwright': {'command': 'npx', 'args': ['@playwright/mcp@latest']}}",
+                                        },
                                     },
                                     "required": ["name"],
                                 },
@@ -625,6 +637,7 @@ class MCPAdapter:
                             enable_madrox=tool_args.get("enable_madrox", True),
                             wait_for_ready=tool_args.get("wait_for_ready", True),
                             parent_instance_id=tool_args.get("parent_instance_id"),
+                            mcp_servers=tool_args.get("mcp_servers", {}),
                         )
                         result = {
                             "content": [
@@ -651,6 +664,7 @@ class MCPAdapter:
                                     enable_madrox=instance_config.get("enable_madrox", True),
                                     wait_for_ready=instance_config.get("wait_for_ready", True),
                                     parent_instance_id=instance_config.get("parent_instance_id"),
+                                    mcp_servers=instance_config.get("mcp_servers", {}),
                                 )
                             )
 
@@ -1277,6 +1291,7 @@ class MCPAdapter:
                             profile=tool_args.get("profile"),
                             initial_prompt=tool_args.get("initial_prompt"),
                             parent_instance_id=tool_args.get("parent_instance_id"),
+                            mcp_servers=tool_args.get("mcp_servers", {}),
                         )
                         result = {
                             "content": [

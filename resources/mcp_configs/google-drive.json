@@ -1,0 +1,9 @@
+{
+  "name": "google-drive",
+  "description": "Google Drive MCP server for file operations in Google Drive",
+  "config": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-gdrive"]
+  },
+  "notes": "Requires OAuth authentication setup for Google Drive API"
+}
