@@ -1,16 +1,15 @@
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Clock, X } from "lucide-react"
+import { Clock, ChevronDown, ChevronUp } from "lucide-react"
 import type { AuditLogEntry } from "@/types"
-import { useInstanceStore } from "@/store/instance-store"
 
 interface AuditLogProps {
   logs: AuditLogEntry[]
   height: number
+  isCollapsed: boolean
+  onToggle: () => void
 }
 
-export function AuditLog({ logs, height }: AuditLogProps) {
-  const clearAuditLogs = useInstanceStore((state) => state.clearAuditLogs)
-
+export function AuditLog({ logs, height, isCollapsed, onToggle }: AuditLogProps) {
   const getEventColor = (type: string) => {
     switch (type) {
       case "instance_created":
@@ -27,21 +26,38 @@ export function AuditLog({ logs, height }: AuditLogProps) {
     }
   }
 
+  if (isCollapsed) {
+    return (
+      <div className="border-t border-border bg-card/50">
+        <div className="px-4 py-1.5 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors" onClick={onToggle}>
+          <h2 className="text-xs font-semibold text-foreground">Audit Log</h2>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{logs.length} events</span>
+            <button
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              title="Expand audit log"
+            >
+              <ChevronUp className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="border-t border-border bg-card/50" style={{ height: `${height}px` }}>
       <div className="px-4 py-1.5 border-b border-border flex items-center justify-between">
         <h2 className="text-xs font-semibold text-foreground">Audit Log</h2>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{logs.length} events</span>
-          {logs.length > 0 && (
-            <button
-              onClick={clearAuditLogs}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              title="Clear audit log"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
+          <button
+            onClick={onToggle}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            title="Collapse audit log"
+          >
+            <ChevronDown className="h-3 w-3" />
+          </button>
         </div>
       </div>
 

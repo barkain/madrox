@@ -1,0 +1,8 @@
+{
+  "name": "playwright",
+  "description": "Playwright MCP server for browser automation and web scraping",
+  "config": {
+    "command": "npx",
+    "args": ["@playwright/mcp@latest"]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "slack",
+  "description": "Slack MCP server for Slack workspace operations",
+  "config": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-slack"]
+  },
+  "env": {
+    "SLACK_BOT_TOKEN": "<your-slack-bot-token>",
+    "SLACK_TEAM_ID": "<your-team-id>"
+  },
+  "notes": "Requires SLACK_BOT_TOKEN and SLACK_TEAM_ID environment variables"
+}

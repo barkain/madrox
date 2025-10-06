@@ -1,0 +1,9 @@
+{
+  "name": "filesystem",
+  "description": "Filesystem MCP server for file operations",
+  "config": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"]
+  },
+  "notes": "Replace /path/to/allowed/directory with the actual directory path you want to allow access to"
+}

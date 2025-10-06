@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useCallback } from "react"
+import { useEffect, useCallback, useState } from "react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -116,14 +116,14 @@ function NetworkGraphInner({ instances, onNodeClick }: NetworkGraphProps) {
   // Watch for container resize and re-fit the view
   useEffect(() => {
     const handleResize = () => {
-      fitView({ padding: 0.2, duration: 300 })
+      fitView({ padding: 0.2, duration: 300, maxZoom: 0.6 })
     }
 
     window.addEventListener("resize", handleResize)
 
     // Also set up a mutation observer to detect container size changes
     const observer = new ResizeObserver(() => {
-      fitView({ padding: 0.2, duration: 300 })
+      fitView({ padding: 0.2, duration: 300, maxZoom: 0.6 })
     })
 
     const container = document.querySelector(".react-flow")
@@ -155,7 +155,7 @@ function NetworkGraphInner({ instances, onNodeClick }: NetworkGraphProps) {
 
     // Fit view after layout
     setTimeout(() => {
-      fitView({ padding: 0.2, duration: 500 })
+      fitView({ padding: 0.2, duration: 500, maxZoom: 0.6 })
     }, 50)
   }, [instances, setNodes, fitView])
 
@@ -204,6 +204,8 @@ function NetworkGraphInner({ instances, onNodeClick }: NetworkGraphProps) {
       onNodeClick={handleNodeClick}
       nodeTypes={nodeTypes}
       fitView
+      fitViewOptions={{ padding: 0.2, maxZoom: 0.6 }}
+      defaultViewport={{ x: 0, y: 0, zoom: 0.5 }}
       minZoom={0.1}
       maxZoom={2}
     >
@@ -214,7 +216,7 @@ function NetworkGraphInner({ instances, onNodeClick }: NetworkGraphProps) {
         </ControlButton>
       </Controls>
       <MiniMap
-        className="bg-card border border-border"
+        className="bg-card border border-border hidden"
         nodeColor={(node) => {
           const status = (node.data as AgentInstance).status
           const colors = {

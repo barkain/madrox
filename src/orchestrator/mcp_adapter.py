@@ -120,6 +120,10 @@ class MCPAdapter:
                                             "type": "string",
                                             "description": "Parent instance ID for tracking bidirectional communication (optional)",
                                         },
+                                        "mcp_servers": {
+                                            "type": "object",
+                                            "description": "MCP servers to configure for this instance. Example: {'madrox': {'transport': 'http', 'url': 'http://localhost:8001/mcp'}}",
+                                        },
                                     },
                                     "required": ["name"],
                                 },
@@ -172,6 +176,10 @@ class MCPAdapter:
                                                     "parent_instance_id": {
                                                         "type": "string",
                                                         "description": "Parent instance ID for tracking bidirectional communication (optional)",
+                                                    },
+                                                    "mcp_servers": {
+                                                        "type": "object",
+                                                        "description": "MCP servers to configure for this instance. Example: {'madrox': {'transport': 'http', 'url': 'http://localhost:8001/mcp'}}",
                                                     },
                                                 },
                                                 "required": ["name"],
@@ -527,7 +535,10 @@ class MCPAdapter:
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
-                                        "instance_id": {"type": "string", "description": "Instance ID"},
+                                        "instance_id": {
+                                            "type": "string",
+                                            "description": "Instance ID",
+                                        },
                                         "lines": {
                                             "type": "integer",
                                             "description": "Number of lines to capture (default: 100, -1 for all)",
@@ -570,6 +581,10 @@ class MCPAdapter:
                                             "type": "string",
                                             "description": "Parent instance ID for tracking bidirectional communication (optional)",
                                         },
+                                        "mcp_servers": {
+                                            "type": "object",
+                                            "description": "MCP servers to configure for this instance. Example: {'playwright': {'command': 'npx', 'args': ['@playwright/mcp@latest']}}",
+                                        },
                                     },
                                     "required": ["name"],
                                 },
@@ -580,6 +595,28 @@ class MCPAdapter:
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {},
+                                },
+                            },
+                            {
+                                "name": "reply_to_caller",
+                                "description": "Reply back to the instance/coordinator that sent you a message. Use this to create bidirectional communication instead of just outputting text.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "instance_id": {
+                                            "type": "string",
+                                            "description": "Your instance ID (the responder)",
+                                        },
+                                        "reply_message": {
+                                            "type": "string",
+                                            "description": "Your reply content",
+                                        },
+                                        "correlation_id": {
+                                            "type": "string",
+                                            "description": "Message ID from the incoming message (optional, for correlation)",
+                                        },
+                                    },
+                                    "required": ["instance_id", "reply_message"],
                                 },
                             },
                         ]
@@ -600,6 +637,7 @@ class MCPAdapter:
                             enable_madrox=tool_args.get("enable_madrox", True),
                             wait_for_ready=tool_args.get("wait_for_ready", True),
                             parent_instance_id=tool_args.get("parent_instance_id"),
+                            mcp_servers=tool_args.get("mcp_servers", {}),
                         )
                         result = {
                             "content": [
@@ -626,6 +664,7 @@ class MCPAdapter:
                                     enable_madrox=instance_config.get("enable_madrox", True),
                                     wait_for_ready=instance_config.get("wait_for_ready", True),
                                     parent_instance_id=instance_config.get("parent_instance_id"),
+                                    mcp_servers=instance_config.get("mcp_servers", {}),
                                 )
                             )
 
@@ -1252,6 +1291,7 @@ class MCPAdapter:
                             profile=tool_args.get("profile"),
                             initial_prompt=tool_args.get("initial_prompt"),
                             parent_instance_id=tool_args.get("parent_instance_id"),
+                            mcp_servers=tool_args.get("mcp_servers", {}),
                         )
                         result = {
                             "content": [
@@ -1287,6 +1327,39 @@ class MCPAdapter:
                                 }
                             ]
                         }
+
+                    elif tool_name == "reply_to_caller":
+                        # Handle reply from instance to its caller
+                        reply_result = await self.manager.handle_reply_to_caller(
+                            instance_id=tool_args["instance_id"],
+                            reply_message=tool_args["reply_message"],
+                            correlation_id=tool_args.get("correlation_id"),
+                        )
+
+                        if reply_result["success"]:
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"✅ Reply delivered to {reply_result.get('delivered_to', 'caller')}"
+                                        + (
+                                            f" (correlated with message {reply_result.get('correlation_id')})"
+                                            if reply_result.get("correlation_id")
+                                            else ""
+                                        ),
+                                    }
+                                ]
+                            }
+                        else:
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"❌ Failed to deliver reply: {reply_result.get('error', 'Unknown error')}",
+                                    }
+                                ],
+                                "isError": True,
+                            }
 
                     else:
                         result = {

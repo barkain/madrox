@@ -1,0 +1,9 @@
+{
+  "name": "postgres",
+  "description": "PostgreSQL MCP server for database operations",
+  "config": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://user:password@localhost/dbname"]
+  },
+  "notes": "Replace connection string with your actual PostgreSQL credentials"
+}

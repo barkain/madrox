@@ -17,6 +17,7 @@ export default function MadroxMonitor() {
   const [auditLogHeight, setAuditLogHeight] = useState(240) // Default 240px (~15rem)
   const [isDragging, setIsDragging] = useState(false)
   const [activeTab, setActiveTab] = useState<"graph" | "terminals">("graph")
+  const [isAuditLogVisible, setIsAuditLogVisible] = useState(true)
   const [openTerminals, setOpenTerminals] = useState<Array<{ id: string; name: string }>>([])
   const [expandedTerminal, setExpandedTerminal] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -148,7 +149,7 @@ export default function MadroxMonitor() {
         </div>
 
         {/* Content Area - Tabbed */}
-        <div className="overflow-hidden" style={{ flex: `1 1 calc(100% - ${auditLogHeight}px)` }}>
+        <div className="flex-1 overflow-hidden">
           {activeTab === "graph" ? (
             <NetworkGraph instances={filteredInstances} onNodeClick={handleNodeClick} />
           ) : (
@@ -207,17 +208,24 @@ export default function MadroxMonitor() {
           )}
         </div>
 
-        {/* Resizable Divider */}
-        <div
-          className={`h-1 border-t border-border cursor-ns-resize hover:bg-primary/20 transition-colors ${
-            isDragging ? "bg-primary/30" : ""
-          }`}
-          onMouseDown={handleMouseDown}
-        />
+        {/* Resizable Divider - Only show when audit log is visible */}
+        {isAuditLogVisible && (
+          <div
+            className={`h-1 border-t border-border cursor-ns-resize hover:bg-primary/20 transition-colors ${
+              isDragging ? "bg-primary/30" : ""
+            }`}
+            onMouseDown={handleMouseDown}
+          />
+        )}
 
-        {/* Resizable Audit Log */}
-        <div style={{ flex: `0 0 ${auditLogHeight}px` }}>
-          <AuditLog logs={auditLogs} height={auditLogHeight} />
+        {/* Audit Log - Collapsible */}
+        <div style={{ flex: isAuditLogVisible ? `0 0 ${auditLogHeight}px` : '0 0 auto' }}>
+          <AuditLog
+            logs={auditLogs}
+            height={auditLogHeight}
+            isCollapsed={!isAuditLogVisible}
+            onToggle={() => setIsAuditLogVisible(!isAuditLogVisible)}
+          />
         </div>
       </div>
     </div>

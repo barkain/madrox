@@ -8,27 +8,23 @@ export function ConnectionStatus({ status }: ConnectionStatusProps) {
   const statusConfig = {
     connected: {
       icon: Wifi,
-      text: "Connected",
-      color: "text-[var(--status-running)]",
-      bg: "bg-[var(--status-running)]/10",
+      color: "text-green-500",
+      title: "Connected",
     },
     connecting: {
       icon: Wifi,
-      text: "Connecting...",
-      color: "text-[var(--status-pending)]",
-      bg: "bg-[var(--status-pending)]/10",
+      color: "text-yellow-500",
+      title: "Connecting...",
     },
     disconnected: {
       icon: WifiOff,
-      text: "Disconnected",
-      color: "text-[var(--status-terminated)]",
-      bg: "bg-[var(--status-terminated)]/10",
+      color: "text-red-500",
+      title: "Disconnected",
     },
     error: {
       icon: WifiOff,
-      text: "Connection Error",
-      color: "text-[var(--status-error)]",
-      bg: "bg-[var(--status-error)]/10",
+      color: "text-red-500",
+      title: "Connection Error",
     },
   }
 
@@ -36,11 +32,8 @@ export function ConnectionStatus({ status }: ConnectionStatusProps) {
   const Icon = config.icon
 
   return (
-    <div className={`px-6 py-2 border-b border-border ${config.bg}`}>
-      <div className="flex items-center gap-2">
-        <Icon className={`h-4 w-4 ${config.color}`} />
-        <span className={`text-sm font-medium ${config.color}`}>{config.text}</span>
-      </div>
+    <div className="absolute top-4 right-6 z-10">
+      <Icon className={`h-5 w-5 ${config.color}`} title={config.title} />
     </div>
   )
 }
