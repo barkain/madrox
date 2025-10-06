@@ -8,9 +8,12 @@ Comprehensive documentation for the Madrox multi-agent orchestration system.
 |----------|-------------|------------|
 | [DESIGN.md](DESIGN.md) | System architecture and design philosophy | MCP protocol, natural language orchestration, multi-instance coordination |
 | [API_ENDPOINTS.md](API_ENDPOINTS.md) | HTTP REST API reference | Tool endpoints, instance management, network queries |
+| [MCP_SERVER_CONFIGURATION.md](MCP_SERVER_CONFIGURATION.md) | MCP server configuration for child instances | Custom MCP servers, Playwright, browser automation, Claude vs Codex |
 | [LOGGING.md](LOGGING.md) | Logging and audit system | Per-instance logs, audit trails, structured logging, log queries |
 | [INTERRUPT_FEATURE.md](INTERRUPT_FEATURE.md) | Task interruption capabilities | Stop tasks without termination, context preservation, parallel interrupts |
 | [STRESS_TESTING.md](STRESS_TESTING.md) | Comprehensive testing schemes | Unified visibility, cascade termination, multi-level hierarchies, concurrent operations |
+| [BIDIRECTIONAL_MESSAGING_DESIGN.md](BIDIRECTIONAL_MESSAGING_DESIGN.md) | Bidirectional instance communication | Parent-child messaging, reply_to_caller, message correlation |
+| [BIDIRECTIONAL_TESTING_RESULTS.md](BIDIRECTIONAL_TESTING_RESULTS.md) | Bidirectional messaging validation | Test results, communication patterns, protocol verification |
 
 ## 🚀 Quick Navigation
 
@@ -23,6 +26,7 @@ Comprehensive documentation for the Madrox multi-agent orchestration system.
 - **Hierarchical Orchestration**: [DESIGN.md](DESIGN.md) - Parent-child instance relationships
 - **Multi-Model Support**: [../README.md](../README.md#features) - Claude + Codex + future models
 - **Role-Based Specialization**: [../README.md](../README.md#instance-roles--customization) - 10 predefined expert roles
+- **MCP Server Configuration**: [MCP_SERVER_CONFIGURATION.md](MCP_SERVER_CONFIGURATION.md) - Dynamic tool loading for child instances
 
 ### Operations
 - **Instance Management**: [API_ENDPOINTS.md](API_ENDPOINTS.md#instance-management-endpoints)
@@ -49,6 +53,13 @@ Comprehensive documentation for the Madrox multi-agent orchestration system.
 - Instance status queries
 - Network hierarchy visualization
 
+### MCP_SERVER_CONFIGURATION.md
+- **Claude instances**: JSON config files, stdio & HTTP transports
+- **Codex instances**: `codex mcp add` commands, stdio only
+- **Prebuilt configs**: 10+ MCP servers (Playwright, GitHub, databases)
+- **MCP loader utility**: Easy config loading and customization
+- **Browser automation**: Playwright for web scraping and testing
+
 ### LOGGING.md
 - Per-instance isolated logs (instance.log, communication.jsonl, tmux_output.log)
 - System-wide audit trail (JSONL format, daily rotation)
@@ -68,7 +79,19 @@ Comprehensive documentation for the Madrox multi-agent orchestration system.
 - **Test 4**: Multi-level cascade (3-level grandparent→parent→child)
 - **Test 5**: Concurrent operations (parallel spawning, messaging)
 
+### BIDIRECTIONAL_MESSAGING_DESIGN.md
+- Parent-child bidirectional communication
+- `reply_to_caller` tool for instant responses
+- Message correlation and tracking
+- Hierarchical message passing patterns
+
 ## 🛠️ Common Workflows
+
+### Spawning Instances with Custom MCP Servers
+1. Choose MCP servers: [MCP_SERVER_CONFIGURATION.md#quick-start](MCP_SERVER_CONFIGURATION.md#quick-start-using-prebuilt-configs)
+2. Load configs: Use `get_mcp_servers("playwright", "github")`
+3. Spawn instance: Pass `mcp_servers` parameter
+4. Verify tools: Check instance has access to MCP tools
 
 ### Debugging Stuck Instances
 1. Check instance logs: [LOGGING.md#per-instance-logs](LOGGING.md#per-instance-logs)

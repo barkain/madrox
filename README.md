@@ -262,6 +262,7 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 
 ### Advanced Capabilities
 - **Multi-Model Support** - Orchestrate both Claude (Anthropic) and Codex (OpenAI) instances
+- **Custom MCP Server Configuration** - Dynamic loading of MCP tools (Playwright, databases, APIs) per instance
 - **Hierarchical Architecture** - Parent-child relationships with bidirectional communication
 - **Instance Tree Visualization** - Real-time network topology with state and type indicators
 - **Task Interruption** - Stop running tasks without terminating instances (preserves context)
@@ -274,6 +275,7 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 - **Message Passing** - Reliable inter-instance communication with timeout handling
 - **Parallel Task Execution** - Coordinate multiple instances working in parallel
 - **Batch Operations** - Interrupt, message, or query multiple instances simultaneously
+- **Browser Automation** - Built-in Playwright MCP support for web scraping and testing
 - **Resource Tracking** - Monitor token usage, costs, and performance metrics
 - **Health Monitoring** - Automatic health checks with timeout and limit enforcement
 - **Consensus Building** - Coordinate instances for decision-making processes
@@ -612,7 +614,42 @@ await manager.send_to_multiple_instances([
 tree = manager.get_instance_tree()
 ```
 
-### Example 4: Parallel Spawning & Non-Blocking Mode
+### Example 4: Custom MCP Server Configuration (Browser Automation)
+```python
+from orchestrator.mcp_loader import get_mcp_servers
+
+# Load prebuilt MCP configs
+mcp_servers = get_mcp_servers("playwright", "memory")
+
+# Spawn Claude instance with Playwright for browser automation
+browser_agent = await manager.spawn_instance(
+    name="web-scraper",
+    role="data_analyst",
+    mcp_servers=mcp_servers
+)
+
+# Agent now has access to Playwright tools
+await manager.send_to_instance(
+    browser_agent,
+    "Navigate to https://example.com and extract all article titles"
+)
+
+# Spawn Codex instance with Playwright
+codex_browser = await manager.spawn_codex_instance(
+    name="codex-automation",
+    sandbox_mode="workspace-write",
+    mcp_servers={"playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}}
+)
+
+# Mix multiple MCP servers
+mcp_servers = get_mcp_servers(
+    "playwright",    # Browser automation
+    "github",        # GitHub operations
+    "postgres",      # Database access
+)
+```
+
+### Example 5: Parallel Spawning & Non-Blocking Mode
 ```python
 # Spawn multiple instances in parallel for faster setup
 instance_ids = await manager.spawn_multiple_instances([
@@ -629,7 +666,7 @@ await manager.send_to_multiple_instances([
 ])
 ```
 
-### Example 5: Task Interruption & Control
+### Example 6: Task Interruption & Control
 ```python
 # Start a long-running task
 instance_id = await manager.spawn_instance(
@@ -658,7 +695,7 @@ await manager.send_to_instance(
 await manager.interrupt_multiple_instances([instance_id_1, instance_id_2, instance_id_3])
 ```
 
-### Example 6: Resource Management
+### Example 7: Resource Management
 ```python
 # Spawn with resource limits
 instance_id = await manager.spawn_instance(
