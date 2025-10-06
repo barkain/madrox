@@ -993,9 +993,29 @@ class TmuxInstanceManager:
                         f"{instance_id_info}"
                     )
 
-                full_prompt = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}"
-                pane.send_keys(full_prompt, enter=True)
-                logger.debug("Sent initial system prompt to Claude instance")
+                # ALWAYS append bidirectional messaging instructions (even for custom prompts)
+                bidirectional_instructions = ""
+                if instance.get("enable_madrox"):
+                    bidirectional_instructions = (
+                        f"\n\n{'─' * 80}\n"
+                        f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
+                        f"When you receive messages formatted as [MSG:correlation-id] content,\n"
+                        f"respond using the reply_to_caller tool for instant bidirectional communication:\n\n"
+                        f"  reply_to_caller(\n"
+                        f"    instance_id='{instance['id']}',\n"
+                        f"    reply_message='your response here',\n"
+                        f"    correlation_id='correlation-id-from-message'\n"
+                        f"  )\n\n"
+                        f"Benefits: Instant delivery (no polling), proper correlation, more efficient.\n"
+                        f"Fallback: If you don't use reply_to_caller, system polls your output (slower but works).\n"
+                        f"{'─' * 80}\n"
+                    )
+
+                full_prompt = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}{bidirectional_instructions}"
+
+                # Use multiline-safe sending to avoid getting stuck
+                self._send_multiline_message_to_pane(pane, full_prompt)
+                logger.debug("Sent initial system prompt to Claude instance (multiline-safe)")
 
                 # Wait for initial response
                 await asyncio.sleep(5)
@@ -1003,25 +1023,36 @@ class TmuxInstanceManager:
         logger.info(f"Tmux session initialized for {instance_type} instance {instance_id}")
 
     def _send_multiline_message_to_pane(self, pane, message: str) -> None:
-        """Send multiline message to tmux pane with proper escaping.
+        """Send multiline message to tmux pane without getting stuck.
 
-        Fixes issue where newlines cause tmux terminal to wait for more input.
-        Uses proper escape sequence for literal newlines.
+        Properly handles newlines by sending them line-by-line with C-j (newline without submit).
+        Final Enter submits the entire message.
 
         Args:
             pane: libtmux pane object
             message: Message content (may contain newlines)
         """
-        # Escape the message for safe tmux transmission
-        # Replace literal newlines with escape sequence
-        escaped_message = message.replace("\n", r"\n")
+        import time
 
-        # Send as single literal string to avoid paste detection
-        pane.send_keys(escaped_message, enter=True, literal=True)
+        lines = message.split("\n")
+        total_lines = len(lines)
 
-        logger.debug(
-            f"Sent multiline message ({len(message)} chars, {message.count(chr(10))} newlines)"
-        )
+        # Send each line with C-j between them (newline without submit)
+        for i, line in enumerate(lines):
+            # Send the line content
+            if line:  # Only send non-empty lines
+                pane.send_keys(line, enter=False, literal=True)
+
+            # Add newline between lines (not after last line)
+            if i < total_lines - 1:
+                pane.send_keys("C-j", enter=False, literal=False)
+                time.sleep(0.01)  # Small delay to avoid paste detection
+
+        # Final Enter to submit
+        time.sleep(0.05)
+        pane.send_keys("", enter=True)
+
+        logger.debug(f"Sent multiline message ({len(message)} chars, {total_lines} lines)")
 
     async def handle_reply_to_caller(
         self,
