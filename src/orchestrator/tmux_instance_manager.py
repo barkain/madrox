@@ -960,7 +960,21 @@ class TmuxInstanceManager:
                         f"- You coordinate and decide how to route messages between children\n"
                         f"- Use get_children(parent_id='{instance['id']}') to see all your children\n"
                         f"- Use broadcast_to_children(parent_id='{instance['id']}', message='...') to message all children\n"
-                        f"- You control what information (IDs, tasks) flows up to your parent or down to your children"
+                        f"- You control what information (IDs, tasks) flows up to your parent or down to your children\n\n"
+                        f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
+                        f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
+                        f"  [MSG:correlation-id] message content here\n\n"
+                        f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
+                        f"  reply_to_caller(\n"
+                        f"    instance_id='{instance['id']}',\n"
+                        f"    reply_message='your response here',\n"
+                        f"    correlation_id='correlation-id-from-message'\n"
+                        f"  )\n\n"
+                        f"Benefits of using reply_to_caller:\n"
+                        f"- Instant delivery (no polling delay)\n"
+                        f"- Proper request-response correlation\n"
+                        f"- More efficient than text output\n\n"
+                        f"If you don't use reply_to_caller, the system will fall back to polling your output (slower but works)."
                     )
                     instance_id_info += spawn_info
 
