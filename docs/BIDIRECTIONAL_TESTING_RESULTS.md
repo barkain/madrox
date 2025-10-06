@@ -80,48 +80,65 @@ Line 3
 ✅ Multiline message handled successfully (did not hang)
 ```
 
-## Next Steps for Full Bidirectional Adoption
+## ✅ UPDATE: Automatic Adoption Implemented (Commit eb18c21)
 
-To make instances USE the bidirectional protocol by default:
+**Status**: Instances now automatically receive bidirectional protocol instructions when spawned.
 
-### Option 1: Enhanced System Prompt
-Add to instance system prompt during spawn:
+### Implementation
 
-```python
-system_prompt += """
+Added comprehensive instructions to spawn system prompt when `enable_madrox=True`:
 
-BIDIRECTIONAL COMMUNICATION:
-When responding to messages, use the reply_to_caller tool for faster bidirectional communication:
+```
+BIDIRECTIONAL MESSAGING PROTOCOL:
+When you receive messages from the coordinator or parent instance, they will be formatted as:
+  [MSG:correlation-id] message content here
 
-reply_to_caller(
-    instance_id="{instance_id}",
-    reply_message="Your response",
-    correlation_id="<message-id-from-request>"
-)
+To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:
+  reply_to_caller(
+    instance_id='your-instance-id',
+    reply_message='your response here',
+    correlation_id='correlation-id-from-message'
+  )
 
-This is more efficient than text output and enables proper request-response correlation.
-"""
+Benefits of using reply_to_caller:
+- Instant delivery (no polling delay)
+- Proper request-response correlation
+- More efficient than text output
+
+If you don't use reply_to_caller, the system will fall back to polling your output (slower but works).
 ```
 
-### Option 2: Hook Integration
-- Intercept first message exchange
-- Teach instance about `reply_to_caller` automatically
-- Provide example usage
+### Testing Results
 
-### Option 3: Documentation
-- Update instance onboarding docs
-- Add examples to spawned instances
-- Create best practices guide
+✅ Instances receive instructions on spawn
+✅ Instructions include:
+  - Message format explanation
+  - reply_to_caller usage example with actual instance ID
+  - Clear benefits documented
+  - Fallback behavior noted
+
+**Adoption Status**: Now AUTOMATIC (no manual instruction needed)
 
 ## Conclusion
 
 **Core Implementation**: ✅ Complete and Functional
 **Multiline Fix**: ✅ Verified Working
 **Protocol Infrastructure**: ✅ Ready for Use
-**Adoption Layer**: ⚠️ Needs Prompting/Documentation
+**Adoption Layer**: ✅ Automatic (as of commit eb18c21)
 
-The bidirectional messaging protocol is **fully functional** but requires instances to be **explicitly instructed** to use `reply_to_caller`. This is by design for backward compatibility. The fallback to polling ensures existing workflows continue working unchanged.
+The bidirectional messaging protocol is **fully functional** and instances are **automatically instructed** to use `reply_to_caller` when spawned with `enable_madrox=True`. The fallback to polling ensures backward compatibility and graceful degradation.
+
+### Final Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Bidirectional messaging | ✅ Complete | Queue-based, zero DB |
+| Multiline fix | ✅ Working | No terminal hangs |
+| Tool registration | ✅ Working | `reply_to_caller` available |
+| Automatic instructions | ✅ Working | Added to spawn prompt |
+| Fallback polling | ✅ Working | Graceful degradation |
+| Testing | ✅ Validated | All tests passing |
 
 ### Recommendation
 
-Merge to main and iterate on adoption strategies (system prompts, documentation) in follow-up PRs.
+**Ready to merge to main.** All features complete and tested.
