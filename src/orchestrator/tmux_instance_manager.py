@@ -16,6 +16,7 @@ from typing import Any
 import libtmux
 
 from .name_generator import get_instance_name
+from .simple_models import MessageEnvelope
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,10 @@ class TmuxInstanceManager:
         self.tmux_sessions: dict[str, libtmux.Session] = {}
         self.message_history: dict[str, list[dict]] = {}
         self.logging_manager = logging_manager
+
+        # Bidirectional messaging queues (in-memory, lightweight)
+        self.response_queues: dict[str, asyncio.Queue] = {}
+        self.message_registry: dict[str, MessageEnvelope] = {}
 
         # Resource tracking
         self.total_tokens_used = 0
@@ -322,40 +327,33 @@ class TmuxInstanceManager:
                     },
                 )
 
+            # Create message envelope for bidirectional tracking
+            envelope = MessageEnvelope(
+                message_id=message_id,
+                sender_id="coordinator",  # Or parent instance ID if applicable
+                recipient_id=instance_id,
+                content=message,
+                sent_at=send_timestamp,
+            )
+            self.message_registry[message_id] = envelope
+
+            # Initialize response queue for this instance if needed
+            if instance_id not in self.response_queues:
+                self.response_queues[instance_id] = asyncio.Queue()
+
+            # Format message with correlation ID for bidirectional tracking
+            formatted_message = f"[MSG:{message_id}] {message}"
+
             # Send message via tmux
             session = self.tmux_sessions[instance_id]
             window = session.windows[0]
             pane = window.panes[0]
 
-            # Send the message
-            # Claude Code has VERY aggressive paste detection
-            # Strategy: Send line-by-line with small delays to simulate realistic typing
-            import time
+            # Use new multiline-safe method
+            self._send_multiline_message_to_pane(pane, formatted_message)
+            envelope.mark_delivered()
 
-            lines = message.split('\n')
-            total_lines = len(lines)
-
-            logger.debug(f"Sending {total_lines} lines to instance {instance_id}")
-
-            # Send each line individually with a small delay
-            for i, line in enumerate(lines):
-                # Send the line content
-                pane.send_keys(line, enter=False, literal=True)
-
-                # Add newline character (except for last line)
-                # Use C-j (newline) instead of Enter to avoid submitting
-                if i < total_lines - 1:
-                    pane.send_keys('C-j', enter=False, literal=False)
-                    # Small delay between lines to avoid paste detection
-                    time.sleep(0.01)  # 10ms between lines
-
-            logger.debug(f"Sent all {total_lines} lines to instance {instance_id}")
-
-            # Now send final Enter to submit the entire message
-            time.sleep(0.05)
-            pane.send_keys("", enter=True)
-
-            logger.debug(f"Submitted message to instance {instance_id}")
+            logger.debug(f"Sent message {message_id} to instance {instance_id}")
 
             if not wait_for_response:
                 # Still track outbound message tokens even when not waiting for response
@@ -372,8 +370,77 @@ class TmuxInstanceManager:
                 return {
                     "instance_id": instance_id,
                     "status": "sent",
+                    "message_id": message_id,
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
+
+            # BIDIRECTIONAL MESSAGING: Check response queue first
+            # Instance may use reply_to_caller tool for explicit response
+            try:
+                queue_response = await asyncio.wait_for(
+                    self.response_queues[instance_id].get(), timeout=timeout_seconds
+                )
+                # Got explicit reply via bidirectional protocol
+                response_text = queue_response["reply_message"]
+                logger.info(f"Received bidirectional reply from instance {instance_id}")
+
+                # Mark envelope as replied
+                envelope.mark_replied(response_text)
+
+                # Update stats and return
+                response_timestamp = datetime.now(UTC)
+                response_time = (response_timestamp - send_timestamp).total_seconds()
+
+                estimated_tokens = len(message.split()) + len(response_text.split())
+                estimated_cost = estimated_tokens * 0.00001
+
+                instance["total_tokens_used"] += estimated_tokens
+                instance["total_cost"] += estimated_cost
+                instance["request_count"] += 1
+
+                self.total_tokens_used += estimated_tokens
+                self.total_cost += estimated_cost
+
+                # Add to message history
+                self.message_history[instance_id].append(
+                    {
+                        "role": "assistant",
+                        "content": response_text,
+                        "timestamp": response_timestamp.isoformat(),
+                    }
+                )
+
+                # Log the response
+                if self.logging_manager:
+                    instance_logger = self.logging_manager.get_instance_logger(
+                        instance_id, instance.get("name")
+                    )
+                    instance_logger.info(
+                        f"Received bidirectional response ({len(response_text)} chars, {response_time:.2f}s)",
+                        extra={
+                            "event_type": "bidirectional_reply_received",
+                            "message_id": message_id,
+                            "direction": "inbound",
+                            "content": response_text,
+                            "correlation_id": queue_response.get("correlation_id"),
+                        },
+                    )
+
+                instance["state"] = "idle"
+                return {
+                    "instance_id": instance_id,
+                    "response": response_text,
+                    "message_id": message_id,
+                    "response_time": response_time,
+                    "estimated_tokens": estimated_tokens,
+                    "protocol": "bidirectional",
+                    "timestamp": response_timestamp.isoformat(),
+                }
+
+            except TimeoutError:
+                # No explicit reply via bidirectional protocol, fall back to pane polling
+                logger.debug("No bidirectional reply received, falling back to pane polling")
+                envelope.mark_timeout()
 
             # Capture baseline AFTER sending (brief delay for message to appear)
             await asyncio.sleep(0.3)
@@ -502,6 +569,7 @@ class TmuxInstanceManager:
                 "timestamp": response_timestamp.isoformat(),
                 "tokens_used": estimated_tokens,
                 "cost": estimated_cost,
+                "protocol": "polling_fallback",  # Legacy polling method
             }
 
         except Exception as e:
@@ -631,7 +699,7 @@ class TmuxInstanceManager:
         if children_to_terminate:
             logger.info(
                 f"Cascade terminating {len(children_to_terminate)} child instances of {instance_id}",
-                extra={"instance_id": instance_id, "children": children_to_terminate}
+                extra={"instance_id": instance_id, "children": children_to_terminate},
             )
             for child_id in children_to_terminate:
                 try:
@@ -639,7 +707,7 @@ class TmuxInstanceManager:
                 except Exception as e:
                     logger.error(
                         f"Failed to terminate child instance {child_id}: {e}",
-                        extra={"parent_id": instance_id, "child_id": child_id}
+                        extra={"parent_id": instance_id, "child_id": child_id},
                     )
 
         try:
@@ -699,8 +767,7 @@ class TmuxInstanceManager:
                         "total_tokens": instance.get("total_tokens_used", 0),
                         "total_cost": instance.get("total_cost", 0.0),
                         "uptime_seconds": (
-                            datetime.now(UTC)
-                            - datetime.fromisoformat(instance["created_at"])
+                            datetime.now(UTC) - datetime.fromisoformat(instance["created_at"])
                         ).total_seconds(),
                     },
                 )
@@ -831,7 +898,9 @@ class TmuxInstanceManager:
             # Claude CLI shows various prompts, Codex shows ready state
             if instance_type == "codex":
                 # Codex ready when it shows prompt or waits for input
-                if any(indicator in output for indicator in ["codex>", "Working on:", "Thinking..."]):
+                if any(
+                    indicator in output for indicator in ["codex>", "Working on:", "Thinking..."]
+                ):
                     cli_ready = True
                     break
             else:
@@ -918,6 +987,107 @@ class TmuxInstanceManager:
                 await asyncio.sleep(5)
 
         logger.info(f"Tmux session initialized for {instance_type} instance {instance_id}")
+
+    def _send_multiline_message_to_pane(self, pane, message: str) -> None:
+        """Send multiline message to tmux pane with proper escaping.
+
+        Fixes issue where newlines cause tmux terminal to wait for more input.
+        Uses proper escape sequence for literal newlines.
+
+        Args:
+            pane: libtmux pane object
+            message: Message content (may contain newlines)
+        """
+        # Escape the message for safe tmux transmission
+        # Replace literal newlines with escape sequence
+        escaped_message = message.replace("\n", r"\n")
+
+        # Send as single literal string to avoid paste detection
+        pane.send_keys(escaped_message, enter=True, literal=True)
+
+        logger.debug(
+            f"Sent multiline message ({len(message)} chars, {message.count(chr(10))} newlines)"
+        )
+
+    async def handle_reply_to_caller(
+        self,
+        instance_id: str,
+        reply_message: str,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Handle reply from instance back to its caller.
+
+        This implements the bidirectional messaging protocol by queuing the reply
+        in the appropriate response queue.
+
+        Args:
+            instance_id: ID of instance sending the reply
+            reply_message: Content of the reply
+            correlation_id: Optional message ID for correlation
+
+        Returns:
+            Dict with success status and delivery info
+        """
+        try:
+            instance = self.instances.get(instance_id)
+            if not instance:
+                return {"success": False, "error": f"Instance {instance_id} not found"}
+
+            # Determine the caller (parent instance or coordinator)
+            parent_id = instance.get("parent_instance_id")
+            delivered_to = parent_id if parent_id else "coordinator"
+
+            # If there's a correlation_id, update the message envelope
+            if correlation_id and correlation_id in self.message_registry:
+                envelope = self.message_registry[correlation_id]
+                envelope.mark_replied(reply_message, datetime.now())
+                logger.debug(f"Correlated reply to message {correlation_id}")
+
+            # Queue the reply in the caller's response queue
+            if parent_id and parent_id in self.response_queues:
+                await self.response_queues[parent_id].put(
+                    {
+                        "sender_id": instance_id,
+                        "reply_message": reply_message,
+                        "correlation_id": correlation_id,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+                logger.info(f"Reply queued for parent instance {parent_id}")
+            elif not parent_id:
+                # Reply to coordinator - use special coordinator queue
+                if "coordinator" not in self.response_queues:
+                    self.response_queues["coordinator"] = asyncio.Queue()
+                await self.response_queues["coordinator"].put(
+                    {
+                        "sender_id": instance_id,
+                        "reply_message": reply_message,
+                        "correlation_id": correlation_id,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+                logger.info("Reply queued for coordinator")
+
+            # Log the communication
+            if self.logging_manager:
+                self.logging_manager.log_communication(
+                    instance_id=instance_id,
+                    direction="outbound",
+                    message_type="reply",
+                    content=reply_message[:200],
+                    parent_id=parent_id,
+                )
+
+            return {
+                "success": True,
+                "delivered_to": delivered_to,
+                "correlation_id": correlation_id,
+                "timestamp": datetime.now().isoformat(),
+            }
+
+        except Exception as e:
+            logger.error(f"Error handling reply from {instance_id}: {e}")
+            return {"success": False, "error": str(e)}
 
     def _extract_response(self, full_output: str, initial_output: str) -> str:
         """Extract the actual Claude response from tmux output.

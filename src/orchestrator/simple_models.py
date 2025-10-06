@@ -6,6 +6,72 @@ from enum import Enum
 from typing import Any
 
 
+class MessageStatus(str, Enum):
+    """Status of a message in the bidirectional communication protocol."""
+
+    SENT = "sent"
+    DELIVERED = "delivered"
+    REPLIED = "replied"
+    TIMEOUT = "timeout"
+    ERROR = "error"
+
+
+class MessageEnvelope:
+    """Lightweight wrapper for tracking message lifecycle in bidirectional communication.
+
+    This is an in-memory only structure (no database persistence) used to correlate
+    requests with responses in the asyncio.Queue-based messaging system.
+    """
+
+    def __init__(
+        self,
+        message_id: str,
+        sender_id: str,
+        recipient_id: str,
+        content: str,
+        sent_at: datetime,
+    ):
+        self.message_id = message_id  # UUID for correlation
+        self.sender_id = sender_id  # Instance ID or "coordinator"
+        self.recipient_id = recipient_id  # Instance ID
+        self.content = content  # Original message content
+        self.sent_at = sent_at
+        self.replied_at: datetime | None = None
+        self.reply_content: str | None = None
+        self.status: MessageStatus = MessageStatus.SENT
+
+    def mark_delivered(self) -> None:
+        """Mark message as delivered to recipient."""
+        self.status = MessageStatus.DELIVERED
+
+    def mark_replied(self, reply_content: str, replied_at: datetime | None = None) -> None:
+        """Mark message as replied with response content."""
+        self.status = MessageStatus.REPLIED
+        self.reply_content = reply_content
+        self.replied_at = replied_at or datetime.now()
+
+    def mark_timeout(self) -> None:
+        """Mark message as timed out (no response received)."""
+        self.status = MessageStatus.TIMEOUT
+
+    def mark_error(self) -> None:
+        """Mark message as errored during delivery."""
+        self.status = MessageStatus.ERROR
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "message_id": self.message_id,
+            "sender_id": self.sender_id,
+            "recipient_id": self.recipient_id,
+            "content": self.content,
+            "sent_at": self.sent_at.isoformat(),
+            "replied_at": self.replied_at.isoformat() if self.replied_at else None,
+            "reply_content": self.reply_content,
+            "status": self.status.value,
+        }
+
+
 class InstanceState(str, Enum):
     """State of a Claude instance."""
 
