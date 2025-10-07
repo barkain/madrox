@@ -20,25 +20,27 @@ export default function MadroxMonitor() {
   const [isAuditLogVisible, setIsAuditLogVisible] = useState(true)
   const [openTerminals, setOpenTerminals] = useState<Array<{ id: string; name: string }>>([])
   const [expandedTerminal, setExpandedTerminal] = useState<string | null>(null)
+  const [dismissedTerminals, setDismissedTerminals] = useState<string[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
 
   const { connectionStatus, instances, auditLogs, stats } = useWebSocket()
 
   const handleNodeClick = (instance: { id: string; name: string }) => {
-    // Add to open terminals if not already there
-    if (!openTerminals.find((t) => t.id === instance.id)) {
-      setOpenTerminals([...openTerminals, instance])
-    }
-    // Switch to terminals tab and expand this terminal
+    setOpenTerminals((prev) => {
+      if (prev.find((t) => t.id === instance.id)) {
+        return prev
+      }
+      return [...prev, instance]
+    })
+    setDismissedTerminals((prev) => prev.filter((id) => id !== instance.id))
     setActiveTab("terminals")
     setExpandedTerminal(instance.id)
   }
 
   const closeTerminal = (instanceId: string) => {
-    setOpenTerminals(openTerminals.filter((t) => t.id !== instanceId))
-    if (expandedTerminal === instanceId) {
-      setExpandedTerminal(null)
-    }
+    setOpenTerminals((prev) => prev.filter((t) => t.id !== instanceId))
+    setDismissedTerminals((prev) => (prev.includes(instanceId) ? prev : [...prev, instanceId]))
+    setExpandedTerminal((current) => (current === instanceId ? null : current))
   }
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -75,6 +77,54 @@ export default function MadroxMonitor() {
       window.removeEventListener("mouseup", handleMouseUp)
     }
   }, [isDragging])
+
+  useEffect(() => {
+    setOpenTerminals((prev) => {
+      if (instances.length === 0) {
+        return prev.length === 0 ? prev : []
+      }
+
+      const instanceMap = new Map(instances.map((instance) => [instance.id, instance]))
+      let didChange = false
+
+      const next: Array<{ id: string; name: string }> = []
+
+      prev.forEach((terminal) => {
+        const instance = instanceMap.get(terminal.id)
+        if (!instance) {
+          didChange = true
+          return
+        }
+        if (terminal.name !== instance.name) {
+          didChange = true
+          next.push({ id: terminal.id, name: instance.name })
+          return
+        }
+        next.push(terminal)
+      })
+
+      const existingIds = new Set(next.map((terminal) => terminal.id))
+
+      instances.forEach((instance) => {
+        if (!existingIds.has(instance.id) && !dismissedTerminals.includes(instance.id)) {
+          next.push({ id: instance.id, name: instance.name })
+          didChange = true
+        }
+      })
+
+      if (!didChange) {
+        return prev
+      }
+
+      return next
+    })
+  }, [instances, dismissedTerminals])
+
+  useEffect(() => {
+    if (expandedTerminal && !openTerminals.some((terminal) => terminal.id === expandedTerminal)) {
+      setExpandedTerminal(openTerminals.length > 0 ? openTerminals[0].id : null)
+    }
+  }, [openTerminals, expandedTerminal])
 
   // Filter instances based on search and filters
   const filteredInstances = instances.filter((instance) => {

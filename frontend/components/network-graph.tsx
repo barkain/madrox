@@ -32,17 +32,19 @@ interface NetworkGraphProps {
 // Tree layout algorithm that respects parent-child structure
 function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { x: number; y: number }> {
   const positions = new Map<string, { x: number; y: number }>()
-  const horizontalSpacing = 300
-  const verticalSpacing = 200
+  const horizontalSpacing = 400
+  const verticalSpacing = 250
+
+  const instanceMap = new Map(instances.map((instance) => [instance.id, instance]))
 
   // Global X counter to ensure left-to-right ordering
   let globalX = 0
 
   // Recursive function to layout a subtree
   const layoutSubtree = (instance: AgentInstance, level: number): { x: number; width: number } => {
-    // Get all children of this instance, sorted by creation time for consistent ordering
+    // Get children that are still present in the dataset, sorted by creation time for consistent ordering
     const children = instances
-      .filter(i => i.parentId === instance.id)
+      .filter((candidate) => candidate.parentId === instance.id && instanceMap.has(candidate.id))
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
     if (children.length === 0) {
@@ -55,7 +57,7 @@ function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { 
 
     // Layout all children first (left to right)
     const childResults: { x: number; width: number }[] = []
-    children.forEach(child => {
+    children.forEach((child) => {
       const result = layoutSubtree(child, level + 1)
       childResults.push(result)
     })
@@ -81,17 +83,26 @@ function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { 
     return { x: parentX, width: totalWidth }
   }
 
-  // Find root nodes and layout each tree
+  // Treat instances with no parent or with a missing parent as roots and layout each tree
   const rootNodes = instances
-    .filter(i => !i.parentId)
+    .filter((instance) => !instance.parentId || !instanceMap.has(instance.parentId))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
   rootNodes.forEach((root, index) => {
+    // Add spacing before each tree (except the first)
     if (index > 0) {
-      // Add extra spacing between separate trees
       globalX += horizontalSpacing
     }
     layoutSubtree(root, 0)
+  })
+
+  // Assign fallback positions to any nodes that were not reached (e.g. due to malformed parent references)
+  instances.forEach((instance) => {
+    if (!positions.has(instance.id)) {
+      const x = globalX
+      positions.set(instance.id, { x, y: 100 })
+      globalX += horizontalSpacing
+    }
   })
 
   return positions
@@ -173,8 +184,10 @@ function NetworkGraphInner({ instances, onNodeClick }: NetworkGraphProps) {
       }
     })
 
+    const instanceMap = new Map(instances.map((instance) => [instance.id, instance]))
+
     const newEdges: Edge[] = instances
-      .filter((instance) => instance.parentId)
+      .filter((instance) => instance.parentId && instanceMap.has(instance.parentId))
       .map((instance) => ({
         id: `${instance.parentId}-${instance.id}`,
         source: instance.parentId!,
