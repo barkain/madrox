@@ -285,8 +285,8 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 
 ### Prerequisites
 - Python 3.11+
-- FastAPI and uvicorn
-- Anthropic API key (for production use)
+- [uv](https://docs.astral.sh/uv/) package manager (recommended) - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Anthropic API key (optional if using Claude Desktop/CLI subscription)
 
 ### Installation
 
@@ -310,9 +310,9 @@ If you do need direct API access, also set `ANTHROPIC_API_KEY="your-api-key-here
 
 ### Running the Server
 
-#### Option 1: Using the launcher script
+#### Option 1: Using the launcher script (recommended)
 ```bash
-python run_orchestrator.py
+uv run python run_orchestrator.py
 ```
 
 #### Option 2: Direct server start
@@ -341,10 +341,10 @@ uv run python tests/integration_demo.py
 This demo shows a complete workflow building a task management app with 3 specialized instances.
 
 ### Run stress tests:
-See [docs/STRESS_TESTING.md](docs/STRESS_TESTING.md) for comprehensive stress testing schemes including:
-- Unified visibility testing (stdio→HTTP proxy validation)
+See [docs/FEATURES.md](docs/FEATURES.md) for comprehensive testing and validation patterns including:
+- Instance management and lifecycle testing
 - Cascade termination testing (2-level and 3-level hierarchies)
-- Hierarchy filtering (terminated instance exclusion)
+- Hierarchy filtering and validation
 - Multi-level hierarchy validation (grandparent→parent→child)
 - Concurrent operations testing (parallel spawning, messaging)
 
@@ -493,30 +493,18 @@ Each prompt file contains comprehensive expertise, best practices, and behaviora
 ### Claude Code CLI
 Use the CLI helper to register the server:
 ```bash
-# Default: use claude-sonnet-4-20250514 (no API key required for Claude subscribers)
-claude mcp add madrox http://localhost:8001/mcp --transport http --model sonnet
+# Register the MCP server (uses your Claude Code authentication)
+claude mcp add madrox http://localhost:8001/mcp --transport http
 
-# Optional: pick an alternate supported model
-claude mcp add madrox http://localhost:8001/mcp --transport http --model opus
-claude mcp add madrox http://localhost:8001/mcp --transport http --model haiku
-
-# Need raw API access? add your key when registering (still defaults to sonnet)
-claude mcp add -e ANTHROPIC_API_KEY=your-api-key madrox \
-  http://localhost:8001/mcp --transport http --model sonnet
+# Optional: add API key if needed for spawned instances
+claude mcp add madrox http://localhost:8001/mcp --transport http \
+  -e ANTHROPIC_API_KEY=your-api-key
 
 # Verify registration
 claude mcp list
 ```
 
-The `--model` option accepts only `sonnet`, `opus`, or `haiku`, which expand to the following Anthropic model IDs:
-
-| Choice | Anthropic model id            |
-|--------|-------------------------------|
-| sonnet | `claude-sonnet-4-20250514`    |
-| opus   | `claude-opus-4-1-20250805`    |
-| haiku  | `claude-3-5-haiku-20241022`   |
-
-If you omit `--model`, the CLI defaults to `sonnet`.
+**Note:** Model selection happens when spawning instances via MCP tools, not during registration.
 
 For direct chats without MCP, you can launch the Claude CLI with a specific model:
 
@@ -895,6 +883,45 @@ python run_orchestrator.py
 - **Performance Profiling** - Identify slow operations and optimize network topology
 
 Contributions and feedback on roadmap priorities are welcome!
+
+## 📚 Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+### Getting Started
+- **[SETUP.md](docs/SETUP.md)** - Complete installation and setup guide
+  - System prerequisites and requirements
+  - Installation methods (Quick Start, Docker, Manual)
+  - MCP client configuration (Claude Desktop, Claude Code, Codex CLI)
+  - Configuration and verification
+
+### Technical Reference
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System architecture and design
+  - High-level architecture diagrams
+  - Core components and their responsibilities
+  - Communication patterns and protocols
+  - Security model and isolation
+  - Containerization and deployment
+
+- **[API_REFERENCE.md](docs/API_REFERENCE.md)** - Complete API documentation
+  - MCP tools reference (24+ tools)
+  - HTTP REST API endpoints
+  - Configuration options and environment variables
+  - Return types and error responses
+
+### Usage & Features
+- **[FEATURES.md](docs/FEATURES.md)** - Feature documentation and usage patterns
+  - Instance management (spawning, termination, lifecycle)
+  - Communication patterns (messaging, coordination, broadcasting)
+  - Hierarchical orchestration examples
+  - Testing and validation patterns
+
+### Operations
+- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Debugging and problem resolution
+  - Quick diagnostics and health checks
+  - Common issues and solutions
+  - Performance optimization
+  - Log analysis and debugging tools
 
 ## 🤝 Contributing
 

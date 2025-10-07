@@ -150,6 +150,16 @@ Environment variables:
 
 Note: ANTHROPIC_API_KEY is no longer required as the system now spawns Claude Code CLI processes that use the user's existing Claude authentication.
 
+## Documentation
+
+For comprehensive documentation beyond this development guide, see:
+
+- **[docs/SETUP.md](docs/SETUP.md)** - Complete installation and setup guide with MCP client configuration
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Detailed system architecture, components, and design patterns
+- **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** - Complete API reference for all MCP tools and HTTP endpoints
+- **[docs/FEATURES.md](docs/FEATURES.md)** - Feature documentation with usage patterns and examples
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Debugging guide and common issue resolution
+
 ## Testing Strategy
 
 Tests use pytest with async support. Key test patterns:
