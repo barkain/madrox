@@ -413,6 +413,20 @@ class MCPAdapter:
                                 },
                             },
                             {
+                                "name": "get_live_instance_status",
+                                "description": "Get real-time execution status including current tool, execution time, tools executed, and last output",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "instance_id": {
+                                            "type": "string",
+                                            "description": "Instance ID to get live status for",
+                                        }
+                                    },
+                                    "required": ["instance_id"],
+                                },
+                            },
+                            {
                                 "name": "get_children",
                                 "description": "Get all child instances of a parent instance",
                                 "inputSchema": {
@@ -1213,6 +1227,54 @@ class MCPAdapter:
                         )
                         result = {
                             "content": [{"type": "text", "text": json.dumps(status, indent=2)}]
+                        }
+
+                    elif tool_name == "get_live_instance_status":
+                        instance_id = tool_args["instance_id"]
+
+                        # Get basic instance status
+                        instance = self.manager.get_instance_status(instance_id)
+
+                        # Get event statistics from tmux_manager
+                        event_stats = self.manager.tmux_manager.get_event_statistics(instance_id)
+
+                        # Get most recent assistant output from message history
+                        last_output = None
+                        message_history = self.manager.tmux_manager.message_history.get(
+                            instance_id, []
+                        )
+                        if message_history:
+                            # Get the last assistant message as last_output
+                            for event in reversed(message_history):
+                                if event.get("role") == "assistant":
+                                    content = event.get("content", "")
+                                    last_output = (
+                                        content[:200] + "..." if len(content) > 200 else content
+                                    )
+                                    break
+
+                        # Calculate execution time (uptime)
+                        from datetime import datetime
+
+                        created_at = datetime.fromisoformat(instance["created_at"])
+                        now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.utcnow()
+                        execution_time = (now - created_at).total_seconds()
+
+                        live_status = {
+                            "instance_id": instance_id,
+                            "state": instance["state"],
+                            "current_tool": None,  # Not available in interactive mode
+                            "execution_time": execution_time,
+                            "tools_executed": 0,  # Not available in interactive mode
+                            "last_output": last_output,
+                            "last_activity": instance["last_activity"],
+                            "tools_breakdown": {},  # Not available in interactive mode
+                            "event_counts": event_stats.get("event_counts", {}),
+                            "note": "Tool tracking not available in interactive mode. Use get_tmux_pane_content for detailed output.",
+                        }
+
+                        result = {
+                            "content": [{"type": "text", "text": json.dumps(live_status, indent=2)}]
                         }
 
                     elif tool_name == "get_children":
