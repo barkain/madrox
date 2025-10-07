@@ -217,7 +217,7 @@ class ClaudeOrchestratorServer:
                     # Wait for ping from client (heartbeat)
                     try:
                         message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         # Send periodic updates even without client ping
                         pass
 
@@ -515,6 +515,53 @@ class ClaudeOrchestratorServer:
                     "uptime_seconds": (
                         datetime.utcnow() - datetime.fromisoformat(instance["created_at"])
                     ).total_seconds(),
+                }
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e)) from e
+
+        @self.app.get("/instances/{instance_id}/live_status")
+        async def get_live_status(instance_id: str):
+            """Get real-time execution status for an instance.
+
+            NOTE: current_tool and tools_executed are not available in interactive mode.
+            Use get_tmux_pane_content for detailed terminal output with tool execution info.
+            """
+            try:
+                # Get basic instance status
+                instance = self.instance_manager.get_instance_status(instance_id)
+
+                # Get event statistics from tmux_manager
+                event_stats = self.instance_manager.tmux_manager.get_event_statistics(instance_id)
+
+                # Get most recent assistant output from message history
+                last_output = None
+                message_history = self.instance_manager.tmux_manager.message_history.get(
+                    instance_id, []
+                )
+                if message_history:
+                    # Get the last assistant message as last_output
+                    for event in reversed(message_history):
+                        if event.get("role") == "assistant":
+                            content = event.get("content", "")
+                            last_output = content[:200] + "..." if len(content) > 200 else content
+                            break
+
+                # Calculate execution time (uptime)
+                created_at = datetime.fromisoformat(instance["created_at"])
+                now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.utcnow()
+                execution_time = (now - created_at).total_seconds()
+
+                return {
+                    "instance_id": instance_id,
+                    "state": instance["state"],
+                    "current_tool": None,  # Not available in interactive mode
+                    "execution_time": execution_time,
+                    "tools_executed": 0,  # Not available in interactive mode
+                    "last_output": last_output,
+                    "last_activity": instance["last_activity"],
+                    "tools_breakdown": {},  # Not available in interactive mode
+                    "event_counts": event_stats.get("event_counts", {}),
+                    "note": "Tool tracking not available in interactive mode. Use get_tmux_pane_content for detailed output.",
                 }
             except ValueError as e:
                 raise HTTPException(status_code=404, detail=str(e)) from e
@@ -849,8 +896,8 @@ class ClaudeOrchestratorServer:
             since: Filter logs after this timestamp
             root_instance_id: Optional root instance ID to filter logs by specific network
         """
-        from pathlib import Path
         import json
+        from pathlib import Path
 
         log_dir = Path(self.config.log_dir) / "audit"
         today = datetime.utcnow().strftime("%Y%m%d")
@@ -922,8 +969,8 @@ class ClaudeOrchestratorServer:
         self, instance_id: str, limit: int = 100, since: str | None = None
     ) -> dict[str, Any]:
         """Get communication logs for an instance."""
-        from pathlib import Path
         import json
+        from pathlib import Path
 
         log_dir = Path(self.config.log_dir) / "instances" / instance_id
         comm_log = log_dir / "communication.jsonl"
