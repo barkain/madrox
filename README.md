@@ -285,8 +285,8 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 
 ### Prerequisites
 - Python 3.11+
-- FastAPI and uvicorn
-- Anthropic API key (for production use)
+- [uv](https://docs.astral.sh/uv/) package manager (recommended) - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Anthropic API key (optional if using Claude Desktop/CLI subscription)
 
 ### Installation
 
@@ -310,9 +310,9 @@ If you do need direct API access, also set `ANTHROPIC_API_KEY="your-api-key-here
 
 ### Running the Server
 
-#### Option 1: Using the launcher script
+#### Option 1: Using the launcher script (recommended)
 ```bash
-python run_orchestrator.py
+uv run python run_orchestrator.py
 ```
 
 #### Option 2: Direct server start
