@@ -32,10 +32,14 @@ Madrox is a Model Context Protocol (MCP) server that enables hierarchical orches
 
 ### API Keys
 
-**Required:**
-- **Anthropic API Key** - For Claude instances
+**For Docker Deployment:**
+- **Anthropic API Key** - **Required** for containerized deployment
   - Get one at [console.anthropic.com](https://console.anthropic.com)
-  - **Note:** Optional if you use Claude Desktop/CLI with an active subscription
+  - OAuth-based authentication (browser login) does not work in containers
+
+**For Local Installation:**
+- **Anthropic API Key** - Optional if you have Claude Desktop/CLI subscription
+  - OAuth authentication works with local installations
 
 **Optional:**
 - **OpenAI API Key** - For Codex instances (multi-model support)
@@ -58,11 +62,11 @@ Madrox is a Model Context Protocol (MCP) server that enables hierarchical orches
 
 Choose the installation method that best fits your needs:
 
-| Method | Best For | Setup Time | Isolation |
-|--------|----------|------------|-----------|
-| **Quick Start** | Development, testing | 5 minutes | Medium |
-| **Docker** | Production, deployment | 10 minutes | High |
-| **Manual** | Custom setups, debugging | 15 minutes | Low |
+| Method | Best For | Setup Time | Isolation | Auth Requirements |
+|--------|----------|------------|-----------|-------------------|
+| **Quick Start** | Development, testing | 5 minutes | Medium | OAuth or API key |
+| **Docker** | Production, deployment | 10 minutes | High | **API key only** |
+| **Manual** | Custom setups, debugging | 15 minutes | Low | OAuth or API key |
 
 ---
 
@@ -141,6 +145,9 @@ curl http://localhost:8001/health
 ## Docker Installation
 
 Production-ready containerized deployment with persistent storage and health monitoring.
+
+> **⚠️ Important Authentication Requirement:**
+> Docker deployment **requires an Anthropic API key**. OAuth-based Claude CLI authentication (browser login) does not work in containers. If you only have a Claude subscription without an API key, use the [Quick Start](#quick-start) or [Manual Installation](#manual-installation) methods instead.
 
 ### 1. Prerequisites Check
 
