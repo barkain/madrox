@@ -6,7 +6,6 @@ Manages Claude CLI instances via tmux sessions for persistent interactive commun
 import asyncio
 import logging
 import re
-import subprocess
 import time
 import uuid
 from datetime import UTC, datetime
@@ -55,6 +54,7 @@ class TmuxInstanceManager:
 
         # Store server port for MCP config generation
         import os
+
         self.server_port = int(os.getenv("ORCHESTRATOR_PORT", "8001"))
 
     def _configure_mcp_servers(self, pane, instance: dict[str, Any]):
@@ -78,6 +78,7 @@ class TmuxInstanceManager:
         if isinstance(mcp_servers, str):
             try:
                 import json
+
                 mcp_servers = json.loads(mcp_servers)
                 # Update instance dict with parsed value
                 instance["mcp_servers"] = mcp_servers
@@ -94,7 +95,7 @@ class TmuxInstanceManager:
         if instance.get("enable_madrox") and "madrox" not in mcp_servers:
             mcp_servers["madrox"] = {
                 "transport": "http",
-                "url": f"http://localhost:{self.server_port}/mcp"
+                "url": f"http://localhost:{self.server_port}/mcp",
             }
 
         # Handle Codex instances differently - use `codex mcp add` commands
@@ -103,7 +104,9 @@ class TmuxInstanceManager:
                 logger.debug(f"No MCP servers to configure for Codex instance {instance['id']}")
                 return
 
-            logger.info(f"Configuring {len(mcp_servers)} MCP servers for Codex instance {instance['id']}")
+            logger.info(
+                f"Configuring {len(mcp_servers)} MCP servers for Codex instance {instance['id']}"
+            )
 
             for server_name, server_config in mcp_servers.items():
                 try:
@@ -113,7 +116,9 @@ class TmuxInstanceManager:
                     if transport == "stdio":
                         command = server_config.get("command")
                         if not command:
-                            logger.warning(f"Skipping MCP server '{server_name}' - no command provided")
+                            logger.warning(
+                                f"Skipping MCP server '{server_name}' - no command provided"
+                            )
                             continue
 
                         args = server_config.get("args", [])
@@ -135,11 +140,15 @@ class TmuxInstanceManager:
                         time.sleep(0.5)  # Wait for command to complete
 
                     elif transport == "http":
-                        logger.warning(f"Codex does not support HTTP MCP servers yet ('{server_name}'), skipping")
+                        logger.warning(
+                            f"Codex does not support HTTP MCP servers yet ('{server_name}'), skipping"
+                        )
                         continue
 
                 except Exception as e:
-                    logger.error(f"Error configuring Codex MCP server '{server_name}': {e}", exc_info=True)
+                    logger.error(
+                        f"Error configuring Codex MCP server '{server_name}': {e}", exc_info=True
+                    )
                     raise
 
             logger.info(f"Configured MCP servers for Codex instance {instance['id']}")
@@ -160,18 +169,22 @@ class TmuxInstanceManager:
             if transport == "http":
                 url = server_config.get("url")
                 if not url:
-                    logger.warning(f"Skipping MCP server '{server_name}' - no URL provided for http transport")
+                    logger.warning(
+                        f"Skipping MCP server '{server_name}' - no URL provided for http transport"
+                    )
                     continue
 
                 mcp_config["mcpServers"][server_name] = {
                     "type": "http",  # Claude Code uses "type" not "transport"
-                    "url": url
+                    "url": url,
                 }
 
             elif transport == "stdio":
                 command = server_config.get("command")
                 if not command:
-                    logger.warning(f"Skipping MCP server '{server_name}' - no command provided for stdio transport")
+                    logger.warning(
+                        f"Skipping MCP server '{server_name}' - no command provided for stdio transport"
+                    )
                     continue
 
                 args = server_config.get("args", [])
@@ -179,16 +192,20 @@ class TmuxInstanceManager:
                 # It infers stdio from the presence of "command"
                 mcp_config["mcpServers"][server_name] = {
                     "command": command,
-                    "args": args if isinstance(args, list) else [args]
+                    "args": args if isinstance(args, list) else [args],
                 }
 
             else:
-                logger.warning(f"Skipping MCP server '{server_name}' - unsupported transport '{transport}'")
+                logger.warning(
+                    f"Skipping MCP server '{server_name}' - unsupported transport '{transport}'"
+                )
                 continue
 
         # Write config file
         mcp_config_path.write_text(json.dumps(mcp_config, indent=2))
-        logger.info(f"Created MCP config for instance {instance['id']}: {len(mcp_config['mcpServers'])} servers")
+        logger.info(
+            f"Created MCP config for instance {instance['id']}: {len(mcp_config['mcpServers'])} servers"
+        )
 
         # Store the config path so we can use --mcp-config flag when starting Claude
         instance["_mcp_config_path"] = str(mcp_config_path)
@@ -458,7 +475,9 @@ class TmuxInstanceManager:
 
             # Check if system prompt is pending (first message after spawn)
             if instance.get("_system_prompt_pending"):
-                logger.info(f"Sending pending system prompt with first message to instance {instance_id}")
+                logger.info(
+                    f"Sending pending system prompt with first message to instance {instance_id}"
+                )
                 # Get the pending system prompt
                 system_prompt = instance.get("_pending_system_prompt", "")
 
@@ -597,6 +616,10 @@ class TmuxInstanceManager:
                 # Capture current visible pane only (not full scrollback - faster)
                 current_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
                 current_size = len(current_output)
+
+                # NOTE: Claude CLI in interactive mode uses rich terminal UI, not JSON
+                # Tool event capture via JSON parsing is not possible in interactive tmux sessions
+                # Users should use get_tmux_pane_content() for detailed terminal output inspection
 
                 # Check if response has started (output growing)
                 if current_size > last_size:
@@ -1008,7 +1031,9 @@ class TmuxInstanceManager:
             if model := instance.get("model"):
                 cmd_parts.extend(["--model", model])
         else:
-            # Claude CLI command
+            # Claude CLI command (interactive mode)
+            # NOTE: --output-format stream-json only works with --print (non-interactive)
+            # For interactive tmux sessions, we must parse the terminal output directly
             cmd_parts = [
                 "claude",
                 "--permission-mode",
@@ -1051,13 +1076,16 @@ class TmuxInstanceManager:
             else:
                 # Claude ready when it shows "What would you like" or similar ready prompt
                 # CRITICAL: Must see the actual ready message, not just initialization output
-                if any(indicator in output for indicator in [
-                    "What would you like",  # Standard ready prompt
-                    "How can I help",        # Alternative ready prompt
-                    "ready to assist",       # Another variant
-                ]):
+                if any(
+                    indicator in output
+                    for indicator in [
+                        "What would you like",  # Standard ready prompt
+                        "How can I help",  # Alternative ready prompt
+                        "ready to assist",  # Another variant
+                    ]
+                ):
                     cli_ready = True
-                    logger.debug(f"Claude CLI ready - detected ready prompt")
+                    logger.debug("Claude CLI ready - detected ready prompt")
                     break
 
         if not cli_ready:
@@ -1293,6 +1321,59 @@ class TmuxInstanceManager:
         except Exception as e:
             logger.error(f"Error handling reply from {instance_id}: {e}")
             return {"success": False, "error": str(e)}
+
+    def get_event_statistics(self, instance_id: str) -> dict[str, Any]:
+        """Get statistics about captured events for an instance.
+
+        NOTE: Only user and assistant messages are captured. Tool call events
+        are not available in interactive Claude CLI mode. Use get_tmux_pane_content()
+        for detailed terminal output that includes tool execution details.
+
+        Args:
+            instance_id: Instance ID to get statistics for
+
+        Returns:
+            Dict with event counts (tool_calls/tool_results will always be 0)
+        """
+        if instance_id not in self.message_history:
+            return {
+                "instance_id": instance_id,
+                "error": "Instance not found",
+                "total_events": 0,
+            }
+
+        history = self.message_history[instance_id]
+
+        # Count events by role/type
+        # NOTE: tool_calls and tool_results will always be 0 in interactive mode
+        event_counts = {
+            "user_messages": 0,
+            "assistant_messages": 0,
+            "tool_calls": 0,  # Always 0 - interactive mode doesn't emit JSON events
+            "tool_results": 0,  # Always 0 - interactive mode doesn't emit JSON events
+            "total_events": len(history),
+        }
+
+        for event in history:
+            role = event.get("role")
+
+            if role == "user":
+                event_counts["user_messages"] += 1
+            elif role == "assistant":
+                event_counts["assistant_messages"] += 1
+
+        return {
+            "instance_id": instance_id,
+            "event_counts": event_counts,
+            "tools_used": {},  # Empty - tool tracking not available
+            "total_events": len(history),
+        }
+
+    # REMOVED: _parse_cli_output method
+    # Claude CLI in interactive mode (used for tmux sessions) does not emit JSON output.
+    # --output-format stream-json ONLY works with --print (non-interactive mode).
+    # Interactive sessions use rich terminal UI which cannot be parsed as structured JSON.
+    # For detailed output inspection, use get_tmux_pane_content() to capture raw terminal output.
 
     def _extract_response(self, full_output: str, initial_output: str) -> str:
         """Extract the actual Claude response from tmux output.

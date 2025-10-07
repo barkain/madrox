@@ -107,21 +107,31 @@ Each instance gets an isolated workspace directory:
 
 ### Claude CLI Process Communication
 
-Each Claude instance runs as a separate CLI process:
-- **Command**: `claude --print --output-format stream-json --input-format stream-json`
-- **Input**: JSON messages sent via stdin
-- **Output**: JSON responses read from stdout
-- **Protocol**: Stream-JSON format for bidirectional communication
+Each Claude/Codex instance runs as a separate interactive tmux session:
+- **Command**: `claude --permission-mode bypassPermissions --dangerously-skip-permissions` (interactive mode)
+- **Communication**: Terminal I/O via tmux panes, not JSON streaming
+- **Output Capture**: Use `get_tmux_pane_content()` for detailed terminal output
+- **Limitation**: Tool event tracking via JSON not available in interactive mode
+- **Monitoring**: Use `live_status` API for execution time, state, and last activity
 
 ### Message Flow
 
 1. Client sends request to MCP server
-2. Server validates and routes to InstanceManager
-3. InstanceManager sends JSON message to Claude CLI process via stdin
-4. Claude CLI processes the request and streams response via stdout
-5. InstanceManager parses JSON response and buffers output
-6. Responses aggregated and returned to client
-7. Resource tracking updated (estimated tokens based on word count)
+2. Server validates and routes to TmuxInstanceManager
+3. TmuxInstanceManager sends message to Claude/Codex tmux session via terminal
+4. Instance processes request in interactive mode (rich terminal UI)
+5. TmuxInstanceManager monitors tmux pane output for response completion
+6. Response extracted from terminal output and returned to client
+7. Resource tracking updated based on activity
+
+### Live Status API
+
+Real-time instance monitoring endpoint:
+- **Endpoint**: `GET /instances/{id}/live_status`
+- **MCP Tool**: `get_live_instance_status`
+- **Returns**: execution_time, state, last_activity, event_counts, last_output
+- **Use Case**: Monitor long-running operations, track instance uptime
+- **Note**: Tool-level details require `get_tmux_pane_content()` for terminal inspection
 
 ### Coordination Patterns
 
@@ -154,9 +164,13 @@ Tests use pytest with async support. Key test patterns:
 
 - Python 3.11+ required for modern syntax (datetime.UTC, type unions)
 - Heavy async/await usage - maintain async patterns
-- Resource cleanup critical - always terminate CLI processes properly
+- Resource cleanup critical - always terminate tmux sessions properly
 - Health checks run automatically - implement cleanup in new features
 - MCP protocol compliance required for Claude CLI integration
-- Each Claude instance runs as a separate OS process - ensure proper process management
-- JSON streaming format used for communication with Claude CLI
+- Each instance runs in isolated tmux session - ensure proper session management
+- Interactive terminal I/O, not JSON streaming - parse terminal output for responses
 - Process termination uses graceful shutdown (SIGTERM) with fallback to SIGKILL
+- **Tool tracking limitation**: Claude CLI `--output-format stream-json` only works with `--print` (non-interactive mode)
+- Madrox uses interactive tmux for bidirectional communication - incompatible with `--print` mode
+- Use `get_tmux_pane_content()` for detailed tool execution inspection
+- Use `live_status` API for execution time and state monitoring
