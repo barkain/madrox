@@ -450,12 +450,7 @@ The Madrox tools will appear in your conversations.
 **1. Register MCP server:**
 
 ```bash
-# Default: Sonnet model
-claude mcp add madrox http://localhost:8001/mcp --transport http --model sonnet
-
-# Or choose alternate models
-claude mcp add madrox http://localhost:8001/mcp --transport http --model opus
-claude mcp add madrox http://localhost:8001/mcp --transport http --model haiku
+claude mcp add madrox http://localhost:8001/mcp --transport http
 ```
 
 **Model mapping:**

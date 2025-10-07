@@ -493,30 +493,18 @@ Each prompt file contains comprehensive expertise, best practices, and behaviora
 ### Claude Code CLI
 Use the CLI helper to register the server:
 ```bash
-# Default: use claude-sonnet-4-20250514 (no API key required for Claude subscribers)
-claude mcp add madrox http://localhost:8001/mcp --transport http --model sonnet
+# Register the MCP server (uses your Claude Code authentication)
+claude mcp add madrox http://localhost:8001/mcp --transport http
 
-# Optional: pick an alternate supported model
-claude mcp add madrox http://localhost:8001/mcp --transport http --model opus
-claude mcp add madrox http://localhost:8001/mcp --transport http --model haiku
-
-# Need raw API access? add your key when registering (still defaults to sonnet)
-claude mcp add -e ANTHROPIC_API_KEY=your-api-key madrox \
-  http://localhost:8001/mcp --transport http --model sonnet
+# Optional: add API key if needed for spawned instances
+claude mcp add madrox http://localhost:8001/mcp --transport http \
+  -e ANTHROPIC_API_KEY=your-api-key
 
 # Verify registration
 claude mcp list
 ```
 
-The `--model` option accepts only `sonnet`, `opus`, or `haiku`, which expand to the following Anthropic model IDs:
-
-| Choice | Anthropic model id            |
-|--------|-------------------------------|
-| sonnet | `claude-sonnet-4-20250514`    |
-| opus   | `claude-opus-4-1-20250805`    |
-| haiku  | `claude-3-5-haiku-20241022`   |
-
-If you omit `--model`, the CLI defaults to `sonnet`.
+**Note:** Model selection happens when spawning instances via MCP tools, not during registration.
 
 For direct chats without MCP, you can launch the Claude CLI with a specific model:
 
