@@ -58,28 +58,20 @@ Since the server is already running, you can also configure it as an HTTP MCP se
 }
 ```
 
-## 3. Pick Your Claude Model
+## 3. Register with Claude CLI
 
-When registering the server with the Claude CLI, choose one of the supported models:
+Register the server with the Claude CLI:
 
 ```bash
-# Default (sonnet)
-claude mcp add madrox http://localhost:8001/mcp --transport http --model sonnet
+# Register the MCP server
+claude mcp add madrox http://localhost:8001/mcp --transport http
 
-# Alternate options
-claude mcp add madrox http://localhost:8001/mcp --transport http --model opus
-claude mcp add madrox http://localhost:8001/mcp --transport http --model haiku
+# Optional: add API key if needed for spawned instances
+claude mcp add madrox http://localhost:8001/mcp --transport http \
+  -e ANTHROPIC_API_KEY=your-api-key
 ```
 
-These map to the Anthropic model IDs:
-
-| Choice | Anthropic model id          |
-|--------|-----------------------------|
-| sonnet | `claude-sonnet-4-20250514`  |
-| opus   | `claude-opus-4-1-20250805`  |
-| haiku  | `claude-3-5-haiku-20241022` |
-
-If you need raw API access, add `-e ANTHROPIC_API_KEY=your-api-key` before the server name in the commands above.
+**Note:** Model selection happens when spawning instances via MCP tools, not during registration.
 
 For ad-hoc conversations outside MCP you can launch the CLI directly:
 
@@ -140,14 +132,14 @@ kill 49198
 
 1. **Server not starting**: Check if port 8001 is already in use
 2. **API key issues**: Ensure ANTHROPIC_API_KEY is set in your environment
-3. **Connection refused**: Make sure the server is running (`uv run python run_orchestrator.py`) and that your HTTP configuration points to `/mcp`. Confirm you used one of the allowed model choices (`sonnet`, `opus`, or `haiku`).
+3. **Connection refused**: Make sure the server is running (`uv run python run_orchestrator.py`) and that your HTTP configuration points to `/mcp`
 4. **MCP tools not showing**: Restart Claude Desktop after updating config
 
 ## Current Status
 
 ✅ Server is running on http://localhost:8001 (MCP adapter at /mcp)
 ✅ All health checks passing
-✅ MCP tools are available and functional (tested with `sonnet`, `opus`, and `haiku` models)
+✅ MCP tools are available and functional
 ✅ Test instance spawn/terminate working
 
 The server is ready for use with Claude Code!
