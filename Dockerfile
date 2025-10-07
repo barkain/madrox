@@ -8,27 +8,27 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive
 
 # Install build tooling and uv
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/cache/apt \
-    apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && mv /root/.cargo/bin/uv /usr/local/bin/uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 
-COPY pyproject.toml ./
+# Copy all necessary files for dependency installation
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
 
 # Create project virtualenv ahead of dependency install for reuse in runtime stage
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
 
-# Install project dependencies declared in pyproject.toml into the virtualenv
+# Install project dependencies (not editable to avoid needing all source files)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /opt/venv/bin/python --no-cache --project pyproject.toml
+    uv pip install --python /opt/venv/bin/python .
 
 
 # Stage 2: runtime image
@@ -39,9 +39,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive
 
 # Install required runtime packages only
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/cache/apt \
-    apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         tmux \
         sqlite3 \
         curl \
