@@ -341,10 +341,10 @@ uv run python tests/integration_demo.py
 This demo shows a complete workflow building a task management app with 3 specialized instances.
 
 ### Run stress tests:
-See [docs/STRESS_TESTING.md](docs/STRESS_TESTING.md) for comprehensive stress testing schemes including:
-- Unified visibility testing (stdio→HTTP proxy validation)
+See [docs/FEATURES.md](docs/FEATURES.md) for comprehensive testing and validation patterns including:
+- Instance management and lifecycle testing
 - Cascade termination testing (2-level and 3-level hierarchies)
-- Hierarchy filtering (terminated instance exclusion)
+- Hierarchy filtering and validation
 - Multi-level hierarchy validation (grandparent→parent→child)
 - Concurrent operations testing (parallel spawning, messaging)
 
@@ -895,6 +895,45 @@ python run_orchestrator.py
 - **Performance Profiling** - Identify slow operations and optimize network topology
 
 Contributions and feedback on roadmap priorities are welcome!
+
+## 📚 Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+### Getting Started
+- **[SETUP.md](docs/SETUP.md)** - Complete installation and setup guide
+  - System prerequisites and requirements
+  - Installation methods (Quick Start, Docker, Manual)
+  - MCP client configuration (Claude Desktop, Claude Code, Codex CLI)
+  - Configuration and verification
+
+### Technical Reference
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System architecture and design
+  - High-level architecture diagrams
+  - Core components and their responsibilities
+  - Communication patterns and protocols
+  - Security model and isolation
+  - Containerization and deployment
+
+- **[API_REFERENCE.md](docs/API_REFERENCE.md)** - Complete API documentation
+  - MCP tools reference (24+ tools)
+  - HTTP REST API endpoints
+  - Configuration options and environment variables
+  - Return types and error responses
+
+### Usage & Features
+- **[FEATURES.md](docs/FEATURES.md)** - Feature documentation and usage patterns
+  - Instance management (spawning, termination, lifecycle)
+  - Communication patterns (messaging, coordination, broadcasting)
+  - Hierarchical orchestration examples
+  - Testing and validation patterns
+
+### Operations
+- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Debugging and problem resolution
+  - Quick diagnostics and health checks
+  - Common issues and solutions
+  - Performance optimization
+  - Log analysis and debugging tools
 
 ## 🤝 Contributing
 
