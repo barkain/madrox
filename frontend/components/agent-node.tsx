@@ -8,32 +8,31 @@ interface AgentNodeProps {
 }
 
 export const AgentNode = memo(({ data }: AgentNodeProps) => {
+  // Status-based color scheme (primary indicator)
   const statusColors = {
-    running: "border-green-500 bg-green-500/10",
-    idle: "border-blue-400 bg-blue-400/10",
-    pending: "border-yellow-500 bg-yellow-500/10",
-    error: "border-red-500 bg-red-500/10",
-    terminated: "border-gray-400 bg-gray-400/10",
+    running: "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30",
+    idle: "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30",
+    busy: "border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/30",
+    initializing: "border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30",
+    pending: "border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30",
+    error: "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30",
+    terminated: "border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/30",
   }
 
   const statusDotColors = {
     running: "bg-green-500",
-    idle: "bg-blue-400",
-    pending: "bg-yellow-500",
+    idle: "bg-green-500",
+    busy: "bg-blue-500 animate-pulse",
+    initializing: "bg-amber-500 animate-pulse",
+    pending: "bg-amber-500",
     error: "bg-red-500",
     terminated: "bg-gray-400",
   }
 
-  // Different background colors for Claude vs Codex
-  const instanceTypeBackground = {
-    claude: "bg-gray-50 dark:bg-gray-900/50",
-    codex: "bg-gray-200 dark:bg-gray-800/80",
-  }
-
-  // Text colors for instance types (Claude brand colors)
+  // Type-based accent colors (secondary indicator)
   const instanceTypeTextColor = {
-    claude: "text-[#C15F3C]", // Claude's warm orange-brown/terra cotta
-    codex: "text-[#00A67E]",  // OpenAI's green-blue/teal
+    claude: "text-blue-600 dark:text-blue-400",
+    codex: "text-purple-600 dark:text-purple-400",
   }
 
   const calculateUptime = () => {
@@ -51,7 +50,7 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
   }
 
   return (
-    <div className={`px-4 py-3 rounded-lg border-2 min-w-[240px] ${instanceTypeBackground[data.type]} ${statusColors[data.status]}`}>
+    <div className={`px-4 py-3 rounded-lg border-2 min-w-[240px] ${statusColors[data.status]}`}>
       <Handle type="target" position={Position.Top} className="w-3 h-3" />
 
       <div className="flex items-start justify-between gap-2 mb-2">
