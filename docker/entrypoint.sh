@@ -97,6 +97,22 @@ if ! command -v tmux >/dev/null 2>&1; then
     exit 1
 fi
 
+# Check for Claude CLI availability
+if ! command -v claude >/dev/null 2>&1; then
+    log_error "Claude CLI is not installed but required for spawning instances"
+    exit 1
+fi
+
+# Configure Claude CLI authentication
+log_info "Configuring Claude CLI authentication..."
+mkdir -p /home/madrox/.config/claude
+cat > /home/madrox/.config/claude/config.json <<EOF
+{
+  "api_key": "$ANTHROPIC_API_KEY"
+}
+EOF
+chmod 600 /home/madrox/.config/claude/config.json
+
 # Health check: Verify Python and required modules
 log_info "Verifying Python environment..."
 python -c "import fastapi, uvicorn, anthropic, mcp" 2>/dev/null || {

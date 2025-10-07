@@ -43,7 +43,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tmux \
         sqlite3 \
         curl \
+        wget \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Claude CLI (as root, then make accessible to all users)
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && cp /root/.local/bin/claude /usr/local/bin/claude \
+    && chmod 755 /usr/local/bin/claude
 
 # Bring in pre-built Python dependencies
 COPY --from=builder /opt/venv /opt/venv
@@ -55,7 +62,9 @@ ENV PATH="/opt/venv/bin:${PATH}" \
 
 # Create isolated user and required directories
 RUN useradd -m -u 1000 -s /bin/bash madrox \
-    && install -d -m 755 -o madrox -g madrox /app /data /logs /tmp/claude_orchestrator
+    && install -d -m 755 -o madrox -g madrox /app /data /logs /tmp/claude_orchestrator \
+    && mkdir -p /home/madrox/.config/claude \
+    && chown -R madrox:madrox /home/madrox/.config
 
 WORKDIR /app
 
