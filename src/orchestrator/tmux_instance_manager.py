@@ -459,6 +459,19 @@ class TmuxInstanceManager:
                     },
                 )
 
+                # Add audit event for message sent
+                self.logging_manager.log_audit_event(
+                    event_type="message_sent",
+                    instance_id=instance_id,
+                    details={
+                        "instance_name": instance.get("name"),
+                        "message_id": message_id,
+                        "message_preview": message[:100],
+                        "message_length": len(message),
+                        "wait_for_response": wait_for_response,
+                    },
+                )
+
             # Create message envelope for bidirectional tracking
             envelope = MessageEnvelope(
                 message_id=message_id,
@@ -579,6 +592,19 @@ class TmuxInstanceManager:
                             "direction": "inbound",
                             "content": response_text,
                             "correlation_id": queue_response.get("correlation_id"),
+                        },
+                    )
+
+                    # Add audit event for bidirectional response
+                    self.logging_manager.log_audit_event(
+                        event_type="message_received",
+                        instance_id=instance_id,
+                        details={
+                            "instance_name": instance.get("name"),
+                            "message_id": message_id,
+                            "response_length": len(response_text),
+                            "response_time_seconds": response_time,
+                            "protocol": "bidirectional",
                         },
                     )
 
