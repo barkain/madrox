@@ -40,6 +40,7 @@ except ImportError:
 
 
 from .instance_manager import InstanceManager
+from .log_stream_handler import get_log_stream_handler
 from .mcp_adapter import MCPAdapter
 from .simple_models import (
     InstanceRole,
@@ -135,6 +136,10 @@ class ClaudeOrchestratorServer:
             """WebSocket endpoint for real-time monitoring."""
             await websocket.accept()
             logger.info("WebSocket client connected to /ws/monitor")
+
+            # Add this client to log stream handler
+            log_handler = get_log_stream_handler()
+            log_handler.add_client(websocket)
 
             try:
                 # Send initial state with instances (exclude terminated)
@@ -270,8 +275,27 @@ class ClaudeOrchestratorServer:
                                 message = f"Spawned instance '{instance_name}' ({details.get('role', 'general')})"
                             elif event_type == "message_exchange":
                                 message = f"Message sent to '{instance_name}'"
+                            elif event_type == "message_sent":
+                                msg_preview = details.get('message_preview', '')
+                                msg_len = details.get('message_length', 0)
+                                message = f"→ Sent message to '{instance_name}' ({msg_len} chars)"
+                            elif event_type == "message_received":
+                                resp_len = details.get('response_length', 0)
+                                resp_time = details.get('response_time_seconds', 0)
+                                protocol = details.get('protocol', 'unknown')
+                                message = f"← Received response from '{instance_name}' ({resp_len} chars, {resp_time:.1f}s, {protocol})"
                             elif event_type == "instance_terminate":
                                 message = f"Terminated instance '{instance_name}'"
+                            elif event_type == "state_change":
+                                old_state = details.get('old_state', 'unknown')
+                                new_state = details.get('new_state', 'unknown')
+                                message = f"Instance '{instance_name}' state: {old_state} → {new_state}"
+                            elif event_type == "error":
+                                error_msg = details.get('error', 'Unknown error')
+                                message = f"⚠️ Error in '{instance_name}': {error_msg}"
+                            elif event_type == "timeout":
+                                timeout_seconds = details.get('timeout_seconds', 0)
+                                message = f"⏱️ Timeout in '{instance_name}' after {timeout_seconds}s"
                             else:
                                 message = event_type.replace("_", " ").title()
 
@@ -306,6 +330,9 @@ class ClaudeOrchestratorServer:
                     await websocket.close()
                 except:
                     pass
+            finally:
+                # Remove client from log stream handler
+                log_handler.remove_client(websocket)
 
         # MCP Protocol endpoints
         @self.app.get("/tools")
@@ -872,6 +899,10 @@ class ClaudeOrchestratorServer:
         logger.info(
             f"Starting Claude Orchestrator Server on {self.config.server_host}:{self.config.server_port}"
         )
+
+        # Setup log streaming
+        from .log_stream_handler import setup_log_streaming
+        setup_log_streaming(asyncio.get_event_loop())
 
         # Start health check background task
         asyncio.create_task(self._health_check_loop())

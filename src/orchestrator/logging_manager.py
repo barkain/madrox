@@ -138,7 +138,7 @@ class LoggingManager:
 
     def _setup_audit_logger(self):
         """Setup audit trail logger (JSON Lines format)."""
-        logger = logging.getLogger("orchestrator.audit")
+        logger = logging.getLogger("audit.orchestrator")
         logger.setLevel(logging.INFO)
         logger.propagate = False
 
