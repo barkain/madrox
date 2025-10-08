@@ -140,7 +140,7 @@ class LoggingManager:
         """Setup audit trail logger (JSON Lines format)."""
         logger = logging.getLogger("audit.orchestrator")
         logger.setLevel(logging.INFO)
-        logger.propagate = False
+        logger.propagate = True  # Allow propagation to root logger for WebSocket streaming
 
         # Remove existing handlers
         logger.handlers.clear()

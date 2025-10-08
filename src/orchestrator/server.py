@@ -334,6 +334,67 @@ class ClaudeOrchestratorServer:
                 # Remove client from log stream handler
                 log_handler.remove_client(websocket)
 
+        @self.app.websocket("/ws/logs")
+        async def logs_websocket(websocket: WebSocket):
+            """WebSocket endpoint for dual-panel logging system.
+
+            This endpoint streams all system and audit logs in real-time.
+            The LogStreamHandler automatically categorizes and broadcasts logs.
+            """
+            await websocket.accept()
+            logger.info("WebSocket client connected to /ws/logs")
+
+            # Register this client with the log stream handler
+            log_handler = get_log_stream_handler()
+            log_handler.add_client(websocket)
+
+            try:
+                # Send recent audit logs on initial connection (last 50 entries)
+                try:
+                    audit_logs = await self.instance_manager.get_audit_logs(
+                        since=None, limit=50
+                    )
+                    for log in audit_logs:
+                        await websocket.send_json({
+                            "type": "audit_log",
+                            "data": {
+                                "timestamp": log.get("timestamp", ""),
+                                "level": log.get("level", "INFO"),
+                                "logger": log.get("logger", "audit.orchestrator"),
+                                "message": log.get("event", ""),
+                                "action": log.get("event_type", ""),
+                                "metadata": log.get("details", {}),
+                            }
+                        })
+                except Exception as e:
+                    logger.warning(f"Failed to send initial audit logs: {e}")
+
+                # Keep connection alive - logs are broadcast automatically by LogStreamHandler
+                while True:
+                    # Wait for ping/pong to keep connection alive
+                    try:
+                        await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                    except TimeoutError:
+                        # Send periodic ping to keep connection alive
+                        try:
+                            await websocket.send_json({"type": "ping"})
+                        except:
+                            break
+                    except:
+                        break
+
+            except WebSocketDisconnect:
+                logger.info("WebSocket client disconnected from /ws/logs")
+            except Exception as e:
+                logger.error(f"WebSocket error on /ws/logs: {e}")
+                try:
+                    await websocket.close()
+                except:
+                    pass
+            finally:
+                # Unregister client from log stream handler
+                log_handler.remove_client(websocket)
+
         # MCP Protocol endpoints
         @self.app.get("/tools")
         async def list_tools():
