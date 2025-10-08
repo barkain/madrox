@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+
 import httpx
 
 BASE_URL = "http://localhost:8003"
@@ -37,6 +38,7 @@ async def main():
 
         # Extract instance ID
         import re
+
         text = result["result"]["content"][0]["text"]
         match = re.search(r"ID: ([a-f0-9-]+)", text)
         instance_id = match.group(1)
@@ -81,7 +83,7 @@ Line 3"""
 
             # Check protocol
             if "protocol" in str(result):
-                print(f"\n✅ Response includes protocol info")
+                print("\n✅ Response includes protocol info")
 
             print("\n✅ Multiline message handled successfully (did not hang)")
         else:

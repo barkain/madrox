@@ -205,7 +205,9 @@ class LoggingManager:
 
         self.audit_logger = logger
 
-    def get_instance_logger(self, instance_id: str, instance_name: str = None) -> InstanceLoggerAdapter:
+    def get_instance_logger(
+        self, instance_id: str, instance_name: str = None
+    ) -> InstanceLoggerAdapter:
         """Get or create a logger for a specific instance.
 
         Args:
@@ -259,7 +261,14 @@ class LoggingManager:
                 }
 
                 # Add communication-specific fields
-                for key in ["message_id", "direction", "content", "tokens", "cost", "response_time"]:
+                for key in [
+                    "message_id",
+                    "direction",
+                    "content",
+                    "tokens",
+                    "cost",
+                    "response_time",
+                ]:
                     if hasattr(record, key):
                         log_obj[key] = getattr(record, key)
 
@@ -325,9 +334,9 @@ class LoggingManager:
 
         # Append with timestamp
         with tmux_log.open("a") as f:
-            f.write(f"\n{'='*80}\n")
+            f.write(f"\n{'=' * 80}\n")
             f.write(f"[{datetime.now().isoformat()}]\n")
-            f.write(f"{'='*80}\n")
+            f.write(f"{'=' * 80}\n")
             f.write(output)
             f.write("\n")
 
@@ -388,9 +397,7 @@ class LoggingManager:
                 shutil.rmtree(instance_dir)
                 self.orchestrator_logger.info(f"Cleaned up logs for instance {instance_id}")
             except Exception as e:
-                self.orchestrator_logger.error(
-                    f"Failed to cleanup logs for {instance_id}: {e}"
-                )
+                self.orchestrator_logger.error(f"Failed to cleanup logs for {instance_id}: {e}")
 
         # Remove from cache
         if instance_id in self._instance_loggers:

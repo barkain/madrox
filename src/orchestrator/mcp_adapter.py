@@ -1257,7 +1257,11 @@ class MCPAdapter:
                         from datetime import datetime
 
                         created_at = datetime.fromisoformat(instance["created_at"])
-                        now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.utcnow()
+                        now = (
+                            datetime.now(created_at.tzinfo)
+                            if created_at.tzinfo
+                            else datetime.utcnow()
+                        )
                         execution_time = (now - created_at).total_seconds()
 
                         live_status = {

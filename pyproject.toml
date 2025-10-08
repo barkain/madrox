@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/supervision", "src/orchestrator"]
 
 [project]
 name = "claude-orchestrator-mcp"
@@ -50,6 +50,7 @@ dev = [
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --tb=short --strict-markers"
+pythonpath = ["src"]
 asyncio_mode = "auto"
 
 [tool.ruff]
