@@ -642,15 +642,26 @@ class MCPAdapter:
 
                     # Execute the tool
                     if tool_name == "spawn_claude":
+                        # Supervision pattern validation: Workers MUST have madrox enabled
+                        parent_id = tool_args.get("parent_instance_id")
+                        enable_madrox = tool_args.get("enable_madrox", True)
+
+                        if parent_id and not enable_madrox:
+                            logger.warning(
+                                f"Forcing enable_madrox=True for supervised instance '{tool_args.get('name')}' "
+                                f"with parent {parent_id}. Workers must have madrox enabled for bidirectional communication."
+                            )
+                            enable_madrox = True
+
                         instance_id = await self.manager.spawn_instance(
                             name=tool_args.get("name", "unnamed"),
                             role=tool_args.get("role", "general"),
                             system_prompt=tool_args.get("system_prompt"),
                             model=tool_args.get("model"),  # None = use CLI default
                             bypass_isolation=tool_args.get("bypass_isolation", False),
-                            enable_madrox=tool_args.get("enable_madrox", True),
+                            enable_madrox=enable_madrox,
                             wait_for_ready=tool_args.get("wait_for_ready", True),
-                            parent_instance_id=tool_args.get("parent_instance_id"),
+                            parent_instance_id=parent_id,
                             mcp_servers=tool_args.get("mcp_servers", {}),
                         )
                         result = {
@@ -668,6 +679,17 @@ class MCPAdapter:
                         # Create spawn tasks for all instances
                         spawn_tasks = []
                         for instance_config in instances_config:
+                            # Supervision pattern validation: Workers MUST have madrox enabled
+                            parent_id = instance_config.get("parent_instance_id")
+                            enable_madrox = instance_config.get("enable_madrox", True)
+
+                            if parent_id and not enable_madrox:
+                                logger.warning(
+                                    f"Forcing enable_madrox=True for supervised instance '{instance_config.get('name')}' "
+                                    f"with parent {parent_id}. Workers must have madrox enabled for bidirectional communication."
+                                )
+                                enable_madrox = True
+
                             spawn_tasks.append(
                                 self.manager.spawn_instance(
                                     name=instance_config.get("name", "unnamed"),
@@ -675,9 +697,9 @@ class MCPAdapter:
                                     system_prompt=instance_config.get("system_prompt"),
                                     model=instance_config.get("model"),
                                     bypass_isolation=instance_config.get("bypass_isolation", False),
-                                    enable_madrox=instance_config.get("enable_madrox", True),
+                                    enable_madrox=enable_madrox,
                                     wait_for_ready=instance_config.get("wait_for_ready", True),
-                                    parent_instance_id=instance_config.get("parent_instance_id"),
+                                    parent_instance_id=parent_id,
                                     mcp_servers=instance_config.get("mcp_servers", {}),
                                 )
                             )
