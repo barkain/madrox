@@ -50,6 +50,28 @@ Spawn a new Claude instance with specific role and configuration.
 | `parent_instance_id` | string | No | `null` | Parent instance ID (for hierarchical networks) |
 | `mcp_servers` | object | No | `{}` | Additional MCP servers to configure (see [MCP Server Configuration](#mcp-server-configuration)) |
 
+**⚠️ Important - Automatic Enforcement:**
+
+When `parent_instance_id` is provided (supervised instances), the system **automatically enforces `enable_madrox=true`** regardless of the provided value. This is required for bidirectional communication between supervisor and workers.
+
+```python
+# If you try this:
+spawn_claude(
+    name="worker",
+    parent_instance_id="supervisor-123",
+    enable_madrox=False  # Will be overridden
+)
+
+# System automatically changes it to:
+# enable_madrox=True
+
+# With warning:
+# "Forcing enable_madrox=True for supervised instance 'worker' with parent
+#  supervisor-123. Workers must have madrox enabled for bidirectional communication."
+```
+
+**Why:** Supervised workers need madrox MCP server to use `reply_to_caller()` and receive messages from their supervisor. See [Coordination Patterns](FEATURES.md#coordination-patterns) for details on independent vs supervised instances.
+
 **Returns:**
 
 ```json
