@@ -32,8 +32,9 @@ export function ConnectionStatus({ status }: ConnectionStatusProps) {
   const Icon = config.icon
 
   return (
-    <div className="absolute top-4 right-6 z-10">
-      <Icon className={`h-5 w-5 ${config.color}`} title={config.title} />
+    <div className="absolute top-4 right-6 z-10 flex items-center gap-2">
+      <Icon className={`h-4 w-4 ${config.color}`} />
+      <span className={`text-sm font-medium ${config.color}`}>{config.title}</span>
     </div>
   )
 }

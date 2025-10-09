@@ -296,12 +296,13 @@ export default function MadroxMonitor() {
                       <div
                         key={terminal.id}
                         id={`terminal-${terminal.id}`}
-                        className="border border-border rounded-lg overflow-hidden bg-card hover:border-primary transition-colors cursor-pointer relative"
+                        className="border border-border rounded-lg overflow-hidden bg-card hover:border-primary transition-colors relative"
                         style={size ? { width: `${size.width}px`, height: `${size.height}px` } : { height: '320px' }}
-                        onClick={() => setExpandedTerminal(terminal.id)}
                       >
-                        <div className="px-3 py-2 border-b border-border bg-muted/50 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
+                        <div
+                          className="px-3 py-2 border-b border-border bg-muted/50 flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-2 cursor-pointer hover:opacity-80" onClick={() => setExpandedTerminal(terminal.id)}>
                             <span className="text-xs font-semibold truncate">{terminal.name}</span>
                             <span className="text-xs text-muted-foreground font-mono">{terminal.id.slice(0, 8)}</span>
                           </div>
@@ -315,7 +316,7 @@ export default function MadroxMonitor() {
                             <X className="h-3 w-3" />
                           </button>
                         </div>
-                        <div className="p-2 h-[calc(100%-2.5rem)] bg-[#1e1e1e] overflow-hidden">
+                        <div className="h-[calc(100%-2.5rem)] bg-[#1e1e1e]">
                           <TerminalViewer
                             instanceId={terminal.id}
                             instanceName={terminal.name}

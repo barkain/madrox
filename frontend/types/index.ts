@@ -9,6 +9,7 @@ export interface AgentInstance {
   lastActivity: string
   totalTokens: number
   totalCost: number
+  statusline?: string
 }
 
 export interface AuditLogEntry {

@@ -305,6 +305,7 @@ class TmuxInstanceManager:
             "resource_limits": kwargs.get("resource_limits", {}),
             "parent_instance_id": kwargs.get("parent_instance_id"),
             "mcp_servers": kwargs.get("mcp_servers", {}),
+            "statusline": "",
             "error_message": None,
             "retry_count": 0,
         }
@@ -1726,3 +1727,31 @@ class TmuxInstanceManager:
         except Exception as e:
             logger.error(f"Failed to capture tmux pane for instance {instance_id}: {e}")
             raise
+
+    async def send_to_instance(
+        self,
+        instance_id: str,
+        message: str,
+        wait_for_response: bool = True,
+        timeout_seconds: int = 30,
+        priority: int = 0,
+    ) -> dict[str, Any] | None:
+        """Send a message to a Claude or Codex instance (alias for send_message).
+
+        Args:
+            instance_id: Target instance ID
+            message: Message to send
+            wait_for_response: Whether to wait for response
+            timeout_seconds: Response timeout
+            priority: Message priority (currently unused)
+
+        Returns:
+            If wait_for_response=True: Response data dict
+            If wait_for_response=False: Dict with job_id and status
+        """
+        return await self.send_message(
+            instance_id=instance_id,
+            message=message,
+            wait_for_response=wait_for_response,
+            timeout_seconds=timeout_seconds,
+        )
