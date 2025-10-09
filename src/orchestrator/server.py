@@ -39,7 +39,8 @@ except ImportError:
         pass
 
 
-from .instance_manager import InstanceManager
+from .tmux_instance_manager import TmuxInstanceManager
+from .logging_manager import LoggingManager, get_log_stream_handler
 from .mcp_adapter import MCPAdapter
 from .simple_models import (
     InstanceRole,
@@ -59,7 +60,29 @@ class ClaudeOrchestratorServer:
             config: Configuration for the orchestrator
         """
         self.config = config
-        self.instance_manager = InstanceManager(config.to_dict())
+
+        # Initialize logging manager
+        log_dir = os.getenv("MADROX_LOG_DIR", "/tmp/madrox_logs")
+        log_level = os.getenv("LOG_LEVEL", "INFO")
+        self.logging_manager = LoggingManager(log_dir=log_dir, log_level=log_level)
+
+        # Test logging immediately after LoggingManager initialization
+        self.logging_manager.orchestrator_logger.info("LoggingManager initialized successfully")
+        self.logging_manager.orchestrator_logger.debug("DEBUG logging test")
+
+        # Reconfigure module-level logger to use orchestrator logger's handlers
+        # The module-level logger was created at import time, before LoggingManager setup
+        # We need to get the exact same logger object and reconfigure it
+        server_logger = logging.getLogger("orchestrator.server")
+        server_logger.handlers.clear()  # Remove any default handlers
+        server_logger.propagate = True  # Propagate to "orchestrator" parent which has configured handlers
+        server_logger.setLevel(logging.DEBUG)  # Let parent handlers do the filtering
+
+        # Test the reconfigured module-level logger
+        server_logger.info("Module-level logger reconfigured successfully")
+
+        # Initialize instance manager with logging
+        self.instance_manager = TmuxInstanceManager(config.to_dict(), logging_manager=self.logging_manager)
 
         # Track server start time for session-only audit logs (use local time to match audit log timestamps)
         self.server_start_time = datetime.now().isoformat()
@@ -306,6 +329,87 @@ class ClaudeOrchestratorServer:
                     await websocket.close()
                 except:
                     pass
+
+        def transform_audit_log(audit_entry: dict[str, Any]) -> dict[str, Any]:
+            """Transform backend audit log format to frontend format."""
+            return {
+                "timestamp": audit_entry.get("timestamp", ""),
+                "level": audit_entry.get("level", "INFO"),
+                "logger": audit_entry.get("logger", "orchestrator.audit"),
+                "message": audit_entry.get("event", ""),  # Map 'event' to 'message'
+                "action": audit_entry.get("event_type", ""),  # Map 'event_type' to 'action'
+                "metadata": audit_entry.get("details", {}),  # Map 'details' to 'metadata'
+            }
+
+        @self.app.websocket("/ws/logs")
+        async def logs_websocket(websocket: WebSocket):
+            """WebSocket endpoint for dual-panel logging system (system + audit logs)."""
+            await websocket.accept()
+            logger.info("WebSocket client connected to /ws/logs")
+
+            # Register this client with the log stream handler
+            log_handler = get_log_stream_handler()
+            log_handler.add_client(websocket)
+
+            try:
+                # Send recent system logs on initial connection
+                log_file = self.logging_manager.log_dir / "orchestrator.log"
+                if log_file.exists():
+                    try:
+                        with log_file.open("r") as f:
+                            lines = f.readlines()
+                            # Send last 100 system log lines
+                            for line in lines[-100:]:
+                                try:
+                                    import json
+
+                                    log_entry = json.loads(line.strip())
+                                    await websocket.send_json({"type": "system_log", "data": log_entry})
+                                except json.JSONDecodeError:
+                                    continue
+                    except Exception as e:
+                        logger.error(f"Failed to load historical system logs: {e}")
+
+                # Send recent audit logs on initial connection
+                audit_logs = await self.instance_manager.get_audit_logs(limit=100)
+                for audit_entry in audit_logs:
+                    transformed_audit = transform_audit_log(audit_entry)
+                    await websocket.send_json({"type": "audit_log", "data": transformed_audit})
+
+                # Keep connection alive and handle client pings
+                last_audit_check = datetime.now().isoformat()
+
+                while True:
+                    # Check for new audit logs periodically
+                    new_audit_logs = await self.instance_manager.get_audit_logs(
+                        since=last_audit_check, limit=50
+                    )
+
+                    if new_audit_logs:
+                        for audit_entry in new_audit_logs:
+                            transformed_audit = transform_audit_log(audit_entry)
+                            await websocket.send_json({"type": "audit_log", "data": transformed_audit})
+                        # Update timestamp to the newest audit log
+                        last_audit_check = new_audit_logs[-1].get("timestamp", last_audit_check)
+
+                    # Send ping to keep connection alive
+                    try:
+                        await websocket.send_json({"type": "ping"})
+                    except:
+                        break
+
+                    await asyncio.sleep(2)  # Check every 2 seconds
+
+            except WebSocketDisconnect:
+                logger.info("WebSocket client disconnected from /ws/logs")
+            except Exception as e:
+                logger.error(f"WebSocket error in /ws/logs: {e}")
+                try:
+                    await websocket.close()
+                except:
+                    pass
+            finally:
+                log_handler.remove_client(websocket)
 
         # MCP Protocol endpoints
         @self.app.get("/tools")

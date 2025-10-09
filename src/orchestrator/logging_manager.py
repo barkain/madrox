@@ -3,12 +3,116 @@
 Provides per-instance logging, audit trails, and log aggregation capabilities.
 """
 
+import asyncio
 import json
 import logging
 import logging.handlers
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from fastapi import WebSocket
+
+
+class LogStreamHandler(logging.Handler):
+    """Custom logging handler that broadcasts logs to WebSocket clients."""
+
+    _instance = None
+
+    def __init__(self):
+        """Initialize the log stream handler."""
+        super().__init__()
+        self.clients: set[WebSocket] = set()
+        self._lock = asyncio.Lock()
+
+    @classmethod
+    def get_instance(cls):
+        """Get singleton instance."""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def add_client(self, websocket: WebSocket):
+        """Add a WebSocket client to receive log broadcasts."""
+        self.clients.add(websocket)
+
+    def remove_client(self, websocket: WebSocket):
+        """Remove a WebSocket client."""
+        self.clients.discard(websocket)
+
+    def emit(self, record: logging.LogRecord):
+        """Emit a log record to all connected WebSocket clients."""
+        try:
+            # Format the log record
+            log_entry = {
+                "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": self.format(record),
+                "module": record.module,
+                "function": record.funcName,
+                "line": record.lineno,
+            }
+
+            # Add extra fields if present
+            for key, value in record.__dict__.items():
+                if key not in [
+                    "name",
+                    "msg",
+                    "args",
+                    "created",
+                    "filename",
+                    "funcName",
+                    "levelname",
+                    "levelno",
+                    "lineno",
+                    "module",
+                    "msecs",
+                    "message",
+                    "pathname",
+                    "process",
+                    "processName",
+                    "relativeCreated",
+                    "thread",
+                    "threadName",
+                    "exc_info",
+                    "exc_text",
+                    "stack_info",
+                    "asctime",
+                    "taskName",
+                ]:
+                    try:
+                        json.dumps(value)  # Ensure serializable
+                        log_entry[key] = value
+                    except (TypeError, ValueError):
+                        log_entry[key] = str(value)
+
+            # Broadcast to all connected clients (non-blocking)
+            if self.clients:
+                asyncio.create_task(self._broadcast(log_entry))
+
+        except Exception:
+            self.handleError(record)
+
+    async def _broadcast(self, log_entry: dict[str, Any]):
+        """Broadcast log entry to all clients."""
+        dead_clients = set()
+
+        for client in self.clients:
+            try:
+                await client.send_json({"type": "system_log", "data": log_entry})
+            except Exception:
+                dead_clients.add(client)
+
+        # Remove dead clients
+        for client in dead_clients:
+            self.clients.discard(client)
+
+
+# Global function to get the singleton log stream handler
+def get_log_stream_handler() -> LogStreamHandler:
+    """Get the global log stream handler instance."""
+    return LogStreamHandler.get_instance()
 
 
 class InstanceLoggerAdapter(logging.LoggerAdapter):
@@ -51,11 +155,22 @@ class LoggingManager:
         # Setup audit logger
         self._setup_audit_logger()
 
+        # Configure all existing orchestrator.* loggers to inherit from orchestrator logger
+        # This ensures any module using logging.getLogger(__name__) will work
+        # We need to reconfigure ALL existing loggers in the orchestrator namespace
+        for name in list(logging.Logger.manager.loggerDict.keys()):
+            if name.startswith("orchestrator."):
+                child_logger = logging.getLogger(name)
+                if isinstance(child_logger, logging.Logger):  # Skip PlaceHolders
+                    child_logger.setLevel(logging.DEBUG)  # Let parent's handlers filter
+                    child_logger.propagate = True
+                    child_logger.handlers.clear()  # Remove any existing handlers
+
     def _setup_orchestrator_logger(self):
         """Setup main orchestrator logger with file and console handlers."""
         logger = logging.getLogger("orchestrator")
         logger.setLevel(self.log_level)
-        logger.propagate = False  # Don't propagate to root
+        logger.propagate = False  # Don't propagate to root - we have our own handlers
 
         # Remove existing handlers
         logger.handlers.clear()
@@ -133,6 +248,13 @@ class LoggingManager:
         file_handler.addFilter(JsonExtraFilter())
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
+
+        # Add WebSocket stream handler for real-time log broadcasting
+        stream_handler = get_log_stream_handler()
+        stream_handler.setLevel(logging.DEBUG)  # Capture all logs for WebSocket
+        stream_formatter = logging.Formatter("%(message)s")  # Simple format for WebSocket
+        stream_handler.setFormatter(stream_formatter)
+        logger.addHandler(stream_handler)
 
         self.orchestrator_logger = logger
 
