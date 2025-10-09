@@ -7,7 +7,7 @@ import pytest
 
 from supervision.analysis.analyzer import TranscriptAnalyzer
 from supervision.analysis.models import Message
-from supervision.coordinator import CoordinationResult, SupervisionCoordinator
+from supervision.coordination import CoordinationResult, SupervisionCoordinator
 from supervision.events.bus import EventBus
 from supervision.events.models import Event
 from supervision.tracking.tracker import ProgressTracker
