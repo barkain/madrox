@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { X, RefreshCw } from "lucide-react"
+import { X, RefreshCw, Pause, Play } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 interface TerminalViewerProps {
@@ -15,6 +15,7 @@ export function TerminalViewer({ instanceId, instanceName, onClose, compact = fa
   const [content, setContent] = useState<string>("")
   const [isLoading, setIsLoading] = useState(true)
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [autoScroll, setAutoScroll] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const fetchContent = async () => {
@@ -57,15 +58,15 @@ export function TerminalViewer({ instanceId, instanceName, onClose, compact = fa
     }
   }, [instanceId, autoRefresh])
 
-  // Auto-scroll to bottom when content updates
+  // Auto-scroll to bottom when content updates (only if autoScroll is enabled)
   useEffect(() => {
-    if (scrollRef.current) {
+    if (autoScroll && scrollRef.current) {
       const scrollArea = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]')
       if (scrollArea) {
         scrollArea.scrollTop = scrollArea.scrollHeight
       }
     }
-  }, [content])
+  }, [content, autoScroll])
 
   if (compact) {
     return (
@@ -94,6 +95,15 @@ export function TerminalViewer({ instanceId, instanceName, onClose, compact = fa
           <span className="text-xs text-muted-foreground font-mono">{instanceId.slice(0, 8)}</span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAutoScroll(!autoScroll)}
+            className={`p-1.5 rounded hover:bg-muted transition-colors ${
+              autoScroll ? "text-blue-500" : "text-muted-foreground"
+            }`}
+            title={autoScroll ? "Auto-scroll ON (click to pause)" : "Auto-scroll OFF (click to resume)"}
+          >
+            {autoScroll ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+          </button>
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
             className={`p-1.5 rounded hover:bg-muted transition-colors ${

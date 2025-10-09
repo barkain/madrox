@@ -9,6 +9,7 @@ import { NetworkGraph } from "@/components/network-graph"
 import { AuditLog } from "@/components/audit-log"
 import { TerminalViewer } from "@/components/terminal-viewer"
 import { useWebSocket } from "@/hooks/use-websocket"
+import type { MessageFlow } from "@/types"
 
 export default function MadroxMonitor() {
   const [searchQuery, setSearchQuery] = useState("")
@@ -16,11 +17,14 @@ export default function MadroxMonitor() {
   const [typeFilter, setTypeFilter] = useState<string[]>([])
   const [auditLogHeight, setAuditLogHeight] = useState(240) // Default 240px (~15rem)
   const [isDragging, setIsDragging] = useState(false)
+  const [isDraggingTerminal, setIsDraggingTerminal] = useState<string | null>(null)
+  const [terminalSizes, setTerminalSizes] = useState<Record<string, { width: number; height: number }>>({})
   const [activeTab, setActiveTab] = useState<"graph" | "terminals">("graph")
   const [isAuditLogVisible, setIsAuditLogVisible] = useState(true)
   const [openTerminals, setOpenTerminals] = useState<Array<{ id: string; name: string }>>([])
   const [expandedTerminal, setExpandedTerminal] = useState<string | null>(null)
   const [dismissedTerminals, setDismissedTerminals] = useState<string[]>([])
+  const [messageFlows, setMessageFlows] = useState<MessageFlow[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
 
   const { connectionStatus, instances, auditLogs, stats } = useWebSocket()
@@ -50,24 +54,46 @@ export default function MadroxMonitor() {
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging || !containerRef.current) return
+      if (isDragging && containerRef.current) {
+        const containerRect = containerRef.current.getBoundingClientRect()
+        const newHeight = containerRect.bottom - e.clientY
 
-      const containerRect = containerRef.current.getBoundingClientRect()
-      const newHeight = containerRect.bottom - e.clientY
+        // Min height: 100px, Max height: 60% of container
+        const minHeight = 100
+        const maxHeight = containerRect.height * 0.6
+        const clampedHeight = Math.min(Math.max(newHeight, minHeight), maxHeight)
 
-      // Min height: 100px, Max height: 60% of container
-      const minHeight = 100
-      const maxHeight = containerRect.height * 0.6
-      const clampedHeight = Math.min(Math.max(newHeight, minHeight), maxHeight)
+        setAuditLogHeight(clampedHeight)
+      }
 
-      setAuditLogHeight(clampedHeight)
+      if (isDraggingTerminal) {
+        const terminalEl = document.getElementById(`terminal-${isDraggingTerminal}`)
+        if (!terminalEl) return
+
+        const rect = terminalEl.getBoundingClientRect()
+        const newWidth = e.clientX - rect.left
+        const newHeight = e.clientY - rect.top
+
+        // Min size: 400x300px
+        const minWidth = 400
+        const minHeight = 300
+
+        setTerminalSizes(prev => ({
+          ...prev,
+          [isDraggingTerminal]: {
+            width: Math.max(newWidth, minWidth),
+            height: Math.max(newHeight, minHeight)
+          }
+        }))
+      }
     }
 
     const handleMouseUp = () => {
       setIsDragging(false)
+      setIsDraggingTerminal(null)
     }
 
-    if (isDragging) {
+    if (isDragging || isDraggingTerminal) {
       window.addEventListener("mousemove", handleMouseMove)
       window.addEventListener("mouseup", handleMouseUp)
     }
@@ -76,7 +102,7 @@ export default function MadroxMonitor() {
       window.removeEventListener("mousemove", handleMouseMove)
       window.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [isDragging])
+  }, [isDragging, isDraggingTerminal])
 
   useEffect(() => {
     setOpenTerminals((prev) => {
@@ -125,6 +151,49 @@ export default function MadroxMonitor() {
       setExpandedTerminal(openTerminals.length > 0 ? openTerminals[0].id : null)
     }
   }, [openTerminals, expandedTerminal])
+
+  // Track message flows from audit logs
+  useEffect(() => {
+    const MESSAGE_FLOW_DURATION = 3000 // 3 seconds
+
+    // Process audit logs to create message flows
+    const newFlows: MessageFlow[] = []
+
+    auditLogs.forEach((log) => {
+      if ((log.type === "message_sent" || log.type === "message_exchange") && log.metadata) {
+        const { from_instance, to_instance, message_id } = log.metadata
+
+        if (from_instance && to_instance && message_id) {
+          const timestamp = new Date(log.timestamp)
+          const now = new Date()
+          const age = now.getTime() - timestamp.getTime()
+          const isActive = age < MESSAGE_FLOW_DURATION
+
+          newFlows.push({
+            id: message_id,
+            fromId: from_instance,
+            toId: to_instance,
+            timestamp,
+            active: isActive,
+          })
+        }
+      }
+    })
+
+    setMessageFlows(newFlows)
+
+    // Set up interval to update active state
+    const interval = setInterval(() => {
+      setMessageFlows((prev) =>
+        prev.map((flow) => ({
+          ...flow,
+          active: new Date().getTime() - flow.timestamp.getTime() < MESSAGE_FLOW_DURATION,
+        }))
+      )
+    }, 100)
+
+    return () => clearInterval(interval)
+  }, [auditLogs])
 
   // Filter instances based on search and filters
   const filteredInstances = instances.filter((instance) => {
@@ -201,7 +270,7 @@ export default function MadroxMonitor() {
         {/* Content Area - Tabbed */}
         <div className="flex-1 overflow-hidden">
           {activeTab === "graph" ? (
-            <NetworkGraph instances={filteredInstances} onNodeClick={handleNodeClick} />
+            <NetworkGraph instances={filteredInstances} messageFlows={messageFlows} onNodeClick={handleNodeClick} />
           ) : (
             <div className="h-full p-4 overflow-auto bg-background">
               {openTerminals.length === 0 ? (
@@ -221,37 +290,56 @@ export default function MadroxMonitor() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr">
-                  {openTerminals.map((terminal) => (
-                    <div
-                      key={terminal.id}
-                      className="border border-border rounded-lg overflow-hidden bg-card hover:border-primary transition-colors cursor-pointer h-80"
-                      onClick={() => setExpandedTerminal(terminal.id)}
-                    >
-                      <div className="px-3 py-2 border-b border-border bg-muted/50 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold truncate">{terminal.name}</span>
-                          <span className="text-xs text-muted-foreground font-mono">{terminal.id.slice(0, 8)}</span>
+                  {openTerminals.map((terminal) => {
+                    const size = terminalSizes[terminal.id]
+                    return (
+                      <div
+                        key={terminal.id}
+                        id={`terminal-${terminal.id}`}
+                        className="border border-border rounded-lg overflow-hidden bg-card hover:border-primary transition-colors cursor-pointer relative"
+                        style={size ? { width: `${size.width}px`, height: `${size.height}px` } : { height: '320px' }}
+                        onClick={() => setExpandedTerminal(terminal.id)}
+                      >
+                        <div className="px-3 py-2 border-b border-border bg-muted/50 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold truncate">{terminal.name}</span>
+                            <span className="text-xs text-muted-foreground font-mono">{terminal.id.slice(0, 8)}</span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              closeTerminal(terminal.id)
+                            }}
+                            className="p-1 rounded hover:bg-muted transition-colors"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
                         </div>
-                        <button
-                          onClick={(e) => {
+                        <div className="p-2 h-[calc(100%-2.5rem)] bg-[#1e1e1e] overflow-hidden">
+                          <TerminalViewer
+                            instanceId={terminal.id}
+                            instanceName={terminal.name}
+                            onClose={() => {}}
+                            compact
+                          />
+                        </div>
+                        {/* Resize Handle */}
+                        <div
+                          className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize hover:bg-primary/30 transition-colors"
+                          onMouseDown={(e) => {
                             e.stopPropagation()
-                            closeTerminal(terminal.id)
+                            e.preventDefault()
+                            setIsDraggingTerminal(terminal.id)
                           }}
-                          className="p-1 rounded hover:bg-muted transition-colors"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          <X className="h-3 w-3" />
-                        </button>
+                          <svg className="w-full h-full text-muted-foreground" viewBox="0 0 16 16">
+                            <path d="M14,12 L12,14 M14,8 L8,14 M14,4 L4,14" stroke="currentColor" strokeWidth="1" fill="none" />
+                          </svg>
+                        </div>
                       </div>
-                      <div className="p-2 h-[calc(100%-2.5rem)] bg-[#1e1e1e] overflow-hidden">
-                        <TerminalViewer
-                          instanceId={terminal.id}
-                          instanceName={terminal.name}
-                          onClose={() => {}}
-                          compact
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>

@@ -29,6 +29,19 @@ export interface AuditLogEntry {
     | "error"
     | "timeout"
   message: string
+  metadata?: {
+    from_instance?: string
+    to_instance?: string
+    message_id?: string
+  }
+}
+
+export interface MessageFlow {
+  id: string
+  fromId: string
+  toId: string
+  timestamp: Date
+  active: boolean
 }
 
 export interface Stats {

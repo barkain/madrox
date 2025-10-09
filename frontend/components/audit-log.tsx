@@ -73,16 +73,16 @@ export function AuditLog({ logs, height, isCollapsed, onToggle }: AuditLogProps)
       </div>
 
       <ScrollArea className="h-[calc(100%-2rem)]">
-        <div className="px-4 py-1 space-y-0.5">
+        <div className="px-4 py-1 space-y-0.5 min-w-max">
           {logs.length === 0 ? (
             <p className="text-xs text-muted-foreground py-3">No activity yet</p>
           ) : (
             logs.map((log) => (
-              <div key={log.id} className="flex items-center gap-2 py-1 text-xs hover:bg-muted/50 rounded px-1.5 -mx-1.5">
+              <div key={log.id} className="flex items-center gap-2 py-1 text-xs hover:bg-muted/50 rounded px-1.5 -mx-1.5 min-w-max">
                 <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                <span className="font-mono text-muted-foreground min-w-[70px]">{log.timestamp}</span>
-                <span className={`font-medium ${getEventColor(log.type)}`}>{log.type.replace(/_/g, " ")}</span>
-                <span className="text-muted-foreground flex-1 truncate">{log.message}</span>
+                <span className="font-mono text-muted-foreground min-w-[70px] flex-shrink-0">{log.timestamp}</span>
+                <span className={`font-medium whitespace-nowrap flex-shrink-0 ${getEventColor(log.type)}`}>{log.type.replace(/_/g, " ")}</span>
+                <span className="text-muted-foreground whitespace-nowrap">{log.message}</span>
               </div>
             ))
           )}

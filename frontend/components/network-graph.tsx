@@ -18,7 +18,7 @@ import {
 import "@xyflow/react/dist/style.css"
 import { RotateCcw } from "lucide-react"
 import { AgentNode } from "./agent-node"
-import type { AgentInstance } from "@/types"
+import type { AgentInstance, MessageFlow } from "@/types"
 
 const nodeTypes = {
   agent: AgentNode,
@@ -26,6 +26,7 @@ const nodeTypes = {
 
 interface NetworkGraphProps {
   instances: AgentInstance[]
+  messageFlows?: MessageFlow[]
   onNodeClick?: (instance: AgentInstance) => void
 }
 
@@ -108,7 +109,7 @@ function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { 
   return positions
 }
 
-function NetworkGraphInner({ instances, onNodeClick }: NetworkGraphProps) {
+function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: NetworkGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const { fitView } = useReactFlow()
@@ -186,10 +187,11 @@ function NetworkGraphInner({ instances, onNodeClick }: NetworkGraphProps) {
 
     const instanceMap = new Map(instances.map((instance) => [instance.id, instance]))
 
-    const newEdges: Edge[] = instances
+    // Parent-child edges (hierarchy)
+    const hierarchyEdges: Edge[] = instances
       .filter((instance) => instance.parentId && instanceMap.has(instance.parentId))
       .map((instance) => ({
-        id: `${instance.parentId}-${instance.id}`,
+        id: `hierarchy-${instance.parentId}-${instance.id}`,
         source: instance.parentId!,
         target: instance.id,
         type: "smoothstep",
@@ -204,9 +206,32 @@ function NetworkGraphInner({ instances, onNodeClick }: NetworkGraphProps) {
         },
       }))
 
+    // Message flow edges (communication)
+    const messageEdges: Edge[] = messageFlows
+      .filter((flow) => instanceMap.has(flow.fromId) && instanceMap.has(flow.toId))
+      .map((flow) => ({
+        id: `message-${flow.id}`,
+        source: flow.fromId,
+        target: flow.toId,
+        type: "straight",
+        animated: flow.active,
+        style: {
+          stroke: flow.active ? "#10b981" : "#6b7280", // green-500 : gray-500
+          strokeWidth: 3,
+          strokeDasharray: "5,5",
+        },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: flow.active ? "#10b981" : "#6b7280",
+        },
+        zIndex: 1000, // Show message edges above hierarchy edges
+      }))
+
+    const newEdges = [...hierarchyEdges, ...messageEdges]
+
     setNodes(newNodes)
     setEdges(newEdges)
-  }, [instances, setNodes, setEdges])
+  }, [instances, messageFlows, setNodes, setEdges])
 
   return (
     <ReactFlow
@@ -245,11 +270,11 @@ function NetworkGraphInner({ instances, onNodeClick }: NetworkGraphProps) {
   )
 }
 
-export function NetworkGraph({ instances, onNodeClick }: NetworkGraphProps) {
+export function NetworkGraph({ instances, messageFlows, onNodeClick }: NetworkGraphProps) {
   return (
     <div className="w-full h-full bg-background">
       <ReactFlowProvider>
-        <NetworkGraphInner instances={instances} onNodeClick={onNodeClick} />
+        <NetworkGraphInner instances={instances} messageFlows={messageFlows} onNodeClick={onNodeClick} />
       </ReactFlowProvider>
     </div>
   )
