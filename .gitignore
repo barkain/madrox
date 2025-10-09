@@ -60,7 +60,6 @@ logs/
 /tmp/claude_orchestrator/
 
 # Package manager
-uv.lock
 
 # Test scripts in root (use tests/ directory for real tests)
 /test_*.py

@@ -87,6 +87,138 @@ await manager.terminate_multiple_instances([id1, id2, id3])
 
 ### Communication
 
+#### Coordination Patterns
+
+Madrox supports two distinct coordination patterns, each suited for different use cases:
+
+##### 1. Independent Instances (Parallel Coordination)
+
+**When to Use:**
+- Parallel, independent tasks without inter-instance coordination
+- Simple task execution where workers don't need to communicate
+- One-way communication (orchestrator → workers only)
+- No hierarchical structure needed
+
+**Characteristics:**
+- ✅ No `parent_instance_id` specified
+- ✅ `enable_madrox` is optional (defaults to `true`)
+- ✅ Instances work independently in parallel
+- ✅ Main orchestrator sends tasks and collects results
+- ❌ Workers cannot communicate with each other
+- ❌ Workers cannot use `reply_to_caller`
+
+**Example:**
+```python
+# Spawn 3 independent data analyzers
+analyzer_ids = await manager.spawn_multiple_instances([
+    {"name": "analyzer-1", "role": "data_analyst"},
+    {"name": "analyzer-2", "role": "data_analyst"},
+    {"name": "analyzer-3", "role": "data_analyst"}
+])
+
+# Delegate independent tasks
+for analyzer_id in analyzer_ids:
+    await manager.send_to_instance(
+        analyzer_id,
+        "Analyze dataset partition and report findings"
+    )
+
+# Collect results from each worker independently
+# Workers complete tasks in parallel without coordination
+```
+
+##### 2. Supervised Instances (Hierarchical Coordination)
+
+**When to Use:**
+- Hierarchical task delegation with supervisor coordination
+- Workers need to report progress/results back to supervisor
+- Complex multi-stage workflows requiring orchestration
+- Supervisor needs to monitor and coordinate multiple workers
+- Bidirectional communication required
+
+**Characteristics:**
+- ✅ Has `parent_instance_id` set to supervisor's ID
+- ✅ `enable_madrox=True` **ENFORCED** (automatically overridden if set to `false`)
+- ✅ Workers can use `reply_to_caller()` to send results to supervisor
+- ✅ Supervisor can use `send_to_instance()`, `broadcast_to_children()`
+- ✅ Hierarchical coordination and monitoring
+- ✅ Full bidirectional communication
+
+**Example:**
+```python
+# Spawn supervisor (needs madrox to spawn its own workers)
+supervisor_id = await manager.spawn_instance(
+    name="repo-cleanup-supervisor",
+    role="general",
+    enable_madrox=True  # Required for spawning workers
+)
+
+# Supervisor spawns workers with parent_instance_id
+await manager.send_to_instance(
+    supervisor_id,
+    """Spawn 3 specialized workers:
+    1. Documentation analyst (parent_instance_id=YOUR_ID)
+    2. Script analyst (parent_instance_id=YOUR_ID)
+    3. Configuration analyst (parent_instance_id=YOUR_ID)
+
+    Coordinate their work and report aggregated results back."""
+)
+
+# Workers use reply_to_caller to report to supervisor
+# Supervisor aggregates results and reports to main orchestrator
+```
+
+**Automatic Enforcement:**
+
+When `parent_instance_id` is provided, the system automatically enforces `enable_madrox=True`:
+
+```python
+# User attempts to disable madrox for supervised worker
+worker_id = await manager.spawn_instance(
+    name="worker",
+    parent_instance_id="supervisor-abc123",
+    enable_madrox=False  # ❌ User mistake
+)
+
+# System automatically corrects it:
+# ⚠️  WARNING: Forcing enable_madrox=True for supervised instance 'worker'
+#              with parent supervisor-abc123. Workers must have madrox enabled
+#              for bidirectional communication.
+
+# Worker spawns with enable_madrox=True ✅
+```
+
+**Why This Validation Exists:**
+
+Supervised instances MUST have madrox enabled because:
+- `reply_to_caller()` requires madrox MCP server to function
+- `send_to_instance()` from supervisor to worker requires madrox
+- Without madrox, bidirectional communication breaks
+- Supervision networks would fail silently without this enforcement
+
+##### Decision Matrix
+
+| Scenario | Pattern | parent_instance_id | enable_madrox | Tools Available |
+|----------|---------|-------------------|---------------|-----------------|
+| Parallel data processing | Independent | ❌ Not set | Optional (default: true) | send_to_instance only |
+| Simple task execution | Independent | ❌ Not set | Optional | send_to_instance only |
+| Supervisor coordinates workers | Supervised | ✅ Set | ✅ **Forced true** | reply_to_caller, send_to_instance, broadcast |
+| Multi-tier delegation | Supervised | ✅ Set | ✅ **Forced true** | Full bidirectional communication |
+| Workers report findings | Supervised | ✅ Set | ✅ **Forced true** | reply_to_caller, send_to_instance |
+| Monitor existing instances | Independent | ❌ Not set | Optional | send_to_instance only |
+
+##### Pattern Comparison
+
+| Aspect | Independent | Supervised |
+|--------|------------|------------|
+| **Complexity** | Simple | Advanced |
+| **Communication** | One-way (orchestrator → worker) | Bidirectional (supervisor ↔ worker) |
+| **Coordination** | Orchestrator manages all | Supervisor coordinates workers |
+| **Worker Autonomy** | Full (no reporting required) | Structured (reports to supervisor) |
+| **Use Case** | Parallel independent tasks | Hierarchical delegation |
+| **Setup Overhead** | Low (spawn and delegate) | Medium (spawn supervisor first) |
+| **Scalability** | Limited (orchestrator bottleneck) | High (delegated coordination) |
+
 #### Messaging Patterns
 
 **Direct Messaging**

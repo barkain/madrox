@@ -1,7 +1,7 @@
 """Test bidirectional messaging with parent-child network communication."""
 
 import asyncio
-import json
+
 import httpx
 
 BASE_URL = "http://localhost:8003"
@@ -38,6 +38,7 @@ async def main():
         result = response.json()
         parent_text = result["result"]["content"][0]["text"]
         import re
+
         match = re.search(r"ID: ([a-f0-9-]+)", parent_text)
         parent_id = match.group(1)
         print(f"✅ Parent spawned: {parent_id}")
@@ -45,7 +46,7 @@ async def main():
         await asyncio.sleep(3)
 
         # 2. Ask parent to spawn a child
-        print(f"\n[2/5] Asking parent to spawn child instance...")
+        print("\n[2/5] Asking parent to spawn child instance...")
 
         response = await client.post(
             f"{BASE_URL}/mcp",
@@ -83,14 +84,14 @@ Format: reply_to_caller(instance_id='{parent_id}', reply_message='...')""",
         result = response.json()
         if "result" in result:
             parent_response = result["result"]["content"][0]["text"]
-            print(f"\n✅ Parent responded (first 500 chars):")
+            print("\n✅ Parent responded (first 500 chars):")
             print(parent_response[:500])
 
             # Check protocol used
             if "protocol" in str(result):
                 protocol_info = result["result"].get("protocol", "unknown")
                 if protocol_info == "bidirectional":
-                    print(f"\n🎯 Used BIDIRECTIONAL protocol!")
+                    print("\n🎯 Used BIDIRECTIONAL protocol!")
                 else:
                     print(f"\n⚠️  Used {protocol_info} protocol")
         else:
@@ -99,7 +100,7 @@ Format: reply_to_caller(instance_id='{parent_id}', reply_message='...')""",
         await asyncio.sleep(2)
 
         # 3. Check for children
-        print(f"\n[3/5] Checking for spawned children...")
+        print("\n[3/5] Checking for spawned children...")
 
         response = await client.post(
             f"{BASE_URL}/mcp",
@@ -126,7 +127,7 @@ Format: reply_to_caller(instance_id='{parent_id}', reply_message='...')""",
             child_id = child_ids[0]
 
             # 4. Test direct message to child
-            print(f"\n[4/5] Testing direct message to child...")
+            print("\n[4/5] Testing direct message to child...")
 
             response = await client.post(
                 f"{BASE_URL}/mcp",
@@ -149,7 +150,7 @@ Format: reply_to_caller(instance_id='{parent_id}', reply_message='...')""",
             result = response.json()
             if "result" in result:
                 child_response = result["result"]["content"][0]["text"]
-                print(f"\n✅ Child response (first 300 chars):")
+                print("\n✅ Child response (first 300 chars):")
                 print(child_response[:300])
 
                 # Check bidirectional
@@ -158,10 +159,10 @@ Format: reply_to_caller(instance_id='{parent_id}', reply_message='...')""",
             else:
                 print(f"❌ Error: {result}")
         else:
-            print(f"\n⚠️  No children found (parent may not have spawned yet)")
+            print("\n⚠️  No children found (parent may not have spawned yet)")
 
         # 5. Cleanup
-        print(f"\n[5/5] Cleanup...")
+        print("\n[5/5] Cleanup...")
 
         for instance_id in [parent_id] + child_ids:
             await client.post(

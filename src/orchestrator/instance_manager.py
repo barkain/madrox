@@ -233,7 +233,10 @@ class InstanceManager:
         """
         children = []
         for instance_id, instance in self.instances.items():
-            if instance.get("parent_instance_id") == parent_id and instance.get("state") != "terminated":
+            if (
+                instance.get("parent_instance_id") == parent_id
+                and instance.get("state") != "terminated"
+            ):
                 children.append(
                     {
                         "id": instance_id,
@@ -888,7 +891,9 @@ class InstanceManager:
             logger.error(f"Failed to capture tmux pane for instance {instance_id}: {e}")
             raise
 
-    async def get_audit_logs(self, since: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    async def get_audit_logs(
+        self, since: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Retrieve audit trail logs.
 
         Args:

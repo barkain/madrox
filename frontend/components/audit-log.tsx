@@ -20,7 +20,18 @@ export function AuditLog({ logs, height, isCollapsed, onToggle }: AuditLogProps)
       case "instance_terminate":
         return "text-[var(--status-terminated)]"
       case "instance_error":
+      case "error":
+      case "timeout":
         return "text-[var(--status-error)]"
+      case "message_sent":
+      case "message_exchange":
+        return "text-blue-500"
+      case "message_received":
+        return "text-green-500"
+      case "state_change":
+        return "text-yellow-500"
+      case "instance_updated":
+        return "text-purple-500"
       default:
         return "text-muted-foreground"
     }

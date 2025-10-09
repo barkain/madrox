@@ -1,6 +1,7 @@
 """Test MCP server configuration for spawned instances."""
 
 import asyncio
+
 import httpx
 
 BASE_URL = "http://localhost:8001"
@@ -28,7 +29,7 @@ async def test_1_empty_madrox():
                         "name": "empty-instance",
                         "role": "general",
                         "enable_madrox": False,  # No Madrox
-                        "mcp_servers": {}  # No additional servers
+                        "mcp_servers": {},  # No additional servers
                     },
                 },
             },
@@ -37,6 +38,7 @@ async def test_1_empty_madrox():
         result = response.json()
         instance_text = result["result"]["content"][0]["text"]
         import re
+
         match = re.search(r"ID: ([a-f0-9-]+)", instance_text)
         instance_id = match.group(1)
         print(f"✅ Spawned: {instance_id}")
@@ -67,7 +69,7 @@ async def test_1_empty_madrox():
 
         result = response.json()
         response_text = result["result"]["content"][0]["text"]
-        print(f"\n📋 Instance response (first 500 chars):")
+        print("\n📋 Instance response (first 500 chars):")
         print(response_text[:500])
 
         # Cleanup
@@ -117,6 +119,7 @@ async def test_2_madrox_enabled():
         result = response.json()
         instance_text = result["result"]["content"][0]["text"]
         import re
+
         match = re.search(r"ID: ([a-f0-9-]+)", instance_text)
         instance_id = match.group(1)
         print(f"✅ Spawned: {instance_id}")
@@ -147,7 +150,7 @@ async def test_2_madrox_enabled():
 
         result = response.json()
         response_text = result["result"]["content"][0]["text"]
-        print(f"\n📋 Instance response (first 800 chars):")
+        print("\n📋 Instance response (first 800 chars):")
         print(response_text[:800])
 
         # Verify it has reply_to_caller tool
@@ -173,7 +176,7 @@ async def test_2_madrox_enabled():
 
         result = response.json()
         response_text = result["result"]["content"][0]["text"]
-        print(f"\n📋 Tool check response (first 500 chars):")
+        print("\n📋 Tool check response (first 500 chars):")
         print(response_text[:500])
 
         # Cleanup
@@ -219,7 +222,7 @@ async def test_3_playwright_headless():
                             "playwright": {
                                 "transport": "stdio",
                                 "command": "npx",
-                                "args": ["@playwright/mcp@latest"]
+                                "args": ["@playwright/mcp@latest"],
                             }
                         },
                     },
@@ -230,6 +233,7 @@ async def test_3_playwright_headless():
         result = response.json()
         instance_text = result["result"]["content"][0]["text"]
         import re
+
         match = re.search(r"ID: ([a-f0-9-]+)", instance_text)
         instance_id = match.group(1)
         print(f"✅ Spawned: {instance_id}")
@@ -261,7 +265,7 @@ async def test_3_playwright_headless():
 
         result = response.json()
         response_text = result["result"]["content"][0]["text"]
-        print(f"\n📋 MCP servers (first 600 chars):")
+        print("\n📋 MCP servers (first 600 chars):")
         print(response_text[:600])
 
         # Do web interaction
@@ -292,7 +296,7 @@ Use the browser_navigate and browser_snapshot tools. Work in headless mode.""",
 
         result = response.json()
         response_text = result["result"]["content"][0]["text"]
-        print(f"\n📋 Web scraping result (first 1000 chars):")
+        print("\n📋 Web scraping result (first 1000 chars):")
         print(response_text[:1000])
 
         # Cleanup
@@ -330,6 +334,7 @@ async def main():
     except Exception as e:
         print(f"\n❌ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
 
     print("\n" + "=" * 80)

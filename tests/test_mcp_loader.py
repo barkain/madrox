@@ -1,6 +1,5 @@
 """Test MCP configuration loader."""
 
-import pytest
 
 from src.orchestrator.mcp_loader import MCPConfigLoader, get_mcp_servers
 
@@ -94,7 +93,8 @@ def test_load_with_overrides():
 
     # Override filesystem path
     config = loader.load_with_overrides(
-        "filesystem", args_overrides=["-y", "@modelcontextprotocol/server-filesystem", "/custom/path"]
+        "filesystem",
+        args_overrides=["-y", "@modelcontextprotocol/server-filesystem", "/custom/path"],
     )
 
     assert config is not None
@@ -137,6 +137,4 @@ def test_configs_have_required_fields():
         has_command = "command" in config_dict
         has_url = "url" in config_dict
 
-        assert (
-            has_command or has_url
-        ), f"Config '{config_name}' must have either 'command' or 'url'"
+        assert has_command or has_url, f"Config '{config_name}' must have either 'command' or 'url'"
