@@ -1048,6 +1048,10 @@ class TmuxInstanceManager:
             if mcp_config_path := instance.get("_mcp_config_path"):
                 cmd_parts.extend(["--mcp-config", mcp_config_path])
 
+            # Prevent inheriting custom statusline from parent's ~/.claude/settings.json
+            # Only load 'local' and 'project' settings, skip 'user' settings
+            cmd_parts.extend(["--setting-sources", "local,project"])
+
             # Add model if specified
             if model := instance.get("model"):
                 cmd_parts.extend(["--model", model])

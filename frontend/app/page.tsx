@@ -6,7 +6,6 @@ import { ConnectionStatus } from "@/components/connection-status"
 import { StatsHeader } from "@/components/stats-header"
 import { FilterBar } from "@/components/filter-bar"
 import { NetworkGraph } from "@/components/network-graph"
-import { AuditLog } from "@/components/audit-log"
 import { TerminalViewer } from "@/components/terminal-viewer"
 import { useWebSocket } from "@/hooks/use-websocket"
 import type { MessageFlow } from "@/types"
@@ -15,12 +14,9 @@ export default function MadroxMonitor() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [typeFilter, setTypeFilter] = useState<string[]>([])
-  const [auditLogHeight, setAuditLogHeight] = useState(240) // Default 240px (~15rem)
-  const [isDragging, setIsDragging] = useState(false)
   const [isDraggingTerminal, setIsDraggingTerminal] = useState<string | null>(null)
   const [terminalSizes, setTerminalSizes] = useState<Record<string, { width: number; height: number }>>({})
   const [activeTab, setActiveTab] = useState<"graph" | "terminals">("graph")
-  const [isAuditLogVisible, setIsAuditLogVisible] = useState(true)
   const [openTerminals, setOpenTerminals] = useState<Array<{ id: string; name: string }>>([])
   const [expandedTerminal, setExpandedTerminal] = useState<string | null>(null)
   const [dismissedTerminals, setDismissedTerminals] = useState<string[]>([])
@@ -47,25 +43,8 @@ export default function MadroxMonitor() {
     setExpandedTerminal((current) => (current === instanceId ? null : current))
   }
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
-
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging && containerRef.current) {
-        const containerRect = containerRef.current.getBoundingClientRect()
-        const newHeight = containerRect.bottom - e.clientY
-
-        // Min height: 100px, Max height: 60% of container
-        const minHeight = 100
-        const maxHeight = containerRect.height * 0.6
-        const clampedHeight = Math.min(Math.max(newHeight, minHeight), maxHeight)
-
-        setAuditLogHeight(clampedHeight)
-      }
-
       if (isDraggingTerminal) {
         const terminalEl = document.getElementById(`terminal-${isDraggingTerminal}`)
         if (!terminalEl) return
@@ -89,11 +68,10 @@ export default function MadroxMonitor() {
     }
 
     const handleMouseUp = () => {
-      setIsDragging(false)
       setIsDraggingTerminal(null)
     }
 
-    if (isDragging || isDraggingTerminal) {
+    if (isDraggingTerminal) {
       window.addEventListener("mousemove", handleMouseMove)
       window.addEventListener("mouseup", handleMouseUp)
     }
@@ -102,7 +80,7 @@ export default function MadroxMonitor() {
       window.removeEventListener("mousemove", handleMouseMove)
       window.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [isDragging, isDraggingTerminal])
+  }, [isDraggingTerminal])
 
   useEffect(() => {
     setOpenTerminals((prev) => {
@@ -345,26 +323,6 @@ export default function MadroxMonitor() {
               )}
             </div>
           )}
-        </div>
-
-        {/* Resizable Divider - Only show when audit log is visible */}
-        {isAuditLogVisible && (
-          <div
-            className={`h-1 border-t border-border cursor-ns-resize hover:bg-primary/20 transition-colors ${
-              isDragging ? "bg-primary/30" : ""
-            }`}
-            onMouseDown={handleMouseDown}
-          />
-        )}
-
-        {/* Audit Log - Collapsible */}
-        <div style={{ flex: isAuditLogVisible ? `0 0 ${auditLogHeight}px` : '0 0 auto' }}>
-          <AuditLog
-            logs={auditLogs}
-            height={auditLogHeight}
-            isCollapsed={!isAuditLogVisible}
-            onToggle={() => setIsAuditLogVisible(!isAuditLogVisible)}
-          />
         </div>
       </div>
     </div>

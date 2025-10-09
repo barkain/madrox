@@ -33,8 +33,10 @@ interface NetworkGraphProps {
 // Tree layout algorithm that respects parent-child structure
 function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { x: number; y: number }> {
   const positions = new Map<string, { x: number; y: number }>()
-  const horizontalSpacing = 400
-  const verticalSpacing = 250
+  const horizontalSpacing = 360 // Spacing between nodes
+  const verticalSpacing = 220 // Vertical spacing
+  const gridColumns = 3 // Max columns for root nodes grid
+  const compactSpacing = 100 // Spacing between root nodes in compact mode
 
   const instanceMap = new Map(instances.map((instance) => [instance.id, instance]))
 
@@ -84,18 +86,61 @@ function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { 
     return { x: parentX, width: totalWidth }
   }
 
-  // Treat instances with no parent or with a missing parent as roots and layout each tree
+  // Treat instances with no parent or with a missing parent as roots
   const rootNodes = instances
     .filter((instance) => !instance.parentId || !instanceMap.has(instance.parentId))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
-  rootNodes.forEach((root, index) => {
-    // Add spacing before each tree (except the first)
-    if (index > 0) {
-      globalX += horizontalSpacing
+  // Check if all roots have no children (flat structure)
+  const allRootsAreLeaves = rootNodes.every(
+    (root) => !instances.some((inst) => inst.parentId === root.id)
+  )
+
+  if (allRootsAreLeaves && rootNodes.length > 2) {
+    // Use compact grid layout for flat structure
+    rootNodes.forEach((root, index) => {
+      const col = index % gridColumns
+      const row = Math.floor(index / gridColumns)
+      positions.set(root.id, {
+        x: col * horizontalSpacing + 100,
+        y: row * verticalSpacing + 100,
+      })
+    })
+  } else {
+    // Use mixed layout: compact for leaf roots, tree layout for parent roots
+    const leafRoots: AgentInstance[] = []
+    const parentRoots: AgentInstance[] = []
+
+    rootNodes.forEach(root => {
+      const hasChildren = instances.some(inst => inst.parentId === root.id)
+      if (hasChildren) {
+        parentRoots.push(root)
+      } else {
+        leafRoots.push(root)
+      }
+    })
+
+    // Layout parent roots with their trees first
+    parentRoots.forEach((root, index) => {
+      if (index > 0) {
+        globalX += compactSpacing
+      }
+      layoutSubtree(root, 0)
+    })
+
+    // Then add leaf roots compactly to the right
+    if (leafRoots.length > 0 && parentRoots.length > 0) {
+      globalX += compactSpacing
     }
-    layoutSubtree(root, 0)
-  })
+
+    leafRoots.forEach((root, index) => {
+      if (index > 0) {
+        globalX += compactSpacing
+      }
+      positions.set(root.id, { x: globalX, y: 100 })
+      globalX += horizontalSpacing - compactSpacing
+    })
+  }
 
   // Assign fallback positions to any nodes that were not reached (e.g. due to malformed parent references)
   instances.forEach((instance) => {
@@ -248,7 +293,7 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
       maxZoom={2}
     >
       <Background color="var(--color-border)" gap={16} />
-      <Controls className="bg-card border-border">
+      <Controls className="bg-card border-border" position="top-left">
         <ControlButton onClick={resetLayout} title="Reset Layout">
           <RotateCcw className="w-4 h-4" />
         </ControlButton>
