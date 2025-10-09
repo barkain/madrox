@@ -8,7 +8,7 @@ import logging
 import re
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -459,19 +459,6 @@ class TmuxInstanceManager:
                     },
                 )
 
-                # Add audit event for message sent
-                self.logging_manager.log_audit_event(
-                    event_type="message_sent",
-                    instance_id=instance_id,
-                    details={
-                        "instance_name": instance.get("name"),
-                        "message_id": message_id,
-                        "message_preview": message[:100],
-                        "message_length": len(message),
-                        "wait_for_response": wait_for_response,
-                    },
-                )
-
             # Create message envelope for bidirectional tracking
             envelope = MessageEnvelope(
                 message_id=message_id,
@@ -592,19 +579,6 @@ class TmuxInstanceManager:
                             "direction": "inbound",
                             "content": response_text,
                             "correlation_id": queue_response.get("correlation_id"),
-                        },
-                    )
-
-                    # Add audit event for bidirectional response
-                    self.logging_manager.log_audit_event(
-                        event_type="message_received",
-                        instance_id=instance_id,
-                        details={
-                            "instance_name": instance.get("name"),
-                            "message_id": message_id,
-                            "response_length": len(response_text),
-                            "response_time_seconds": response_time,
-                            "protocol": "bidirectional",
                         },
                     )
 
@@ -1070,12 +1044,6 @@ class TmuxInstanceManager:
             # Add MCP config if configured
             if mcp_config_path := instance.get("_mcp_config_path"):
                 cmd_parts.extend(["--mcp-config", mcp_config_path])
-
-            # Override statusline configuration to prevent inheritance from parent
-            # SOLUTION: Use --setting-sources to prevent loading user settings entirely
-            # This prevents ~/.claude/settings.json from being loaded, which contains the statusline config
-            # Only load 'local' and 'project' settings, skip 'user' settings
-            cmd_parts.extend(["--setting-sources", "local,project"])
 
             # Add model if specified
             if model := instance.get("model"):
@@ -1616,3 +1584,99 @@ class TmuxInstanceManager:
                 "instance_id": instance_id,
                 "error": str(e),
             }
+    async def get_audit_logs(self, since: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        """Retrieve audit trail logs.
+
+        Args:
+            since: ISO timestamp to get logs since (optional)
+            limit: Maximum number of log entries to return
+
+        Returns:
+            List of audit log entries as dicts
+        """
+        if not self.logging_manager:
+            logger.warning("Logging manager not initialized")
+            return []
+
+        import json
+        from datetime import datetime
+
+        audit_dir = self.logging_manager.audit_dir
+        audit_logs = []
+
+        # Read audit files (newest first)
+        audit_files = sorted(audit_dir.glob("audit_*.jsonl"), reverse=True)
+
+        since_dt = datetime.fromisoformat(since) if since else None
+
+        for audit_file in audit_files:
+            try:
+                # Read all lines from the file in order (oldest first in file)
+                with audit_file.open("r") as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+
+                        try:
+                            log_entry = json.loads(line)
+
+                            # Filter by timestamp if specified (exclude logs at or before since timestamp)
+                            if since_dt:
+                                log_timestamp = datetime.fromisoformat(log_entry["timestamp"])
+                                if log_timestamp <= since_dt:
+                                    continue
+
+                            audit_logs.append(log_entry)
+
+                            if len(audit_logs) >= limit:
+                                break
+                        except json.JSONDecodeError:
+                            continue
+
+                if len(audit_logs) >= limit:
+                    break
+            except Exception as e:
+                logger.error(f"Failed to read audit file {audit_file}: {e}")
+                continue
+
+        # Return in chronological order (oldest first)
+        # Frontend will reverse when displaying
+        return audit_logs[-limit:] if audit_logs else []
+
+    async def health_check(self):
+        """Perform health check on all instances."""
+        logger.info("Performing health check on all instances")
+
+        current_time = datetime.now(UTC)
+        timeout_minutes = self.config.get("instance_timeout_minutes", 60)
+
+        for instance_id, instance in list(self.instances.items()):
+            if instance["state"] == "terminated":
+                continue
+
+            # Check for timeout
+            last_activity = datetime.fromisoformat(instance["last_activity"])
+            # Ensure last_activity is timezone-aware (it should already have timezone from UTC)
+            if last_activity.tzinfo is None:
+                last_activity = last_activity.replace(tzinfo=UTC)
+            if current_time - last_activity > timedelta(minutes=timeout_minutes):
+                logger.warning(f"Instance {instance_id} timed out, terminating")
+                await self.terminate_instance(instance_id, force=True)
+                continue
+
+            # Check resource limits
+            max_tokens = instance.get("resource_limits", {}).get("max_total_tokens")
+            if max_tokens and instance["total_tokens_used"] > max_tokens:
+                logger.warning(f"Instance {instance_id} exceeded token limit, terminating")
+                await self.terminate_instance(instance_id, force=True)
+                continue
+
+            max_cost = instance.get("resource_limits", {}).get("max_cost")
+            if max_cost and instance["total_cost"] > max_cost:
+                logger.warning(f"Instance {instance_id} exceeded cost limit, terminating")
+                await self.terminate_instance(instance_id, force=True)
+                continue
+
+        logger.info(
+            f"Health check complete. Active instances: {len([i for i in self.instances.values() if i['state'] not in ['terminated', 'error']])}"
+        )

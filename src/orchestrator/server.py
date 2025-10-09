@@ -39,8 +39,8 @@ except ImportError:
         pass
 
 
-from .instance_manager import InstanceManager
-from .log_stream_handler import get_log_stream_handler
+from .tmux_instance_manager import TmuxInstanceManager
+from .logging_manager import LoggingManager, get_log_stream_handler
 from .mcp_adapter import MCPAdapter
 from .simple_models import (
     InstanceRole,
@@ -60,7 +60,29 @@ class ClaudeOrchestratorServer:
             config: Configuration for the orchestrator
         """
         self.config = config
-        self.instance_manager = InstanceManager(config.to_dict())
+
+        # Initialize logging manager
+        log_dir = os.getenv("MADROX_LOG_DIR", "/tmp/madrox_logs")
+        log_level = os.getenv("LOG_LEVEL", "INFO")
+        self.logging_manager = LoggingManager(log_dir=log_dir, log_level=log_level)
+
+        # Test logging immediately after LoggingManager initialization
+        self.logging_manager.orchestrator_logger.info("LoggingManager initialized successfully")
+        self.logging_manager.orchestrator_logger.debug("DEBUG logging test")
+
+        # Reconfigure module-level logger to use orchestrator logger's handlers
+        # The module-level logger was created at import time, before LoggingManager setup
+        # We need to get the exact same logger object and reconfigure it
+        server_logger = logging.getLogger("orchestrator.server")
+        server_logger.handlers.clear()  # Remove any default handlers
+        server_logger.propagate = True  # Propagate to "orchestrator" parent which has configured handlers
+        server_logger.setLevel(logging.DEBUG)  # Let parent handlers do the filtering
+
+        # Test the reconfigured module-level logger
+        server_logger.info("Module-level logger reconfigured successfully")
+
+        # Initialize instance manager with logging
+        self.instance_manager = TmuxInstanceManager(config.to_dict(), logging_manager=self.logging_manager)
 
         # Track server start time for session-only audit logs (use local time to match audit log timestamps)
         self.server_start_time = datetime.now().isoformat()
@@ -136,10 +158,6 @@ class ClaudeOrchestratorServer:
             """WebSocket endpoint for real-time monitoring."""
             await websocket.accept()
             logger.info("WebSocket client connected to /ws/monitor")
-
-            # Add this client to log stream handler
-            log_handler = get_log_stream_handler()
-            log_handler.add_client(websocket)
 
             try:
                 # Send initial state with instances (exclude terminated)
@@ -275,27 +293,8 @@ class ClaudeOrchestratorServer:
                                 message = f"Spawned instance '{instance_name}' ({details.get('role', 'general')})"
                             elif event_type == "message_exchange":
                                 message = f"Message sent to '{instance_name}'"
-                            elif event_type == "message_sent":
-                                msg_preview = details.get('message_preview', '')
-                                msg_len = details.get('message_length', 0)
-                                message = f"→ Sent message to '{instance_name}' ({msg_len} chars)"
-                            elif event_type == "message_received":
-                                resp_len = details.get('response_length', 0)
-                                resp_time = details.get('response_time_seconds', 0)
-                                protocol = details.get('protocol', 'unknown')
-                                message = f"← Received response from '{instance_name}' ({resp_len} chars, {resp_time:.1f}s, {protocol})"
                             elif event_type == "instance_terminate":
                                 message = f"Terminated instance '{instance_name}'"
-                            elif event_type == "state_change":
-                                old_state = details.get('old_state', 'unknown')
-                                new_state = details.get('new_state', 'unknown')
-                                message = f"Instance '{instance_name}' state: {old_state} → {new_state}"
-                            elif event_type == "error":
-                                error_msg = details.get('error', 'Unknown error')
-                                message = f"⚠️ Error in '{instance_name}': {error_msg}"
-                            elif event_type == "timeout":
-                                timeout_seconds = details.get('timeout_seconds', 0)
-                                message = f"⏱️ Timeout in '{instance_name}' after {timeout_seconds}s"
                             else:
                                 message = event_type.replace("_", " ").title()
 
@@ -330,17 +329,21 @@ class ClaudeOrchestratorServer:
                     await websocket.close()
                 except:
                     pass
-            finally:
-                # Remove client from log stream handler
-                log_handler.remove_client(websocket)
+
+        def transform_audit_log(audit_entry: dict[str, Any]) -> dict[str, Any]:
+            """Transform backend audit log format to frontend format."""
+            return {
+                "timestamp": audit_entry.get("timestamp", ""),
+                "level": audit_entry.get("level", "INFO"),
+                "logger": audit_entry.get("logger", "orchestrator.audit"),
+                "message": audit_entry.get("event", ""),  # Map 'event' to 'message'
+                "action": audit_entry.get("event_type", ""),  # Map 'event_type' to 'action'
+                "metadata": audit_entry.get("details", {}),  # Map 'details' to 'metadata'
+            }
 
         @self.app.websocket("/ws/logs")
         async def logs_websocket(websocket: WebSocket):
-            """WebSocket endpoint for dual-panel logging system.
-
-            This endpoint streams all system and audit logs in real-time.
-            The LogStreamHandler automatically categorizes and broadcasts logs.
-            """
+            """WebSocket endpoint for dual-panel logging system (system + audit logs)."""
             await websocket.accept()
             logger.info("WebSocket client connected to /ws/logs")
 
@@ -349,50 +352,63 @@ class ClaudeOrchestratorServer:
             log_handler.add_client(websocket)
 
             try:
-                # Send recent audit logs on initial connection (last 50 entries)
-                try:
-                    audit_logs = await self.instance_manager.get_audit_logs(
-                        since=None, limit=50
-                    )
-                    for log in audit_logs:
-                        await websocket.send_json({
-                            "type": "audit_log",
-                            "data": {
-                                "timestamp": log.get("timestamp", ""),
-                                "level": log.get("level", "INFO"),
-                                "logger": log.get("logger", "audit.orchestrator"),
-                                "message": log.get("event", ""),
-                                "action": log.get("event_type", ""),
-                                "metadata": log.get("details", {}),
-                            }
-                        })
-                except Exception as e:
-                    logger.warning(f"Failed to send initial audit logs: {e}")
-
-                # Keep connection alive - logs are broadcast automatically by LogStreamHandler
-                while True:
-                    # Wait for ping/pong to keep connection alive
+                # Send recent system logs on initial connection
+                log_file = self.logging_manager.log_dir / "orchestrator.log"
+                if log_file.exists():
                     try:
-                        await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
-                    except TimeoutError:
-                        # Send periodic ping to keep connection alive
-                        try:
-                            await websocket.send_json({"type": "ping"})
-                        except:
-                            break
+                        with log_file.open("r") as f:
+                            lines = f.readlines()
+                            # Send last 100 system log lines
+                            for line in lines[-100:]:
+                                try:
+                                    import json
+
+                                    log_entry = json.loads(line.strip())
+                                    await websocket.send_json({"type": "system_log", "data": log_entry})
+                                except json.JSONDecodeError:
+                                    continue
+                    except Exception as e:
+                        logger.error(f"Failed to load historical system logs: {e}")
+
+                # Send recent audit logs on initial connection
+                audit_logs = await self.instance_manager.get_audit_logs(limit=100)
+                for audit_entry in audit_logs:
+                    transformed_audit = transform_audit_log(audit_entry)
+                    await websocket.send_json({"type": "audit_log", "data": transformed_audit})
+
+                # Keep connection alive and handle client pings
+                last_audit_check = datetime.now().isoformat()
+
+                while True:
+                    # Check for new audit logs periodically
+                    new_audit_logs = await self.instance_manager.get_audit_logs(
+                        since=last_audit_check, limit=50
+                    )
+
+                    if new_audit_logs:
+                        for audit_entry in new_audit_logs:
+                            transformed_audit = transform_audit_log(audit_entry)
+                            await websocket.send_json({"type": "audit_log", "data": transformed_audit})
+                        # Update timestamp to the newest audit log
+                        last_audit_check = new_audit_logs[-1].get("timestamp", last_audit_check)
+
+                    # Send ping to keep connection alive
+                    try:
+                        await websocket.send_json({"type": "ping"})
                     except:
                         break
+
+                    await asyncio.sleep(2)  # Check every 2 seconds
 
             except WebSocketDisconnect:
                 logger.info("WebSocket client disconnected from /ws/logs")
             except Exception as e:
-                logger.error(f"WebSocket error on /ws/logs: {e}")
+                logger.error(f"WebSocket error in /ws/logs: {e}")
                 try:
                     await websocket.close()
                 except:
                     pass
             finally:
-                # Unregister client from log stream handler
                 log_handler.remove_client(websocket)
 
         # MCP Protocol endpoints
@@ -960,10 +976,6 @@ class ClaudeOrchestratorServer:
         logger.info(
             f"Starting Claude Orchestrator Server on {self.config.server_host}:{self.config.server_port}"
         )
-
-        # Setup log streaming
-        from .log_stream_handler import setup_log_streaming
-        setup_log_streaming(asyncio.get_event_loop())
 
         # Start health check background task
         asyncio.create_task(self._health_check_loop())
