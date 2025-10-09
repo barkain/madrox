@@ -2,14 +2,26 @@ import { memo } from "react"
 import type { SystemLog, AuditLog } from "@/types"
 import { cn } from "@/lib/utils"
 
+interface ColumnWidths {
+  timestamp: number
+  level: number
+  logger: number
+  module: number
+  functionLine: number
+  action: number
+  message: number
+}
+
 interface SystemLogEntryProps {
   log: SystemLog
   type: "system"
+  columnWidths: ColumnWidths
 }
 
 interface AuditLogEntryProps {
   log: AuditLog
   type: "audit"
+  columnWidths: ColumnWidths
 }
 
 type LogEntryProps = SystemLogEntryProps | AuditLogEntryProps
@@ -63,36 +75,37 @@ const formatTimestamp = (timestamp: string) => {
   }
 }
 
-export const LogEntry = memo(({ log, type }: LogEntryProps) => {
+export const LogEntry = memo(({ log, type, columnWidths }: LogEntryProps) => {
   return (
-    <div className="flex items-start gap-2 py-1.5 px-2 text-xs hover:bg-muted/30 rounded font-mono border-b border-border/50 last:border-0">
+    <div className="flex items-start gap-2 py-1.5 px-2 text-xs hover:bg-muted/30 rounded font-mono border-b border-border/50 last:border-0 min-w-max">
       {/* Timestamp */}
-      <span className="text-muted-foreground min-w-[90px] flex-shrink-0">
+      <span className="text-muted-foreground flex-shrink-0 overflow-hidden" style={{ width: `${columnWidths.timestamp}px` }}>
         {formatTimestamp(log.timestamp)}
       </span>
 
       {/* Level Badge */}
       <span
         className={cn(
-          "min-w-[70px] text-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase flex-shrink-0",
+          "text-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase flex-shrink-0 overflow-hidden",
           getLevelBadge(log.level),
         )}
+        style={{ width: `${columnWidths.level}px` }}
       >
         {log.level}
       </span>
 
       {/* Logger/Module */}
-      <span className="text-purple-600 dark:text-purple-400 min-w-[120px] flex-shrink-0 truncate">
+      <span className="text-purple-600 dark:text-purple-400 flex-shrink-0 whitespace-nowrap overflow-hidden" style={{ width: `${columnWidths.logger}px` }}>
         {log.logger}
       </span>
 
       {/* System-specific fields */}
       {type === "system" && (
         <>
-          <span className="text-cyan-600 dark:text-cyan-400 min-w-[100px] flex-shrink-0 truncate">
+          <span className="text-cyan-600 dark:text-cyan-400 flex-shrink-0 whitespace-nowrap overflow-hidden" style={{ width: `${columnWidths.module}px` }}>
             {(log as SystemLog).module}
           </span>
-          <span className="text-gray-500 dark:text-gray-400 min-w-[120px] flex-shrink-0 truncate">
+          <span className="text-gray-500 dark:text-gray-400 flex-shrink-0 whitespace-nowrap overflow-hidden" style={{ width: `${columnWidths.functionLine}px` }}>
             {(log as SystemLog).function}:{(log as SystemLog).line}
           </span>
         </>
@@ -100,17 +113,17 @@ export const LogEntry = memo(({ log, type }: LogEntryProps) => {
 
       {/* Audit-specific fields */}
       {type === "audit" && (log as AuditLog).action && (
-        <span className="text-green-600 dark:text-green-400 min-w-[100px] flex-shrink-0 truncate">
+        <span className="text-green-600 dark:text-green-400 flex-shrink-0 whitespace-nowrap overflow-hidden" style={{ width: `${columnWidths.action}px` }}>
           {(log as AuditLog).action}
         </span>
       )}
 
       {/* Message */}
-      <span className="text-foreground flex-1 break-words">{log.message}</span>
+      <span className="text-foreground flex-shrink-0 whitespace-nowrap overflow-hidden" style={{ width: `${columnWidths.message}px` }}>{log.message}</span>
 
       {/* Metadata (audit logs only) */}
       {type === "audit" && (log as AuditLog).metadata && (
-        <span className="text-xs text-muted-foreground flex-shrink-0">
+        <span className="text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap min-w-[100px]">
           {JSON.stringify((log as AuditLog).metadata, null, 0)}
         </span>
       )}
