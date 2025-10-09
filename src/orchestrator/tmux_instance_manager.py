@@ -39,6 +39,8 @@ class TmuxInstanceManager:
         # Bidirectional messaging queues (in-memory, lightweight)
         self.response_queues: dict[str, asyncio.Queue] = {}
         self.message_registry: dict[str, MessageEnvelope] = {}
+        self.main_message_inbox: list[dict[str, Any]] = []
+        self.main_instance_id: str | None = None
 
         # Resource tracking
         self.total_tokens_used = 0
@@ -1680,3 +1682,47 @@ class TmuxInstanceManager:
         logger.info(
             f"Health check complete. Active instances: {len([i for i in self.instances.values() if i['state'] not in ['terminated', 'error']])}"
         )
+
+    def get_and_clear_main_inbox(self) -> list[dict[str, Any]]:
+        """Get all pending main messages and clear the inbox.
+
+        Returns:
+            List of pending messages sent to main instance
+        """
+        messages = self.main_message_inbox.copy()
+        self.main_message_inbox.clear()
+        return messages
+
+    async def get_tmux_pane_content(self, instance_id: str, lines: int = 100) -> str:
+        """Capture the current tmux pane content for an instance.
+
+        Args:
+            instance_id: Instance ID
+            lines: Number of lines to capture (default: 100, -1 for all visible)
+
+        Returns:
+            Captured pane content as string
+        """
+        if instance_id not in self.instances:
+            raise ValueError(f"Instance {instance_id} not found")
+
+        try:
+            session = self.tmux_sessions.get(instance_id)
+            if not session:
+                raise RuntimeError(f"No tmux session found for instance {instance_id}")
+
+            window = session.windows[0]
+            pane = window.panes[0]
+
+            # Capture pane content with specified number of lines
+            if lines == -1:
+                # Capture all visible content
+                output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+            else:
+                # Capture specified number of lines from the end
+                output = "\n".join(pane.cmd("capture-pane", "-p", "-S", f"-{lines}").stdout)
+
+            return output
+        except Exception as e:
+            logger.error(f"Failed to capture tmux pane for instance {instance_id}: {e}")
+            raise
