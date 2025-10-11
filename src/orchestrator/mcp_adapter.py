@@ -749,6 +749,7 @@ class MCPAdapter:
                                     wait_for_ready=instance_config.get("wait_for_ready", True),
                                     parent_instance_id=parent_id,
                                     mcp_servers=instance_config.get("mcp_servers", {}),
+                                    instance_type=instance_config.get("instance_type", "claude"),
                                 )
                             )
 

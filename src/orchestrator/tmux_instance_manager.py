@@ -142,10 +142,43 @@ class TmuxInstanceManager:
                         time.sleep(0.5)  # Wait for command to complete
 
                     elif transport == "http":
-                        logger.warning(
-                            f"Codex does not support HTTP MCP servers yet ('{server_name}'), skipping"
-                        )
-                        continue
+                        url = server_config.get("url")
+                        if not url:
+                            logger.warning(
+                                f"Skipping MCP server '{server_name}' - no URL provided for http transport"
+                            )
+                            continue
+
+                        # Codex HTTP MCP servers must be configured in ~/.codex/config.toml
+                        codex_config_path = Path.home() / ".codex" / "config.toml"
+
+                        # Create .codex directory if it doesn't exist
+                        codex_config_path.parent.mkdir(parents=True, exist_ok=True)
+
+                        # Read existing config or create new one
+                        if codex_config_path.exists():
+                            import toml
+                            config = toml.load(codex_config_path)
+                        else:
+                            config = {}
+
+                        # Add MCP server config
+                        if "mcp_servers" not in config:
+                            config["mcp_servers"] = {}
+
+                        config["mcp_servers"][server_name] = {"url": url}
+
+                        # Add bearer token if provided
+                        if bearer_token := server_config.get("bearer_token"):
+                            config["mcp_servers"][server_name]["bearer_token"] = bearer_token
+
+                        # Write config back
+                        import toml
+                        with codex_config_path.open("w") as f:
+                            toml.dump(config, f)
+
+                        logger.info(f"Added HTTP MCP server '{server_name}' to Codex config: {url}")
+                        time.sleep(0.2)  # Brief delay for filesystem
 
                 except Exception as e:
                     logger.error(

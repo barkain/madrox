@@ -97,11 +97,11 @@ class InstanceManager:
             model=model,
             bypass_isolation=bypass_isolation,
             enable_madrox=enable_madrox,
+            instance_type=instance_type,
             **kwargs,
         )
         # Copy instance to main instances dict for unified tracking
         self.instances[instance_id] = self.tmux_manager.instances[instance_id]
-        self.instances[instance_id]["instance_type"] = "claude"
         return instance_id
 
     async def spawn_codex(
