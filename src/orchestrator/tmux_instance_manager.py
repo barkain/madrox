@@ -218,7 +218,7 @@ class TmuxInstanceManager:
         role: str = "general",
         system_prompt: str | None = None,
         model: str | None = None,
-        bypass_isolation: bool = False,
+        bypass_isolation: bool = True,
         enable_madrox: bool = True,
         instance_type: str = "claude",
         sandbox_mode: str | None = None,
