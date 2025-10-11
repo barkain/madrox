@@ -39,7 +39,7 @@ except ImportError:
         pass
 
 
-from .tmux_instance_manager import TmuxInstanceManager
+from .instance_manager import InstanceManager
 from .logging_manager import LoggingManager, get_log_stream_handler
 from .mcp_adapter import MCPAdapter
 from .simple_models import (
@@ -82,7 +82,7 @@ class ClaudeOrchestratorServer:
         server_logger.info("Module-level logger reconfigured successfully")
 
         # Initialize instance manager with logging
-        self.instance_manager = TmuxInstanceManager(config.to_dict(), logging_manager=self.logging_manager)
+        self.instance_manager = InstanceManager(config.to_dict())
 
         # Track server start time for session-only audit logs (use local time to match audit log timestamps)
         self.server_start_time = datetime.now().isoformat()

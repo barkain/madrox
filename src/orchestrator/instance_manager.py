@@ -104,7 +104,7 @@ class InstanceManager:
         self.instances[instance_id]["instance_type"] = "claude"
         return instance_id
 
-    async def spawn_codex_instance(
+    async def spawn_codex(
         self,
         name: str | None = None,
         model: str | None = None,

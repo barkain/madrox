@@ -563,7 +563,7 @@ class MCPAdapter:
                                 },
                             },
                             {
-                                "name": "spawn_codex_instance",
+                                "name": "spawn_codex",
                                 "description": "Spawn a new Codex CLI instance with specific configuration",
                                 "inputSchema": {
                                     "type": "object",
@@ -1371,8 +1371,8 @@ class MCPAdapter:
                             ]
                         }
 
-                    elif tool_name == "spawn_codex_instance":
-                        instance_id = await self.manager.spawn_codex_instance(
+                    elif tool_name == "spawn_codex":
+                        instance_id = await self.manager.spawn_codex(
                             name=tool_args.get("name", "unnamed"),
                             model=tool_args.get("model"),  # None = use CLI default
                             sandbox_mode=tool_args.get("sandbox_mode", "workspace-write"),
