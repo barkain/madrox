@@ -313,6 +313,10 @@ class TmuxInstanceManager:
         self.instances[instance_id] = instance
         self.message_history[instance_id] = []
 
+        # Initialize response queue for this instance immediately at spawn
+        # This ensures the instance can receive replies from children even before sending messages
+        self.response_queues[instance_id] = asyncio.Queue()
+
         # Setup instance-specific logger
         if self.logging_manager:
             instance_logger = self.logging_manager.get_instance_logger(instance_id, instance_name)
@@ -1196,16 +1200,16 @@ class TmuxInstanceManager:
                 if instance.get("enable_madrox"):
                     bidirectional_instructions = (
                         f"\n\n{'─' * 80}\n"
-                        f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
+                        f"BIDIRECTIONAL MESSAGING PROTOCOL (REQUIRED):\n"
                         f"When you receive messages formatted as [MSG:correlation-id] content,\n"
-                        f"respond using the reply_to_caller tool for instant bidirectional communication:\n\n"
+                        f"you MUST respond using the reply_to_caller tool:\n\n"
                         f"  reply_to_caller(\n"
                         f"    instance_id='{instance['id']}',\n"
                         f"    reply_message='your response here',\n"
                         f"    correlation_id='correlation-id-from-message'\n"
                         f"  )\n\n"
-                        f"Benefits: Instant delivery (no polling), proper correlation, more efficient.\n"
-                        f"Fallback: If you don't use reply_to_caller, system polls your output (slower but works).\n"
+                        f"IMPORTANT: Always use reply_to_caller for every response to messages.\n"
+                        f"This enables instant bidirectional communication and proper correlation.\n"
                         f"{'─' * 80}\n"
                     )
 

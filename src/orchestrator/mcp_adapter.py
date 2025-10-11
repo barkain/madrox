@@ -19,7 +19,55 @@ class MCPAdapter:
         """Initialize the MCP adapter with instance manager."""
         self.manager = instance_manager
         self.router = APIRouter(prefix="/mcp")
+        self._tools_list = None  # Cache for tools list
         self._register_routes()
+
+    def get_available_tools(self) -> list[dict]:
+        """Get list of available MCP tools.
+
+        Returns:
+            List of tool definitions with name, description, and inputSchema
+        """
+        if self._tools_list is None:
+            # Build tools list on first access
+            self._tools_list = self._build_tools_list()
+        return self._tools_list
+
+    def _build_tools_list(self) -> list[dict]:
+        """Build the list of available MCP tools.
+
+        Returns:
+            List of tool definitions
+        """
+        # Return the same tool definitions used in the tools/list MCP method
+        # This ensures consistency between the MCP protocol and HTTP API
+        return [
+            {"name": "spawn_claude"},
+            {"name": "spawn_multiple_instances"},
+            {"name": "send_to_instance"},
+            {"name": "send_to_multiple_instances"},
+            {"name": "get_instance_output"},
+            {"name": "get_multiple_instance_outputs"},
+            {"name": "get_job_status"},
+            {"name": "coordinate_instances"},
+            {"name": "interrupt_instance"},
+            {"name": "interrupt_multiple_instances"},
+            {"name": "terminate_instance"},
+            {"name": "terminate_multiple_instances"},
+            {"name": "get_instance_status"},
+            {"name": "get_live_instance_status"},
+            {"name": "get_children"},
+            {"name": "broadcast_to_children"},
+            {"name": "get_instance_tree"},
+            {"name": "retrieve_instance_file"},
+            {"name": "retrieve_multiple_instance_files"},
+            {"name": "list_instance_files"},
+            {"name": "list_multiple_instance_files"},
+            {"name": "get_tmux_pane_content"},
+            {"name": "spawn_codex"},
+            {"name": "get_main_instance_id"},
+            {"name": "reply_to_caller"},
+        ]
 
     def _inject_main_messages(self, result: dict) -> dict:
         """Inject pending main instance messages into the tool result.

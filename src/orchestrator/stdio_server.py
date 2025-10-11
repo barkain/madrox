@@ -243,6 +243,28 @@ class MadroxStdioServer:
                         },
                     },
                 ),
+                types.Tool(
+                    name="reply_to_caller",
+                    description="Reply back to the instance/coordinator that sent you a message. Use this to create bidirectional communication instead of just outputting text.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "instance_id": {
+                                "type": "string",
+                                "description": "Your instance ID (the responder)",
+                            },
+                            "reply_message": {
+                                "type": "string",
+                                "description": "Your reply content",
+                            },
+                            "correlation_id": {
+                                "type": "string",
+                                "description": "Message ID from the incoming message (optional, for correlation)",
+                            },
+                        },
+                        "required": ["instance_id", "reply_message"],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -265,6 +287,8 @@ class MadroxStdioServer:
                     result = await self._terminate_multiple_instances(**arguments)
                 elif name == "get_instance_status":
                     result = await self._get_instance_status(**arguments)
+                elif name == "reply_to_caller":
+                    result = await self._reply_to_caller(**arguments)
                 else:
                     result = {"error": f"Unknown tool: {name}"}
 
@@ -612,6 +636,43 @@ class MadroxStdioServer:
                 "success": False,
                 "error": str(e),
                 "message": f"Failed to fetch instance status: {e}",
+            }
+
+    async def _reply_to_caller(
+        self,
+        instance_id: str,
+        reply_message: str,
+        correlation_id: str | None = None,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """Reply back to the caller (parent instance or coordinator)."""
+        try:
+            result = await self.instance_manager.handle_reply_to_caller(
+                instance_id=instance_id,
+                reply_message=reply_message,
+                correlation_id=correlation_id,
+            )
+
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "delivered_to": result.get("delivered_to", "caller"),
+                    "correlation_id": correlation_id,
+                    "message": f"✅ Reply delivered to {result.get('delivered_to', 'caller')}",
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.get("error", "Unknown error"),
+                    "message": f"❌ Failed to deliver reply: {result.get('error', 'Unknown error')}",
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to reply to caller: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to reply to caller: {e}",
             }
 
     async def run(self):

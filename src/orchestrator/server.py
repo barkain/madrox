@@ -118,18 +118,14 @@ class ClaudeOrchestratorServer:
         @self.app.get("/")
         async def root():
             """Root endpoint with server info."""
+            # Get available tools from MCP adapter dynamically
+            tools_list = [tool["name"] for tool in self.mcp_adapter.get_available_tools()]
+
             return {
                 "name": "Claude Conversational Orchestrator",
                 "version": "1.0.0",
                 "description": "MCP server for managing multiple Claude instances",
-                "tools": [
-                    "spawn_claude",
-                    "send_to_instance",
-                    "get_instance_output",
-                    "coordinate_instances",
-                    "terminate_instance",
-                    "get_instance_status",
-                ],
+                "tools": tools_list,
                 "active_instances": len(self.instance_manager.instances),
                 "server_time": datetime.utcnow().isoformat(),
             }
