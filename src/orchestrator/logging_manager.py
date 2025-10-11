@@ -327,7 +327,9 @@ class LoggingManager:
 
         self.audit_logger = logger
 
-    def get_instance_logger(self, instance_id: str, instance_name: str = None) -> InstanceLoggerAdapter:
+    def get_instance_logger(
+        self, instance_id: str, instance_name: str = None
+    ) -> InstanceLoggerAdapter:
         """Get or create a logger for a specific instance.
 
         Args:
@@ -381,7 +383,14 @@ class LoggingManager:
                 }
 
                 # Add communication-specific fields
-                for key in ["message_id", "direction", "content", "tokens", "cost", "response_time"]:
+                for key in [
+                    "message_id",
+                    "direction",
+                    "content",
+                    "tokens",
+                    "cost",
+                    "response_time",
+                ]:
                     if hasattr(record, key):
                         log_obj[key] = getattr(record, key)
 
@@ -432,6 +441,38 @@ class LoggingManager:
 
         self.audit_logger.info(event_type, extra=extra)
 
+    def log_communication(
+        self,
+        instance_id: str,
+        direction: str,
+        message_type: str,
+        content: str,
+        parent_id: str | None = None,
+        **kwargs,
+    ):
+        """Log communication event for an instance.
+
+        Args:
+            instance_id: Instance ID
+            direction: Communication direction (inbound/outbound)
+            message_type: Type of message (request/response/reply)
+            content: Message content (truncated preview)
+            parent_id: Parent instance ID if applicable
+            **kwargs: Additional communication metadata
+        """
+        instance_logger = self.get_instance_logger(instance_id)
+
+        extra = {
+            "event_type": "communication",
+            "direction": direction,
+            "message_type": message_type,
+            "content": content,
+            "parent_id": parent_id,
+        }
+        extra.update(kwargs)
+
+        instance_logger.info(f"Communication: {direction} {message_type}", extra=extra)
+
     def log_tmux_output(self, instance_id: str, output: str):
         """Log raw tmux pane output for debugging.
 
@@ -447,9 +488,9 @@ class LoggingManager:
 
         # Append with timestamp
         with tmux_log.open("a") as f:
-            f.write(f"\n{'='*80}\n")
+            f.write(f"\n{'=' * 80}\n")
             f.write(f"[{datetime.now().isoformat()}]\n")
-            f.write(f"{'='*80}\n")
+            f.write(f"{'=' * 80}\n")
             f.write(output)
             f.write("\n")
 
@@ -510,9 +551,7 @@ class LoggingManager:
                 shutil.rmtree(instance_dir)
                 self.orchestrator_logger.info(f"Cleaned up logs for instance {instance_id}")
             except Exception as e:
-                self.orchestrator_logger.error(
-                    f"Failed to cleanup logs for {instance_id}: {e}"
-                )
+                self.orchestrator_logger.error(f"Failed to cleanup logs for {instance_id}: {e}")
 
         # Remove from cache
         if instance_id in self._instance_loggers:
