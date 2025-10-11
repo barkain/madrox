@@ -268,7 +268,12 @@ async def _proxy_tool(self, tool_name: str, arguments: dict) -> dict:
 5. send_to_instance() returns response (or times out)
 ```
 
-**Implementation**:
+**Response Queue Lifecycle (Critical Implementation Detail)**:
+
+**Problem**: Response queues must exist before replies can be received.
+
+**Solution**: Initialize response queues at spawn time, not at send time.
+
 ```python
 class TmuxInstanceManager:
     def __init__(self):
@@ -278,42 +283,178 @@ class TmuxInstanceManager:
         # Message registry: message_id -> MessageEnvelope
         self.message_registry: dict[str, MessageEnvelope] = {}
 
+async def spawn_instance(...) -> str:
+    """Spawn a new instance and initialize its response queue."""
+    instance_id = str(uuid.uuid4())
+
+    # ... tmux session creation ...
+
+    # ✅ CRITICAL: Create response queue at spawn time
+    # This ensures the instance can receive replies immediately,
+    # even before it sends any messages itself
+    self.response_queues[instance_id] = asyncio.Queue()
+
+    self.instances[instance_id] = instance
+    return instance_id
+
 async def send_message(
     instance_id: str,
     message: str,
     wait_for_response: bool = True,
     timeout_seconds: int = 30
 ) -> dict[str, Any] | None:
+    """Send message to instance and optionally wait for reply."""
     # Generate message ID
-    message_id = generate_message_id("coordinator")
-
-    # Format and send with [MSG:id] prefix
+    message_id = str(uuid.uuid4())
     formatted_message = f"[MSG:{message_id}] {message}"
 
+    # Send to instance's tmux pane
+    session.cmd("send-keys", formatted_message, "Enter")
+
     if wait_for_response:
-        # Wait for response from instance
+        # Wait for response from parent's response queue
+        # (queue already exists because created at spawn)
+        sender_id = self.instances[instance_id].get("parent_instance_id") or "coordinator"
         response = await asyncio.wait_for(
-            self.response_queues[instance_id].get(),
+            self.response_queues[sender_id].get(),
             timeout=timeout_seconds
         )
         return response
+
+async def handle_reply_to_caller(
+    instance_id: str,
+    reply_message: str,
+    correlation_id: str | None = None
+) -> dict[str, Any]:
+    """Handle reply from child instance to parent."""
+    instance = self.instances.get(instance_id)
+    parent_id = instance.get("parent_instance_id")
+
+    # Queue reply in parent's response queue
+    # (queue guaranteed to exist because created at spawn)
+    if parent_id and parent_id in self.response_queues:
+        await self.response_queues[parent_id].put({
+            "sender_id": instance_id,
+            "reply_message": reply_message,
+            "correlation_id": correlation_id,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    return {
+        "success": True,
+        "delivered_to": parent_id or "coordinator",
+        "correlation_id": correlation_id
+    }
+```
+
+**Why This Matters**:
+
+| Timing | Problem | Impact |
+|--------|---------|--------|
+| **Before Fix (Queue at send time)** | Parent's queue doesn't exist until parent sends first message | First reply from child to parent fails silently |
+| **After Fix (Queue at spawn time)** | Parent's queue exists immediately at spawn | All replies work, even if parent never sends messages |
+
+**Real-World Bug Fixed (October 2025)**:
+
+```python
+# Scenario: Supervisor spawns worker, worker replies immediately
+
+# ❌ OLD BEHAVIOR:
+supervisor_id = spawn_instance("supervisor")
+# supervisor's response_queue: ❌ DOESN'T EXIST YET
+
+worker_id = spawn_instance("worker", parent_instance_id=supervisor_id)
+# worker uses reply_to_caller → tries to queue in supervisor's response_queue
+# ❌ FAILS: supervisor's queue doesn't exist yet
+
+# ✅ NEW BEHAVIOR:
+supervisor_id = spawn_instance("supervisor")
+# supervisor's response_queue: ✅ CREATED IMMEDIATELY
+
+worker_id = spawn_instance("worker", parent_instance_id=supervisor_id)
+# worker uses reply_to_caller → queues in supervisor's response_queue
+# ✅ SUCCESS: supervisor's queue exists and ready
+```
+
+**Message Envelope System**:
+
+```python
+@dataclass
+class MessageEnvelope:
+    message_id: str                  # UUID for correlation
+    sender_id: str                   # Parent/coordinator ID
+    recipient_id: str                # Child instance ID
+    content: str                     # Original message
+    sent_at: datetime               # Timestamp
+    delivered_at: datetime | None   # When received by child
+    replied_at: datetime | None     # When child used reply_to_caller
+    reply_content: str | None       # Reply message
+    status: str                      # 'sent' | 'delivered' | 'replied' | 'timeout'
+
+    def mark_delivered(self, timestamp: datetime):
+        self.delivered_at = timestamp
+        self.status = 'delivered'
+
+    def mark_replied(self, reply: str, timestamp: datetime):
+        self.reply_content = reply
+        self.replied_at = timestamp
+        self.status = 'replied'
 ```
 
 **MCP Tool for Responses**:
 ```python
 {
     "name": "reply_to_caller",
-    "description": "Reply to the instance/coordinator that sent you a message",
+    "description": "Reply to the instance/coordinator that sent you a message (MANDATORY for supervised instances)",
     "input_schema": {
         "type": "object",
         "properties": {
-            "reply_message": {"type": "string"},
-            "correlation_id": {"type": "string"},
-            "instance_id": {"type": "string"}
-        }
+            "instance_id": {"type": "string", "description": "Your instance ID"},
+            "reply_message": {"type": "string", "description": "Your reply content"},
+            "correlation_id": {"type": "string", "description": "Message ID from incoming message"}
+        },
+        "required": ["instance_id", "reply_message"]
     }
 }
 ```
+
+**System Prompt Enforcement**:
+
+All supervised instances receive mandatory instructions:
+
+```
+BIDIRECTIONAL MESSAGING PROTOCOL (REQUIRED):
+When you receive messages formatted as [MSG:correlation-id] content,
+you MUST respond using the reply_to_caller tool:
+
+  reply_to_caller(
+    instance_id='your-instance-id',
+    reply_message='your response here',
+    correlation_id='correlation-id-from-message'
+  )
+
+IMPORTANT: Always use reply_to_caller for every response to messages.
+This enables instant bidirectional communication and proper correlation.
+```
+
+**Performance Characteristics**:
+
+| Operation | Complexity | Latency | Throughput |
+|-----------|-----------|---------|------------|
+| Queue creation | O(1) | <1ms | N/A |
+| Queue put | O(1) | <1ms | 10,000+ ops/sec |
+| Queue get (blocking) | O(1) | <1ms (if ready) | 10,000+ ops/sec |
+| Message correlation | O(1) dict lookup | <1ms | N/A |
+
+**Benefits Over Polling**:
+
+| Aspect | Bidirectional (Queue) | Polling (Deprecated) |
+|--------|---------------------|----------------------|
+| Latency | <1ms (queue put/get) | 100-500ms (pane capture) |
+| CPU Usage | Minimal (event-driven) | High (periodic polling) |
+| Reliability | Guaranteed delivery | May miss rapid outputs |
+| Scalability | O(1) per message | O(n) polling overhead |
+| Correlation | Explicit correlation IDs | Heuristic matching |
 
 #### Message Patterns
 

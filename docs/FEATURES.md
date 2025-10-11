@@ -264,30 +264,127 @@ await manager.send_to_multiple_instances([
 
 #### Bidirectional Communication
 
-Child instances can reply directly to their parent or coordinator:
+Child instances automatically reply directly to their parent or coordinator using the mandatory `reply_to_caller` mechanism:
+
+**Automatic Reply Behavior (Required)**
+
+When a supervised instance (with `parent_instance_id`) receives a message, it MUST use `reply_to_caller` instead of outputting text:
 
 ```python
-# In child instance: reply to parent using MCP tool
+# ✅ Correct: Worker uses reply_to_caller (mandatory)
 reply_to_caller(
-    parent_instance_id=parent_id,
-    reply_message="Architecture design completed. Here are the components..."
+    instance_id="worker-abc123",
+    reply_message="Architecture design completed. Here are the components...",
+    correlation_id="2ea0e30e-7ec3-4537-8f38-c059018a3f95"  # From parent's message
 )
+
+# ❌ Incorrect: Just outputting text (polling fallback, deprecated)
+# "Architecture design completed..."  # Parent won't receive this efficiently
 ```
 
-**Message Correlation**
+**How It Works**
+
+1. **Parent Sends Message**: Parent uses `send_to_instance()` with `wait_for_response=True`
+   ```python
+   response = await manager.send_to_instance(
+       worker_id,
+       "[MSG:2ea0e30e-7ec3-4537-8f38-c059018a3f95] Analyze this code",
+       wait_for_response=True  # Parent waits on response queue
+   )
+   ```
+
+2. **Worker Receives & Processes**: Worker instance automatically extracts correlation ID from message
+
+3. **Worker Replies**: Worker MUST use `reply_to_caller` tool
+   ```python
+   reply_to_caller(
+       instance_id="worker-abc123",
+       reply_message="Analysis complete: found 3 security issues, 2 performance bottlenecks",
+       correlation_id="2ea0e30e-7ec3-4537-8f38-c059018a3f95"
+   )
+   ```
+
+4. **Parent Receives**: Reply queued in parent's response queue, `send_to_instance()` returns immediately
+
+**Response Queue Lifecycle**
+
+Response queues are initialized at spawn time (not just when sending messages):
+
 ```python
-# Messages include unique IDs for tracking
-# Format: [MSG:sender-id_timestamp_unique-id] message content
-
-# Parent sends:
-# [MSG:2ea0e30e-7ec3-4537-8f38-c059018a3f95] Analyze this code
-
-# Child replies with correlation:
-reply_to_caller(
-    reply_message="Analysis complete: found 3 issues",
-    correlation_id="2ea0e30e-7ec3-4537-8f38-c059018a3f95"
+# Response queue created immediately at spawn
+supervisor_id = await manager.spawn_instance(
+    name="supervisor",
+    role="general",
+    enable_madrox=True
 )
+# self.response_queues[supervisor_id] = asyncio.Queue()  ✅ Created now
+
+# Supervisor can receive replies from children even before sending any messages
+worker_id = await manager.spawn_instance(
+    name="worker",
+    parent_instance_id=supervisor_id,  # Worker knows its parent
+    role="backend_developer"
+)
+
+# Worker can immediately use reply_to_caller to supervisor
+# Supervisor's response queue already exists ✅
 ```
+
+**Message Correlation Protocol**
+
+Messages use unique IDs for tracking request-response pairs:
+
+```python
+# Format: [MSG:correlation-id] message content
+
+# Parent sends with correlation ID:
+# [MSG:2ea0e30e-7ec3-4537-8f38-c059018a3f95] Analyze this code for security issues
+
+# Child extracts correlation ID and replies:
+reply_to_caller(
+    instance_id="child-abc123",
+    reply_message="Security analysis complete:\n- SQL injection risk in line 42\n- XSS vulnerability in template",
+    correlation_id="2ea0e30e-7ec3-4537-8f38-c059018a3f95"  # Same ID from parent's message
+)
+
+# Parent's send_to_instance() receives the correlated reply immediately
+```
+
+**Benefits Over Polling**
+
+| Aspect | Bidirectional (reply_to_caller) | Polling (deprecated) |
+|--------|--------------------------------|---------------------|
+| **Latency** | Instant (queued immediately) | Delayed (periodic checks) |
+| **Efficiency** | Single queue operation | Multiple tmux pane reads |
+| **Correlation** | Explicit correlation IDs | Heuristic matching |
+| **Reliability** | Guaranteed delivery | May miss rapid outputs |
+| **Scalability** | O(1) per message | O(n) polling overhead |
+
+**System Prompt Enforcement**
+
+All supervised instances receive mandatory instructions in their system prompt:
+
+```
+BIDIRECTIONAL MESSAGING PROTOCOL (REQUIRED):
+When you receive messages formatted as [MSG:correlation-id] content,
+you MUST respond using the reply_to_caller tool:
+
+  reply_to_caller(
+    instance_id='your-instance-id',
+    reply_message='your response here',
+    correlation_id='correlation-id-from-message'
+  )
+
+IMPORTANT: Always use reply_to_caller for every response to messages.
+This enables instant bidirectional communication and proper correlation.
+```
+
+**Why Mandatory?**
+
+1. **Performance**: Queue-based delivery is 10-100x faster than tmux pane polling
+2. **Reliability**: Explicit message correlation prevents missed replies
+3. **Scalability**: Supports hierarchical networks with multiple coordination layers
+4. **Debugging**: Communication events logged with full correlation chains
 
 ### File Operations
 

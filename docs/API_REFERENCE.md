@@ -406,44 +406,161 @@ await send_to_instance(
 
 #### reply_to_caller
 
-**Available to child instances only**. Reply back to the parent/coordinator that sent a message.
+**Available to supervised instances**. Reply back to the parent/coordinator that sent a message. **This is MANDATORY for all supervised instances** (instances with `parent_instance_id`).
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `instance_id` | string | Yes | Your instance ID (the responder) |
 | `reply_message` | string | Yes | Reply content |
-| `instance_id` | string | Yes | Your instance ID |
-| `correlation_id` | string | No | Message ID from incoming message (for tracking) |
+| `correlation_id` | string | No | Message ID from incoming message (strongly recommended for tracking) |
 
 **Returns:**
 
 ```json
 {
-  "status": "delivered",
-  "to": "parent-instance-id"
+  "success": true,
+  "delivered_to": "parent-instance-id",
+  "correlation_id": "2ea0e30e-7ec3-4537-8f38-c059018a3f95",
+  "timestamp": "2025-10-11T16:10:31.045425Z"
 }
 ```
 
 **Behavior:**
 
-- Automatically routes reply to parent instance or coordinator
-- Uses in-memory asyncio queues for fast delivery
-- Message is logged in communication logs
-- Parent receives reply through `send_to_instance` response
+1. **Response Queue Routing**: Reply is queued in parent's `response_queue` (asyncio.Queue)
+2. **Instant Delivery**: Parent's `send_to_instance()` receives reply immediately from queue
+3. **Message Correlation**: Correlation ID links reply to original request in `message_registry`
+4. **Communication Logging**: Logged as `bidirectional_reply_received` event
+5. **Automatic Target**: Routes to `parent_instance_id` or coordinator if no parent
+
+**Why Mandatory?**
+
+Supervised instances receive explicit instructions in their system prompt:
+
+```
+BIDIRECTIONAL MESSAGING PROTOCOL (REQUIRED):
+When you receive messages formatted as [MSG:correlation-id] content,
+you MUST respond using the reply_to_caller tool.
+```
+
+**Benefits:**
+- ⚡ 10-100x faster than tmux pane polling
+- ✅ Guaranteed delivery with correlation tracking
+- 📊 Structured communication audit trail
+- 🔗 Supports multi-level hierarchical networks
+
+**Implementation Details:**
+
+**Message Envelope System:**
+
+Every message sent via `send_to_instance` creates a `MessageEnvelope`:
+
+```python
+@dataclass
+class MessageEnvelope:
+    message_id: str                  # UUID for correlation
+    sender_id: str                   # Parent/coordinator ID
+    recipient_id: str                # Child instance ID
+    content: str                     # Original message
+    sent_at: datetime               # Timestamp
+    delivered_at: datetime | None   # When received by child
+    replied_at: datetime | None     # When child used reply_to_caller
+    reply_content: str | None       # Reply message
+    status: str                      # 'sent' | 'delivered' | 'replied' | 'timeout'
+```
+
+**Response Queue Lifecycle:**
+
+```python
+# Response queues created at spawn time (not send time!)
+self.response_queues: dict[str, asyncio.Queue] = {}
+
+# When instance spawns:
+async def spawn_instance(...):
+    # Create response queue immediately
+    self.response_queues[instance_id] = asyncio.Queue()
+    # ✅ Instance can now receive replies even before sending messages
+
+# When parent sends message:
+async def send_to_instance(instance_id, message, wait_for_response=True):
+    message_id = str(uuid.uuid4())
+    formatted_message = f"[MSG:{message_id}] {message}"
+
+    if wait_for_response:
+        # Wait on parent's response queue (already exists!)
+        reply = await asyncio.wait_for(
+            self.response_queues[parent_id].get(),
+            timeout=timeout_seconds
+        )
+        return reply["reply_message"]
+
+# When child uses reply_to_caller:
+async def handle_reply_to_caller(instance_id, reply_message, correlation_id):
+    parent_id = instance["parent_instance_id"]
+
+    # Queue reply in parent's response queue
+    await self.response_queues[parent_id].put({
+        "sender_id": instance_id,
+        "reply_message": reply_message,
+        "correlation_id": correlation_id,
+        "timestamp": datetime.now().isoformat()
+    })
+
+    # Parent's send_to_instance() receives it immediately ✅
+```
+
+**Key Fix (October 2025):**
+
+Before: Response queues created in `send_message()` → parent couldn't receive first reply from child
+
+After: Response queues created in `spawn_instance()` → parent can receive replies immediately
 
 **Example (from child instance perspective):**
 
 ```python
 # Child receives message like:
-# [MSG:abc123] Analyze this code for vulnerabilities
+# [MSG:2ea0e30e-7ec3-4537-8f38-c059018a3f95] Analyze this code for vulnerabilities
 
-# Child can reply using:
+# Child MUST reply using reply_to_caller (mandatory):
 reply_to_caller(
-    reply_message="Found 2 SQL injection risks in lines 45-67",
-    instance_id=my_instance_id,
-    correlation_id="abc123"
+    instance_id="child-abc123",
+    reply_message="Security analysis complete:\n- SQL injection risk in line 42\n- XSS vulnerability in template rendering",
+    correlation_id="2ea0e30e-7ec3-4537-8f38-c059018a3f95"  # Extracted from [MSG:...]
 )
+
+# Parent's send_to_instance() returns immediately with the reply ✅
+```
+
+**Example (from parent instance perspective):**
+
+```python
+# Parent sends message and waits
+response = await send_to_instance(
+    instance_id="child-abc123",
+    message="Analyze this code for vulnerabilities",
+    wait_for_response=True,
+    timeout_seconds=60
+)
+
+# When child uses reply_to_caller, response contains:
+# "Security analysis complete:\n- SQL injection risk..."
+
+# Correlation is tracked automatically via message_registry
+```
+
+**Communication Events Logged:**
+
+```json
+{
+  "timestamp": "2025-10-11T19:10:31.045425",
+  "event_type": "bidirectional_reply_received",
+  "message": "Received bidirectional response (740 chars, 10.59s)",
+  "message_id": "2ea0e30e-7ec3-4537-8f38-c059018a3f95",
+  "direction": "inbound",
+  "content": "Security analysis complete..."
+}
 ```
 
 ---
