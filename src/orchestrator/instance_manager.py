@@ -190,6 +190,35 @@ class InstanceManager:
         # No other instance types supported
         raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
 
+    async def handle_reply_to_caller(
+        self,
+        instance_id: str,
+        reply_message: str,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Handle reply from instance back to its caller.
+
+        This implements the bidirectional messaging protocol by delegating
+        to TmuxInstanceManager which manages the response queues.
+
+        Args:
+            instance_id: ID of instance sending the reply
+            reply_message: Content of the reply
+            correlation_id: Optional message ID for correlation
+
+        Returns:
+            Dict with success status and delivery info
+        """
+        if instance_id not in self.instances:
+            return {"success": False, "error": f"Instance {instance_id} not found"}
+
+        # Delegate to TmuxInstanceManager for queue management
+        return await self.tmux_manager.handle_reply_to_caller(
+            instance_id=instance_id,
+            reply_message=reply_message,
+            correlation_id=correlation_id,
+        )
+
     async def get_job_status(
         self, job_id: str, wait_for_completion: bool = True, max_wait: int = 120
     ) -> dict[str, Any] | None:
