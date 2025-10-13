@@ -386,6 +386,102 @@ This enables instant bidirectional communication and proper correlation.
 3. **Scalability**: Supports hierarchical networks with multiple coordination layers
 4. **Debugging**: Communication events logged with full correlation chains
 
+#### Polling for Replies
+
+When children use `reply_to_caller`, their replies are **queued in the parent's response queue**. Parents must actively poll to retrieve these replies using `get_pending_replies`.
+
+**How It Works:**
+
+1. **Child sends reply**: `reply_to_caller()` queues message in `parent.response_queue`
+2. **Parent polls**: `get_pending_replies()` drains messages from the queue
+3. **Processing**: Parent processes all collected replies
+
+**Two Polling Modes:**
+
+**Non-blocking (wait_timeout=0):**
+```python
+# Returns immediately with whatever is queued
+replies = await get_pending_replies(
+    instance_id="supervisor-abc123",
+    wait_timeout=0  # Don't wait
+)
+# Returns [] if queue is empty
+```
+
+**Blocking (wait_timeout > 0):**
+```python
+# Waits up to N seconds for first reply, then drains queue
+replies = await get_pending_replies(
+    instance_id="supervisor-abc123",
+    wait_timeout=30  # Wait up to 30 seconds
+)
+# Returns [] if timeout expires with no replies
+```
+
+**Practical Pattern: Broadcast + Poll**
+
+```python
+# 1. Supervisor broadcasts task to all children
+await broadcast_to_children(
+    parent_id="supervisor-abc123",
+    message="Analyze your assigned dataset partition and report findings"
+)
+
+# 2. Poll periodically for replies
+all_replies = []
+timeout = 60
+start_time = time.time()
+
+while time.time() - start_time < timeout:
+    # Non-blocking poll
+    new_replies = await get_pending_replies(
+        instance_id="supervisor-abc123",
+        wait_timeout=0
+    )
+
+    all_replies.extend(new_replies)
+
+    # Check if all children responded
+    if len(all_replies) >= 3:  # Expecting 3 children
+        break
+
+    await asyncio.sleep(2)  # Poll every 2 seconds
+
+# 3. Process collected replies
+for reply in all_replies:
+    child_id = reply['sender_id']
+    message = reply['reply_message']
+    correlation = reply['correlation_id']
+
+    print(f"Child {child_id}: {message}")
+```
+
+**When to Poll:**
+
+- **After broadcasting**: Always poll after `broadcast_to_children`
+- **Periodic checks**: Poll every few seconds to collect progress updates
+- **Completion waiting**: Poll until all expected children have replied
+- **Event-driven**: Poll when you expect replies based on coordination logic
+
+**Reply Queue Lifecycle:**
+
+Response queues are created at spawn time and persist until instance termination:
+
+```python
+# Queue created when supervisor spawns
+supervisor_id = await spawn_instance(name="supervisor", enable_madrox=True)
+# self.response_queues[supervisor_id] = asyncio.Queue()  ✅ Created
+
+# Children can immediately send replies
+worker_id = await spawn_instance(
+    name="worker",
+    parent_instance_id=supervisor_id
+)
+
+# Worker uses reply_to_caller - queues in supervisor's response queue
+# Supervisor polls to retrieve - drains from response queue
+```
+
 ### File Operations
 
 #### Workspace Isolation

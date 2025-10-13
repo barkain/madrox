@@ -60,6 +60,7 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
             <span className={`text-xs font-medium uppercase ${instanceTypeTextColor[data.type]}`}>{data.type}</span>
           </div>
           <h3 className="font-mono text-sm font-semibold text-foreground truncate">{data.name || data.id}</h3>
+          <p className="text-xs text-muted-foreground/70 font-mono">{data.id.slice(0, 8)}</p>
           {data.role && <p className="text-xs text-muted-foreground truncate">{data.role}</p>}
         </div>
         <Activity className="h-4 w-4 text-primary flex-shrink-0" />

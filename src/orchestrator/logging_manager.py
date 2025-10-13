@@ -18,18 +18,24 @@ class LogStreamHandler(logging.Handler):
     """Custom logging handler that broadcasts logs to WebSocket clients."""
 
     _instance = None
+    _log_type = "system_log"  # Default log type
 
-    def __init__(self):
-        """Initialize the log stream handler."""
+    def __init__(self, log_type: str = "system_log"):
+        """Initialize the log stream handler.
+
+        Args:
+            log_type: Type of logs to broadcast ("system_log" or "audit_log")
+        """
         super().__init__()
         self.clients: set[WebSocket] = set()
         self._lock = asyncio.Lock()
+        self._log_type = log_type
 
     @classmethod
     def get_instance(cls):
-        """Get singleton instance."""
+        """Get singleton instance for system logs."""
         if cls._instance is None:
-            cls._instance = cls()
+            cls._instance = cls(log_type="system_log")
         return cls._instance
 
     def add_client(self, websocket: WebSocket):
@@ -43,64 +49,129 @@ class LogStreamHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
         """Emit a log record to all connected WebSocket clients."""
         try:
-            # Format the log record
-            log_entry = {
-                "timestamp": datetime.fromtimestamp(record.created).isoformat(),
-                "level": record.levelname,
-                "logger": record.name,
-                "message": self.format(record),
-                "module": record.module,
-                "function": record.funcName,
-                "line": record.lineno,
-            }
+            # Format audit logs differently from system logs
+            if self._log_type == "audit_log":
+                # Audit log format for frontend compatibility
+                log_entry: dict[str, Any] = {
+                    "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "message": self.format(record),
+                }
 
-            # Add extra fields if present
-            for key, value in record.__dict__.items():
-                if key not in [
-                    "name",
-                    "msg",
-                    "args",
-                    "created",
-                    "filename",
-                    "funcName",
-                    "levelname",
-                    "levelno",
-                    "lineno",
-                    "module",
-                    "msecs",
-                    "message",
-                    "pathname",
-                    "process",
-                    "processName",
-                    "relativeCreated",
-                    "thread",
-                    "threadName",
-                    "exc_info",
-                    "exc_text",
-                    "stack_info",
-                    "asctime",
-                    "taskName",
-                ]:
-                    try:
-                        json.dumps(value)  # Ensure serializable
-                        log_entry[key] = value
-                    except (TypeError, ValueError):
-                        log_entry[key] = str(value)
+                # Add action from event_type if present
+                if hasattr(record, "event_type"):
+                    log_entry["action"] = getattr(record, "event_type")
+
+                # Collect metadata from extra fields
+                metadata: dict[str, Any] = {}
+                for key, value in record.__dict__.items():
+                    if key not in [
+                        "name",
+                        "msg",
+                        "args",
+                        "created",
+                        "filename",
+                        "funcName",
+                        "levelname",
+                        "levelno",
+                        "lineno",
+                        "module",
+                        "msecs",
+                        "message",
+                        "pathname",
+                        "process",
+                        "processName",
+                        "relativeCreated",
+                        "thread",
+                        "threadName",
+                        "exc_info",
+                        "exc_text",
+                        "stack_info",
+                        "asctime",
+                        "taskName",
+                        "event_type",  # Already used for 'action'
+                    ]:
+                        try:
+                            json.dumps(value)  # Ensure serializable
+                            metadata[key] = value
+                        except (TypeError, ValueError):
+                            metadata[key] = str(value)
+
+                if metadata:
+                    log_entry["metadata"] = metadata
+            else:
+                # System log format
+                log_entry = {
+                    "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "message": self.format(record),
+                    "module": record.module,
+                    "function": record.funcName,
+                    "line": record.lineno,
+                }
+
+                # Add extra fields if present
+                for key, value in record.__dict__.items():
+                    if key not in [
+                        "name",
+                        "msg",
+                        "args",
+                        "created",
+                        "filename",
+                        "funcName",
+                        "levelname",
+                        "levelno",
+                        "lineno",
+                        "module",
+                        "msecs",
+                        "message",
+                        "pathname",
+                        "process",
+                        "processName",
+                        "relativeCreated",
+                        "thread",
+                        "threadName",
+                        "exc_info",
+                        "exc_text",
+                        "stack_info",
+                        "asctime",
+                        "taskName",
+                    ]:
+                        try:
+                            json.dumps(value)  # Ensure serializable
+                            log_entry[key] = value
+                        except (TypeError, ValueError):
+                            log_entry[key] = str(value)
 
             # Broadcast to all connected clients (non-blocking)
             if self.clients:
-                asyncio.create_task(self._broadcast(log_entry))
+                try:
+                    # Get the running event loop and schedule the broadcast
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(self._broadcast(log_entry))
+                except RuntimeError:
+                    # No event loop running, skip WebSocket broadcast
+                    pass
 
-        except Exception:
+        except Exception as e:
+            print(f"[ERROR] Exception in LogStreamHandler.emit(): {e}")
             self.handleError(record)
 
     async def _broadcast(self, log_entry: dict[str, Any]):
-        """Broadcast log entry to all clients."""
+        """Broadcast log entry to all clients.
+
+        Args:
+            log_entry: The log data to broadcast
+        """
         dead_clients = set()
 
         for client in self.clients:
             try:
-                await client.send_json({"type": "system_log", "data": log_entry})
+                message = {"type": self._log_type, "data": log_entry}
+                await client.send_json(message)
             except Exception:
                 dead_clients.add(client)
 
@@ -109,10 +180,21 @@ class LogStreamHandler(logging.Handler):
             self.clients.discard(client)
 
 
-# Global function to get the singleton log stream handler
+# Global singletons for system and audit log handlers
+_audit_log_stream_handler: LogStreamHandler | None = None
+
+
 def get_log_stream_handler() -> LogStreamHandler:
-    """Get the global log stream handler instance."""
+    """Get the global log stream handler instance for system logs."""
     return LogStreamHandler.get_instance()
+
+
+def get_audit_log_stream_handler() -> LogStreamHandler:
+    """Get the global log stream handler instance for audit logs."""
+    global _audit_log_stream_handler
+    if _audit_log_stream_handler is None:
+        _audit_log_stream_handler = LogStreamHandler(log_type="audit_log")
+    return _audit_log_stream_handler
 
 
 class InstanceLoggerAdapter(logging.LoggerAdapter):
@@ -158,8 +240,9 @@ class LoggingManager:
         # Configure all existing orchestrator.* loggers to inherit from orchestrator logger
         # This ensures any module using logging.getLogger(__name__) will work
         # We need to reconfigure ALL existing loggers in the orchestrator namespace
+        # EXCEPT orchestrator.audit which has its own handlers
         for name in list(logging.Logger.manager.loggerDict.keys()):
-            if name.startswith("orchestrator."):
+            if name.startswith("orchestrator.") and name != "orchestrator.audit":
                 child_logger = logging.getLogger(name)
                 if isinstance(child_logger, logging.Logger):  # Skip PlaceHolders
                     child_logger.setLevel(logging.DEBUG)  # Let parent's handlers filter
@@ -325,10 +408,17 @@ class LoggingManager:
         file_handler.setFormatter(JsonLineFormatter())
         logger.addHandler(file_handler)
 
+        # Add WebSocket stream handler for real-time audit log broadcasting
+        audit_stream_handler = get_audit_log_stream_handler()
+        audit_stream_handler.setLevel(logging.INFO)  # Capture audit events for WebSocket
+        audit_stream_formatter = logging.Formatter("%(message)s")
+        audit_stream_handler.setFormatter(audit_stream_formatter)
+        logger.addHandler(audit_stream_handler)
+
         self.audit_logger = logger
 
     def get_instance_logger(
-        self, instance_id: str, instance_name: str = None
+        self, instance_id: str, instance_name: str | None = None
     ) -> InstanceLoggerAdapter:
         """Get or create a logger for a specific instance.
 
