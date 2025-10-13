@@ -40,7 +40,7 @@ except ImportError:
 
 
 from .instance_manager import InstanceManager
-from .logging_manager import LoggingManager, get_log_stream_handler
+from .logging_manager import LoggingManager, get_log_stream_handler, get_audit_log_stream_handler
 from .mcp_adapter import MCPAdapter
 from .simple_models import (
     InstanceRole,
@@ -119,7 +119,7 @@ class ClaudeOrchestratorServer:
         async def root():
             """Root endpoint with server info."""
             # Get available tools from MCP adapter dynamically
-            tools_list = [tool["name"] for tool in self.mcp_adapter.get_available_tools()]
+            tools_list = [tool["name"] for tool in await self.mcp_adapter.get_available_tools()]
 
             return {
                 "name": "Claude Conversational Orchestrator",
@@ -343,9 +343,12 @@ class ClaudeOrchestratorServer:
             await websocket.accept()
             logger.info("WebSocket client connected to /ws/logs")
 
-            # Register this client with the log stream handler
+            # Register this client with both system and audit log stream handlers
             log_handler = get_log_stream_handler()
             log_handler.add_client(websocket)
+
+            audit_log_handler = get_audit_log_stream_handler()
+            audit_log_handler.add_client(websocket)
 
             try:
                 # Send recent system logs on initial connection
@@ -406,6 +409,7 @@ class ClaudeOrchestratorServer:
                     pass
             finally:
                 log_handler.remove_client(websocket)
+                audit_log_handler.remove_client(websocket)
 
         # MCP Protocol endpoints
         @self.app.get("/tools")
@@ -592,13 +596,13 @@ class ClaudeOrchestratorServer:
         @self.app.get("/instances")
         async def list_instances():
             """List all instances."""
-            return self.instance_manager.get_instance_status()
+            return self.instance_manager._get_instance_status_internal()
 
         @self.app.get("/instances/{instance_id}")
         async def get_instance(instance_id: str):
             """Get specific instance details."""
             try:
-                return self.instance_manager.get_instance_status(instance_id)
+                return self.instance_manager._get_instance_status_internal(instance_id)
             except ValueError as e:
                 raise HTTPException(status_code=404, detail=str(e)) from e
 

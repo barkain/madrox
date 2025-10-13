@@ -17,6 +17,7 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { RotateCcw } from "lucide-react"
+import { hierarchy, tree } from "d3-hierarchy"
 import { AgentNode } from "./agent-node"
 import type { AgentInstance, MessageFlow } from "@/types"
 
@@ -30,125 +31,107 @@ interface NetworkGraphProps {
   onNodeClick?: (instance: AgentInstance) => void
 }
 
-// Tree layout algorithm that respects parent-child structure
+// D3-based tree layout algorithm for symmetric, balanced hierarchies
 function calculateHierarchicalLayout(instances: AgentInstance[]): Map<string, { x: number; y: number }> {
   const positions = new Map<string, { x: number; y: number }>()
-  const horizontalSpacing = 360 // Spacing between nodes
-  const verticalSpacing = 220 // Vertical spacing
-  const gridColumns = 3 // Max columns for root nodes grid
-  const compactSpacing = 100 // Spacing between root nodes in compact mode
+  const horizontalSpacing = 400 // Horizontal node spacing
+  const verticalSpacing = 250 // Vertical level spacing
+
+  if (instances.length === 0) return positions
 
   const instanceMap = new Map(instances.map((instance) => [instance.id, instance]))
 
-  // Global X counter to ensure left-to-right ordering
-  let globalX = 0
-
-  // Recursive function to layout a subtree
-  const layoutSubtree = (instance: AgentInstance, level: number): { x: number; width: number } => {
-    // Get children that are still present in the dataset, sorted by creation time for consistent ordering
-    const children = instances
-      .filter((candidate) => candidate.parentId === instance.id && instanceMap.has(candidate.id))
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-
-    if (children.length === 0) {
-      // Leaf node - position it at the next available X
-      const x = globalX
-      positions.set(instance.id, { x, y: level * verticalSpacing + 100 })
-      globalX += horizontalSpacing
-      return { x, width: 0 }
-    }
-
-    // Layout all children first (left to right)
-    const childResults: { x: number; width: number }[] = []
-    children.forEach((child) => {
-      const result = layoutSubtree(child, level + 1)
-      childResults.push(result)
-    })
-
-    // Calculate parent position (centered above children)
-    let parentX: number
-    if (childResults.length === 1) {
-      // Single child - parent directly above child
-      parentX = childResults[0].x
-    } else {
-      // Multiple children - center parent above all children
-      const leftmostChildX = childResults[0].x
-      const rightmostChildX = childResults[childResults.length - 1].x
-      parentX = (leftmostChildX + rightmostChildX) / 2
-    }
-
-    positions.set(instance.id, { x: parentX, y: level * verticalSpacing + 100 })
-
-    // Return parent position and total width
-    const totalWidth = childResults.length > 1
-      ? childResults[childResults.length - 1].x - childResults[0].x
-      : 0
-    return { x: parentX, width: totalWidth }
-  }
-
-  // Treat instances with no parent or with a missing parent as roots
+  // Find all root nodes (no parent or parent not in dataset)
   const rootNodes = instances
     .filter((instance) => !instance.parentId || !instanceMap.has(instance.parentId))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
-  // Check if all roots have no children (flat structure)
-  const allRootsAreLeaves = rootNodes.every(
-    (root) => !instances.some((inst) => inst.parentId === root.id)
-  )
+  if (rootNodes.length === 0) return positions
 
-  if (allRootsAreLeaves && rootNodes.length > 2) {
-    // Use compact grid layout for flat structure
-    rootNodes.forEach((root, index) => {
-      const col = index % gridColumns
-      const row = Math.floor(index / gridColumns)
-      positions.set(root.id, {
-        x: col * horizontalSpacing + 100,
-        y: row * verticalSpacing + 100,
-      })
-    })
-  } else {
-    // Use mixed layout: compact for leaf roots, tree layout for parent roots
-    const leafRoots: AgentInstance[] = []
-    const parentRoots: AgentInstance[] = []
-
-    rootNodes.forEach(root => {
-      const hasChildren = instances.some(inst => inst.parentId === root.id)
-      if (hasChildren) {
-        parentRoots.push(root)
-      } else {
-        leafRoots.push(root)
-      }
-    })
-
-    // Layout parent roots with their trees first
-    parentRoots.forEach((root, index) => {
-      if (index > 0) {
-        globalX += compactSpacing
-      }
-      layoutSubtree(root, 0)
-    })
-
-    // Then add leaf roots compactly to the right
-    if (leafRoots.length > 0 && parentRoots.length > 0) {
-      globalX += compactSpacing
-    }
-
-    leafRoots.forEach((root, index) => {
-      if (index > 0) {
-        globalX += compactSpacing
-      }
-      positions.set(root.id, { x: globalX, y: 100 })
-      globalX += horizontalSpacing - compactSpacing
-    })
+  // Build hierarchical data structure for each root
+  interface HierarchyNode {
+    id: string
+    instance: AgentInstance
+    children?: HierarchyNode[]
   }
 
-  // Assign fallback positions to any nodes that were not reached (e.g. due to malformed parent references)
-  instances.forEach((instance) => {
-    if (!positions.has(instance.id)) {
-      const x = globalX
-      positions.set(instance.id, { x, y: 100 })
-      globalX += horizontalSpacing
+  function buildHierarchy(instanceId: string): HierarchyNode {
+    const instance = instanceMap.get(instanceId)!
+    const children = instances
+      .filter((child) => child.parentId === instanceId)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .map((child) => buildHierarchy(child.id))
+
+    return {
+      id: instanceId,
+      instance,
+      children: children.length > 0 ? children : undefined,
     }
+  }
+
+  // Layout each root tree separately with D3
+  const treeLayouts: Array<{ root: any; width: number; height: number }> = []
+
+  rootNodes.forEach((rootInstance) => {
+    const hierarchyData = buildHierarchy(rootInstance.id)
+    const root = hierarchy(hierarchyData)
+
+    // Configure D3 tree layout
+    const treeLayout = tree<HierarchyNode>()
+      .nodeSize([horizontalSpacing, verticalSpacing])
+      .separation((a, b) => {
+        // Ensure proper separation between nodes
+        return a.parent === b.parent ? 1 : 1.2
+      })
+
+    // Apply layout
+    const treeRoot = treeLayout(root)
+
+    // Calculate bounds
+    let minX = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+
+    treeRoot.each((node) => {
+      if (node.x < minX) minX = node.x
+      if (node.x > maxX) maxX = node.x
+      if (node.y > maxY) maxY = node.y
+    })
+
+    const width = maxX - minX
+    const height = maxY
+
+    treeLayouts.push({ root: treeRoot, width, height })
+  })
+
+  // Calculate total width needed
+  const totalWidth = treeLayouts.reduce((sum, layout) => sum + layout.width, 0)
+  const gaps = (treeLayouts.length - 1) * horizontalSpacing
+  const totalWidthWithGaps = totalWidth + gaps
+
+  // Position each tree side by side, centered
+  let currentX = -totalWidthWithGaps / 2
+
+  treeLayouts.forEach((layout, index) => {
+    const { root, width } = layout
+
+    // Find min X for this tree to normalize coordinates
+    let minX = Infinity
+    root.each((node: any) => {
+      if (node.x < minX) minX = node.x
+    })
+
+    // Position all nodes in this tree
+    root.each((node: any) => {
+      const nodeData = node.data as HierarchyNode
+      positions.set(nodeData.id, {
+        x: currentX + (node.x - minX),
+        y: node.y + 100, // Add top padding
+      })
+    })
+
+    // Move to next tree position
+    currentX += width + horizontalSpacing
   })
 
   return positions

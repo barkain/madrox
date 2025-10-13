@@ -8,31 +8,34 @@ The backend logging infrastructure provides real-time streaming of system and au
 
 ### Components
 
-1. **LogStreamHandler** (`src/orchestrator/log_stream_handler.py`)
+1. **LogStreamHandler** (`src/orchestrator/logging_manager.py`)
    - Custom Python `logging.Handler` that intercepts log messages
-   - Automatically categorizes logs as system or audit logs
+   - Separate handlers for system and audit logs
+   - Automatically formats messages according to log type
    - Broadcasts formatted messages to all connected WebSocket clients
    - Thread-safe and async-compatible
 
-2. **WebSocket Integration** (`src/orchestrator/server.py`)
-   - Modified `/ws/monitor` endpoint to register clients with LogStreamHandler
-   - Automatic client registration/deregistration
+2. **WebSocket Endpoint** (`src/orchestrator/server.py`)
+   - Single `/ws/logs` endpoint for both system and audit logs
+   - Automatic client registration with both handlers
    - Cleanup on disconnection
 
-3. **Helper Functions**
-   - `audit_log()`: Convenience function for logging audit events
-   - `setup_log_streaming()`: One-time initialization at startup
-   - `get_log_stream_handler()`: Singleton accessor
+3. **LoggingManager** (`src/orchestrator/logging_manager.py`)
+   - Centralized logging configuration
+   - Manages file handlers, console handlers, and WebSocket handlers
+   - Separate audit logger configuration
 
-## Log Categorization
+## Log Types
 
-Logs are automatically categorized as **audit logs** if ANY of these conditions are met:
+### System Logs
+- Source: `logging.getLogger("orchestrator.*")` loggers (excluding `orchestrator.audit`)
+- Purpose: General application logs, debugging, errors
+- File: `/tmp/madrox_logs/orchestrator.log`
 
-1. `record.is_audit` flag is `True` (set via `extra` dict)
-2. Logger name starts with `'audit.'`
-3. Message starts with `'[AUDIT]'`
-
-Otherwise, logs are categorized as **system logs**.
+### Audit Logs
+- Source: `logging.getLogger("orchestrator.audit")`
+- Purpose: Track important events (instance lifecycle, state changes)
+- File: `/tmp/madrox_logs/audit/audit_YYYYMMDD.jsonl`
 
 ## Message Format
 
@@ -42,15 +45,14 @@ Otherwise, logs are categorized as **system logs**.
 {
   "type": "system_log",
   "data": {
-    "timestamp": "2025-10-08T18:30:45.123Z",
+    "timestamp": "2025-10-13T09:27:24.339163",
     "level": "INFO",
-    "logger": "madrox.server",
+    "logger": "orchestrator.server",
     "message": "Instance spawned successfully",
     "module": "server",
     "function": "spawn_instance",
     "line": 142,
-    "instance_id": "abc123",  // Optional extra fields
-    "instance_name": "main-orchestrator"
+    "instance_id": "abc123"  // Extra fields included directly
   }
 }
 ```
@@ -61,38 +63,33 @@ Otherwise, logs are categorized as **system logs**.
 {
   "type": "audit_log",
   "data": {
-    "timestamp": "2025-10-08T18:30:45.123Z",
+    "timestamp": "2025-10-13T09:27:24.339163",
     "level": "INFO",
-    "logger": "audit.instance",
-    "message": "Instance main-orchestrator spawned",
+    "logger": "orchestrator.audit",
+    "message": "instance_spawn",
     "action": "instance_spawn",
     "metadata": {
-      "instance_id": "abc123",
-      "role": "orchestrator",
-      "model": "claude-4-sonnet"
-    },
-    "instance_id": "abc123",  // Optional
-    "event_type": "spawn"     // Optional
+      "instance_id": "97847539-c28b-4976-9d6c-56f7e274ec81",
+      "details": {
+        "instance_name": "test-instance",
+        "role": "general",
+        "instance_type": "claude",
+        "model": null,
+        "enable_madrox": true,
+        "bypass_isolation": false
+      }
+    }
   }
 }
 ```
 
+**Key Differences:**
+- Audit logs have `action` field (from `event_type` extra)
+- Audit logs use `metadata` object for extra fields
+- System logs include `module`, `function`, `line` fields
+- System logs include extra fields directly at top level
+
 ## Usage
-
-### Setup (Application Startup)
-
-The log streaming is automatically set up when the server starts:
-
-```python
-from src.orchestrator.log_stream_handler import setup_log_streaming
-import asyncio
-
-# In server startup code
-loop = asyncio.get_event_loop()
-setup_log_streaming(loop)
-```
-
-This is already integrated in `server.py:905` in the `start_server()` method.
 
 ### Logging System Events
 
@@ -101,7 +98,7 @@ Use standard Python logging for system events:
 ```python
 import logging
 
-logger = logging.getLogger("madrox.instance_manager")
+logger = logging.getLogger("orchestrator.instance_manager")
 
 # Standard logging - automatically captured and streamed
 logger.info("Instance spawned successfully")
@@ -111,74 +108,131 @@ logger.error("Failed to connect to instance", extra={"instance_id": "abc123"})
 
 ### Logging Audit Events
 
-Use the `audit_log()` helper function for audit events:
+Use the `LoggingManager.log_audit_event()` method:
 
 ```python
-from src.orchestrator import audit_log
-import logging
+from src.orchestrator.logging_manager import LoggingManager
 
-logger = logging.getLogger("audit.instance")
+logging_manager = LoggingManager()
 
-# Audit log with action and metadata
-audit_log(
-    logger,
-    "Instance main-orchestrator spawned",
-    action="instance_spawn",
-    metadata={
-        "instance_id": "abc-123",
-        "role": "orchestrator",
-        "model": "claude-4-sonnet"
+# Log audit event
+logging_manager.log_audit_event(
+    event_type="instance_spawn",
+    instance_id="abc-123",
+    details={
+        "instance_name": "test-instance",
+        "role": "general",
+        "instance_type": "claude",
+        "model": "claude-sonnet-4",
+        "enable_madrox": True,
+        "bypass_isolation": False
     }
 )
 
-# Audit log with custom level
-audit_log(
-    logger,
-    "Instance terminated unexpectedly",
-    action="instance_terminate",
-    metadata={"instance_id": "abc-123", "reason": "crash"},
-    level=logging.ERROR
-)
-```
-
-### Alternative: Use Audit Logger Directly
-
-```python
-import logging
-
-# Create logger with 'audit.' prefix
-logger = logging.getLogger("audit.instance")
-
-# Log with is_audit flag
-logger.info(
-    "User logged in",
-    extra={
-        "is_audit": True,
-        "action": "user_login",
-        "metadata": {"user_id": "user123"}
+# Log instance termination
+logging_manager.log_audit_event(
+    event_type="instance_terminate",
+    instance_id="abc-123",
+    details={
+        "instance_name": "test-instance",
+        "force": False,
+        "final_state": "terminated",
+        "total_requests": 5,
+        "total_tokens": 1234,
+        "total_cost": 0.05,
+        "uptime_seconds": 120.5
     }
 )
 ```
 
-### WebSocket Client Management
+### WebSocket Client Connection
 
-WebSocket clients are automatically registered when they connect to `/ws/monitor`:
+Frontend connects to single endpoint for both log types:
+
+```typescript
+const ws = new WebSocket("ws://localhost:8001/ws/logs")
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data)
+
+  switch (message.type) {
+    case "system_log":
+      // Handle system log
+      addSystemLog(message.data)
+      break
+
+    case "audit_log":
+      // Handle audit log
+      addAuditLog(message.data)
+      break
+  }
+}
+```
+
+## Implementation Details
+
+### LogStreamHandler.emit()
+
+The `emit()` method formats log records differently based on `_log_type`:
+
+**For Audit Logs:**
+1. Extract base fields: `timestamp`, `level`, `logger`, `message`
+2. Extract `event_type` as `action` field
+3. Collect remaining extra fields into `metadata` object
+4. Exclude standard LogRecord attributes
+
+**For System Logs:**
+1. Extract base fields: `timestamp`, `level`, `logger`, `message`
+2. Add context fields: `module`, `function`, `line`
+3. Include all extra fields directly at top level
+
+### Async Broadcasting
 
 ```python
-# In WebSocket endpoint handler
-@app.websocket("/ws/monitor")
-async def monitor_websocket(websocket: WebSocket):
-    await websocket.accept()
-
-    # Register client for log streaming
-    log_handler = get_log_stream_handler()
-    log_handler.add_client(websocket)
-
+# In emit() method
+if self.clients:
     try:
-        # ... existing monitoring code ...
-    finally:
-        # Cleanup on disconnect
-        log_handler.remove_client(websocket)
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(self._broadcast(log_entry))
+    except RuntimeError:
+        pass  # No event loop, skip WebSocket broadcast
+```
+
+The broadcast is non-blocking and runs asynchronously to avoid blocking the logging thread.
+
+### Client Management
+
+```python
+class LogStreamHandler(logging.Handler):
+    def __init__(self, log_type: str = "system_log"):
+        super().__init__()
+        self.clients: set[WebSocket] = set()
+        self._log_type = log_type
+
+    def add_client(self, websocket: WebSocket):
+        self.clients.add(websocket)
+
+    def remove_client(self, websocket: WebSocket):
+        self.clients.discard(websocket)
+```
+
+### Handler Singletons
+
+```python
+# Global singletons
+_audit_log_stream_handler: LogStreamHandler | None = None
+
+def get_log_stream_handler() -> LogStreamHandler:
+    """Get singleton for system logs."""
+    return LogStreamHandler.get_instance()
+
+def get_audit_log_stream_handler() -> LogStreamHandler:
+    """Get singleton for audit logs."""
+    global _audit_log_stream_handler
+    if _audit_log_stream_handler is None:
+        _audit_log_stream_handler = LogStreamHandler(log_type="audit_log")
+    return _audit_log_stream_handler
 ```
 
 ## Best Practices
@@ -195,14 +249,13 @@ async def monitor_websocket(websocket: WebSocket):
 
 ```python
 # Good - hierarchical and descriptive
-logging.getLogger("madrox.instance_manager")
-logging.getLogger("madrox.tmux.pane_capture")
-logging.getLogger("audit.instance")
-logging.getLogger("audit.coordination")
+logging.getLogger("orchestrator.instance_manager")
+logging.getLogger("orchestrator.tmux_manager")
+logging.getLogger("orchestrator.server")
 
 # Bad - too generic
 logging.getLogger("manager")
-logging.getLogger("audit")
+logging.getLogger("server")
 ```
 
 ### 3. Include Context in Extra Fields
@@ -223,132 +276,186 @@ logger.info(
 logger.info("Instance spawned")
 ```
 
-### 4. Use audit_log() for All Audit Events
+### 4. Use Consistent Audit Event Types
 
-```python
-# Good - using helper function
-audit_log(
-    logger,
-    "Instance spawned",
-    action="instance_spawn",
-    metadata={"instance_id": "abc123"}
-)
-
-# Bad - manual extra fields (error-prone)
-logger.info(
-    "Instance spawned",
-    extra={
-        "is_audit": True,  # Easy to forget
-        "action": "instance_spawn",
-        "metadata": {"instance_id": "abc123"}
-    }
-)
-```
-
-### 5. Choose Appropriate Actions for Audit Logs
-
-Use consistent action names:
-
+Standard event types:
 - **instance_spawn** - Instance created
 - **instance_terminate** - Instance stopped
 - **message_sent** - Message sent to instance
 - **message_received** - Response received from instance
 - **state_change** - Instance state changed
-- **coordination_start** - Coordination task started
-- **coordination_complete** - Coordination task finished
 - **error** - Error occurred
 - **timeout** - Operation timed out
 
-## Testing
-
-Run the test suite:
-
-```bash
-pytest tests/test_log_streaming.py -v
-```
-
-Run the demo:
-
-```bash
-python examples/demo_log_streaming.py
-```
-
 ## Integration Points
 
-### 1. Server Startup (server.py:905)
+### 1. LoggingManager Initialization (logging_manager.py:191-227)
 
 ```python
-async def start_server(self):
-    # ... existing code ...
+def __init__(self, log_dir: str | Path = "/tmp/madrox_logs", log_level: str = "INFO"):
+    # Setup orchestrator logger with WebSocket handler
+    self._setup_orchestrator_logger()
 
-    # Setup log streaming
-    from .log_stream_handler import setup_log_streaming
-    setup_log_streaming(asyncio.get_event_loop())
+    # Setup audit logger with separate WebSocket handler
+    self._setup_audit_logger()
 
-    # ... rest of startup ...
+    # Configure child loggers (exclude orchestrator.audit)
+    for name in logging.Logger.manager.loggerDict.keys():
+        if name.startswith("orchestrator.") and name != "orchestrator.audit":
+            child_logger = logging.getLogger(name)
+            child_logger.propagate = True
+            child_logger.handlers.clear()
 ```
 
-### 2. WebSocket Endpoint (server.py:134-335)
+### 2. WebSocket Endpoint (server.py:346-412)
 
 ```python
-@app.websocket("/ws/monitor")
-async def monitor_websocket(websocket: WebSocket):
+@app.websocket("/ws/logs")
+async def logs_websocket(websocket: WebSocket):
     await websocket.accept()
 
-    # Add client to log stream
+    # Register with both handlers
     log_handler = get_log_stream_handler()
     log_handler.add_client(websocket)
 
+    audit_log_handler = get_audit_log_stream_handler()
+    audit_log_handler.add_client(websocket)
+
     try:
-        # ... monitoring code ...
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
     finally:
         log_handler.remove_client(websocket)
+        audit_log_handler.remove_client(websocket)
 ```
 
-### 3. Audit Logger (logging_manager.py:141)
+### 3. Audit Logger Setup (logging_manager.py:388-395)
 
 ```python
 def _setup_audit_logger(self):
-    # Changed from "orchestrator.audit" to "audit.orchestrator"
-    logger = logging.getLogger("audit.orchestrator")
-    # ... rest of setup ...
+    logger = logging.getLogger("orchestrator.audit")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    # File handler (JSONL format)
+    # ...
+
+    # WebSocket handler
+    audit_stream_handler = get_audit_log_stream_handler()
+    audit_stream_handler.setLevel(logging.INFO)
+    logger.addHandler(audit_stream_handler)
 ```
 
 ## Performance Considerations
 
-1. **Asynchronous Broadcasting**: Log messages are broadcast asynchronously to avoid blocking the logging thread
+1. **Asynchronous Broadcasting**: Log messages are broadcast asynchronously to avoid blocking
 2. **Failed Client Removal**: Clients that fail to receive messages are automatically removed
-3. **Singleton Handler**: Only one LogStreamHandler instance exists, reducing overhead
+3. **Singleton Handlers**: Only one handler instance per log type, reducing overhead
 4. **Minimal Formatting**: Log formatting is lightweight and efficient
+5. **Event Loop Check**: Only creates tasks when event loop is running
 
 ## Troubleshooting
 
 ### Logs Not Appearing in Frontend
 
-1. Check if log streaming is set up: `setup_log_streaming()` should be called at startup
-2. Verify WebSocket client is registered: `log_handler.add_client(websocket)` in endpoint
-3. Check logger level: Logger must be at appropriate level (e.g., `INFO` or `DEBUG`)
-4. Verify logger name: For audit logs, must start with `'audit.'`
+1. **Check WebSocket connection**: Verify connection to `ws://localhost:8001/ws/logs`
+2. **Check logger configuration**: Ensure `orchestrator.audit` logger is not reconfigured
+3. **Verify client registration**: Both handlers should have clients registered
+4. **Check message format**: Ensure frontend expects correct schema
+
+### Audit Logs Not Streaming
+
+1. **Verify handler setup**: Check `get_audit_log_stream_handler()` is called
+2. **Check logger propagation**: `orchestrator.audit` must have `propagate=False`
+3. **Verify event_type field**: Should be set in `extra` dict
+4. **Check message format**: Should have `action` and `metadata` fields
 
 ### WebSocket Connection Issues
 
-1. Check client cleanup: Ensure `remove_client()` is called in `finally` block
-2. Verify event loop: LogStreamHandler needs event loop for async operations
-3. Check for exceptions: Review handler error logs
-
-### Performance Issues
-
-1. Reduce log verbosity: Use appropriate log levels
-2. Limit connected clients: Too many WebSocket clients can cause overhead
-3. Check network latency: Slow clients may cause message backlog
+1. **Check client cleanup**: Ensure `remove_client()` is called in `finally` block
+2. **Verify event loop**: Handler needs running event loop for async operations
+3. **Check for exceptions**: Review handler error logs
+4. **Monitor client count**: Dead clients should be removed automatically
 
 ## File Locations
 
-- **Handler Implementation**: `/Users/nadavbarkai/dev/madrox/src/orchestrator/log_stream_handler.py`
+- **Handler Implementation**: `/Users/nadavbarkai/dev/madrox/src/orchestrator/logging_manager.py`
 - **Server Integration**: `/Users/nadavbarkai/dev/madrox/src/orchestrator/server.py`
-- **Tests**: `/Users/nadavbarkai/dev/madrox/tests/test_log_streaming.py`
-- **Demo**: `/Users/nadavbarkai/dev/madrox/examples/demo_log_streaming.py`
 - **Documentation**: `/Users/nadavbarkai/dev/madrox/docs/log-streaming.md`
+- **Frontend Integration**: `/Users/nadavbarkai/dev/madrox/frontend/hooks/use-log-websocket.ts`
+- **Frontend Types**: `/Users/nadavbarkai/dev/madrox/frontend/types/index.ts`
+
+## Frontend Integration
+
+### TypeScript Types
+
+```typescript
+// System log format
+export interface SystemLog {
+  id: string
+  timestamp: string
+  level: SystemLogLevel
+  logger: string
+  message: string
+  module: string
+  function: string
+  line: number
+}
+
+// Audit log format
+export interface AuditLog {
+  id: string
+  timestamp: string
+  level: AuditLogLevel
+  logger: string
+  message: string
+  action?: string
+  metadata?: Record<string, any>
+}
+
+// WebSocket message types
+export interface SystemLogMessage {
+  type: "system_log"
+  data: Omit<SystemLog, "id">
+}
+
+export interface AuditLogMessage {
+  type: "audit_log"
+  data: Omit<AuditLog, "id">
+}
+
+export type LogWebSocketMessage = SystemLogMessage | AuditLogMessage
+```
+
+### WebSocket Hook
+
+```typescript
+const ws = new WebSocket(WS_URL)
+
+ws.onmessage = (event) => {
+  const message: LogWebSocketMessage = JSON.parse(event.data)
+
+  switch (message.type) {
+    case "system_log":
+      const systemLog: SystemLog = {
+        id: `sys-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        ...message.data
+      }
+      addSystemLog(systemLog)
+      break
+
+    case "audit_log":
+      const auditLog: AuditLog = {
+        id: `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        ...message.data
+      }
+      addAuditLog(auditLog)
+      break
+  }
+}
+```
 
 ## Future Enhancements
 
@@ -359,3 +466,4 @@ Potential improvements:
 3. **Compression**: Compress log data for large messages
 4. **Replay**: Allow new clients to request recent log history
 5. **Metrics**: Track log streaming performance and errors
+6. **Log Retention**: Configurable retention policies for file-based logs

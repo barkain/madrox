@@ -565,6 +565,114 @@ response = await send_to_instance(
 
 ---
 
+#### get_pending_replies
+
+**Available to parent/supervisor instances**. Poll for queued replies from children.
+
+When children use `reply_to_caller`, their replies are queued in the parent's response queue. This tool allows the parent to actively poll for these queued replies.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `instance_id` | string | Yes | - | Your instance ID (to check your inbox) |
+| `wait_timeout` | integer | No | `0` | Seconds to wait for at least one reply (0 = non-blocking) |
+
+**Returns:**
+
+**Non-blocking mode (wait_timeout=0):**
+```json
+[
+  {
+    "sender_id": "child-abc123",
+    "reply_message": "Task completed successfully",
+    "correlation_id": "2ea0e30e-7ec3-4537-8f38-c059018a3f95",
+    "timestamp": "2025-10-12T15:30:45.123Z"
+  },
+  {
+    "sender_id": "child-def456",
+    "reply_message": "Analysis complete",
+    "correlation_id": "8f3a5c2d-9b1e-4f67-a8d2-1c4e6b9f0a3d",
+    "timestamp": "2025-10-12T15:30:46.456Z"
+  }
+]
+```
+
+**Blocking mode (wait_timeout > 0):**
+Waits up to `wait_timeout` seconds for at least one reply, then returns all available replies (including any that arrived during the wait).
+
+**When to Use:**
+
+This tool is essential when supervisors need to poll for responses from children that used `reply_to_caller`. Use cases:
+
+1. **After Broadcasting**: Poll for replies after using `broadcast_to_children`
+2. **Periodic Status Checks**: Regularly poll to collect progress updates
+3. **Batch Processing**: Wait for multiple children to complete before proceeding
+4. **Coordination**: Gather responses from parallel workers
+
+**Example (Non-blocking Polling):**
+
+```python
+# Supervisor broadcasts task to all children
+await broadcast_to_children(
+    parent_id="supervisor-abc123",
+    message="Analyze your assigned dataset partition"
+)
+
+# Poll periodically for replies
+import time
+all_replies = []
+timeout = 60  # 60 second total timeout
+start_time = time.time()
+
+while time.time() - start_time < timeout:
+    # Non-blocking poll
+    new_replies = await get_pending_replies(
+        instance_id="supervisor-abc123",
+        wait_timeout=0
+    )
+
+    all_replies.extend(new_replies)
+
+    # Check if all children responded
+    if len(all_replies) >= expected_child_count:
+        break
+
+    # Wait before next poll
+    await asyncio.sleep(2)
+
+# Process all collected replies
+for reply in all_replies:
+    print(f"Child {reply['sender_id']}: {reply['reply_message']}")
+```
+
+**Example (Blocking with Timeout):**
+
+```python
+# Wait up to 30 seconds for first reply, then grab all available
+replies = await get_pending_replies(
+    instance_id="supervisor-abc123",
+    wait_timeout=30  # Block up to 30 seconds
+)
+
+if not replies:
+    print("No replies received within timeout")
+else:
+    print(f"Received {len(replies)} replies")
+    for reply in replies:
+        print(f"  - {reply['sender_id']}: {reply['reply_message'][:50]}...")
+```
+
+**Implementation Notes:**
+
+- Replies are drained from an `asyncio.Queue` in the parent's `response_queues` dictionary
+- Non-blocking mode (`wait_timeout=0`) returns immediately with whatever is queued
+- Blocking mode (`wait_timeout > 0`) waits for first reply, then drains remaining queue
+- Returns empty list `[]` if no replies available (non-blocking) or timeout expires (blocking)
+- Each reply includes `sender_id`, `reply_message`, `correlation_id`, and `timestamp`
+
+---
+
 #### get_instance_output
 
 Get recent output from a Claude instance.
@@ -800,6 +908,7 @@ Madrox implements lightweight bidirectional messaging using in-memory asyncio pr
 
 - `send_to_instance` (with `wait_for_response=True`)
 - `reply_to_caller` (child instances only)
+- `get_pending_replies` (parent instances poll for queued replies)
 - `broadcast_to_children`
 - `get_children`
 

@@ -7,14 +7,19 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from fastmcp import FastMCP
+
 from .logging_manager import LoggingManager
 from .tmux_instance_manager import TmuxInstanceManager
 
 logger = logging.getLogger(__name__)
 
+# Create FastMCP instance at module level for decorator use
+mcp = FastMCP("claude-orchestrator")
+
 
 class InstanceManager:
-    """Manages Claude instances and their lifecycle."""
+    """Manages Claude instances and their lifecycle with MCP tools."""
 
     def __init__(self, config: dict[str, Any]):
         """Initialize the instance manager.
@@ -23,6 +28,7 @@ class InstanceManager:
             config: Configuration dictionary
         """
         self.config = config
+        self.mcp = mcp  # Reference module-level mcp instance
         self.instances: dict[str, dict[str, Any]] = {}
 
         # Job tracking for async messages
@@ -53,6 +59,468 @@ class InstanceManager:
         self.main_message_inbox: list[dict[str, Any]] = []
         self._last_main_message_index = -1
         self._main_monitor_task: asyncio.Task | None = None
+
+    @mcp.tool
+    async def spawn_claude(
+        self,
+        name: str,
+        role: str = "general",
+        system_prompt: str | None = None,
+        model: str = "claude-sonnet-4-20250514",
+        bypass_isolation: bool = True,
+        enable_madrox: bool = False,
+        parent_instance_id: str | None = None,
+        wait_for_ready: bool = True,
+    ) -> dict[str, Any]:
+        """Spawn a new Claude instance with specific role and configuration.
+
+        Args:
+            name: Instance name
+            role: Predefined role for the instance
+            system_prompt: Custom system prompt (overrides role)
+            model: Claude model to use (omit to use CLI default)
+            bypass_isolation: Allow full filesystem access (default: true)
+            enable_madrox: Enable madrox MCP server (allows spawning sub-instances)
+            parent_instance_id: Parent instance ID for tracking bidirectional communication
+            wait_for_ready: Wait for instance to initialize (default: true)
+
+        Returns:
+            Dictionary with instance_id and status
+        """
+        instance_id = await self.spawn_instance(
+            name=name,
+            role=role,
+            system_prompt=system_prompt,
+            model=model,
+            bypass_isolation=bypass_isolation,
+            enable_madrox=enable_madrox,
+            parent_instance_id=parent_instance_id,
+            wait_for_ready=wait_for_ready,
+        )
+        return {"instance_id": instance_id, "status": "spawned", "name": name}
+
+    @mcp.tool
+    async def spawn_multiple_instances(
+        self,
+        instances: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Spawn multiple Claude instances in parallel for better performance.
+
+        Args:
+            instances: List of instance configurations to spawn
+
+        Returns:
+            Dictionary with spawned instance IDs and any errors
+        """
+        results = {"spawned": [], "errors": []}
+        for instance_config in instances:
+            try:
+                instance_id = await self.spawn_instance(**instance_config)
+                results["spawned"].append({"instance_id": instance_id, **instance_config})
+            except Exception as e:
+                results["errors"].append({"config": instance_config, "error": str(e)})
+        return results
+
+    @mcp.tool
+    async def send_to_instance(
+        self,
+        instance_id: str,
+        message: str,
+        wait_for_response: bool = False,
+        timeout_seconds: int = 180,
+    ) -> dict[str, Any]:
+        """Send a message to a specific Claude instance (non-blocking by default).
+
+        Args:
+            instance_id: ID of the target instance
+            message: Message to send
+            wait_for_response: Set to true to wait for response
+            timeout_seconds: Timeout in seconds (default 180)
+
+        Returns:
+            Dictionary with response or status
+        """
+        if instance_id not in self.instances:
+            raise ValueError(f"Instance {instance_id} not found")
+
+        instance = self.instances[instance_id]
+
+        # Delegate to TmuxInstanceManager for Claude and Codex instances
+        if instance.get("instance_type") in ["claude", "codex"]:
+            result = await self.tmux_manager.send_message(
+                instance_id=instance_id,
+                message=message,
+                wait_for_response=wait_for_response,
+                timeout_seconds=timeout_seconds,
+            )
+            return result or {"status": "message_sent"}
+
+        # No other instance types supported
+        raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
+
+    @mcp.tool
+    async def send_to_multiple_instances(
+        self,
+        instance_ids: list[str],
+        message: str,
+        wait_for_responses: bool = False,
+        timeout_seconds: int = 180,
+    ) -> dict[str, Any]:
+        """Send the same message to multiple instances in parallel.
+
+        Args:
+            instance_ids: List of instance IDs to send to
+            message: Message to send
+            wait_for_responses: Wait for responses from all instances
+            timeout_seconds: Timeout in seconds
+
+        Returns:
+            Dictionary with results for each instance
+        """
+        results = {"sent": [], "errors": []}
+        tasks = []
+        for instance_id in instance_ids:
+            tasks.append(
+                self.send_to_instance(
+                    instance_id=instance_id,
+                    message=message,
+                    wait_for_response=wait_for_responses,
+                    timeout_seconds=timeout_seconds,
+                )
+            )
+
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for i, instance_id in enumerate(instance_ids):
+            response = responses[i]
+            if isinstance(response, Exception):
+                results["errors"].append({"instance_id": instance_id, "error": str(response)})
+            else:
+                results["sent"].append({"instance_id": instance_id, "response": response})
+
+        return results
+
+    @mcp.tool
+    async def get_instance_output(
+        self,
+        instance_id: str,
+        limit: int = 100,
+        since: str | None = None,
+    ) -> dict[str, Any]:
+        """Get recent output from a Claude instance.
+
+        Args:
+            instance_id: ID of the instance
+            limit: Maximum number of messages to retrieve
+            since: ISO timestamp filter
+
+        Returns:
+            Dictionary with output messages
+        """
+        if instance_id not in self.instances:
+            raise ValueError(f"Instance {instance_id} not found")
+
+        instance = self.instances[instance_id]
+
+        # All instances use tmux now - get history from tmux manager
+        if instance_id not in self.tmux_manager.message_history:
+            return {"instance_id": instance_id, "output": []}
+
+        messages = self.tmux_manager.message_history[instance_id]
+
+        # Convert messages to output format
+        output_messages = []
+        for i, msg in enumerate(messages):
+            output_messages.append(
+                {
+                    "instance_id": instance_id,
+                    "timestamp": instance["last_activity"],  # Would be better to track per-message
+                    "type": "user" if msg["role"] == "user" else "response",
+                    "content": msg["content"],
+                    "message_index": i,
+                }
+            )
+
+        # Apply since filter if provided
+        if since:
+            since_dt = datetime.fromisoformat(since)
+            # Note: In a real implementation, we'd track timestamps per message
+            # For now, we can only filter based on the last activity
+            last_activity = datetime.fromisoformat(instance["last_activity"])
+            if last_activity < since_dt:
+                return {"instance_id": instance_id, "output": []}
+
+        # Apply limit
+        if len(output_messages) > limit:
+            output_messages = output_messages[-limit:]
+
+        return {"instance_id": instance_id, "output": output_messages}
+
+    async def _get_output_messages(
+        self, instance_id: str, limit: int = 100, since: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Internal helper to get output messages for an instance.
+
+        Args:
+            instance_id: Instance ID
+            limit: Maximum number of messages
+            since: ISO timestamp filter
+
+        Returns:
+            List of output messages
+        """
+        if instance_id not in self.instances:
+            raise ValueError(f"Instance {instance_id} not found")
+
+        instance = self.instances[instance_id]
+
+        # All instances use tmux now - get history from tmux manager
+        if instance_id not in self.tmux_manager.message_history:
+            return []
+
+        messages = self.tmux_manager.message_history[instance_id]
+
+        # Convert messages to output format
+        output_messages = []
+        for i, msg in enumerate(messages):
+            output_messages.append(
+                {
+                    "instance_id": instance_id,
+                    "timestamp": instance["last_activity"],
+                    "type": "user" if msg["role"] == "user" else "response",
+                    "content": msg["content"],
+                    "message_index": i,
+                }
+            )
+
+        # Apply since filter if provided
+        if since:
+            since_dt = datetime.fromisoformat(since)
+            last_activity = datetime.fromisoformat(instance["last_activity"])
+            if last_activity < since_dt:
+                return []
+
+        # Apply limit
+        if len(output_messages) > limit:
+            output_messages = output_messages[-limit:]
+
+        return output_messages
+
+    @mcp.tool
+    async def get_multiple_instance_outputs(
+        self,
+        instance_ids: list[str],
+        limit: int = 100,
+        since: str | None = None,
+    ) -> dict[str, Any]:
+        """Get recent output from multiple instances.
+
+        Args:
+            instance_ids: List of instance IDs
+            limit: Maximum number of messages per instance
+            since: ISO timestamp filter
+
+        Returns:
+            Dictionary with outputs for each instance
+        """
+        results = {"outputs": [], "errors": []}
+        for instance_id in instance_ids:
+            try:
+                output = await self._get_output_messages(instance_id, limit, since)
+                results["outputs"].append({"instance_id": instance_id, "output": output})
+            except Exception as e:
+                results["errors"].append({"instance_id": instance_id, "error": str(e)})
+        return results
+
+    @mcp.tool
+    async def terminate_multiple_instances(
+        self,
+        instance_ids: list[str],
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Terminate multiple Claude instances in parallel.
+
+        Args:
+            instance_ids: List of instance IDs to terminate
+            force: Force termination for all instances
+
+        Returns:
+            Dictionary with termination results
+        """
+        results = {"terminated": [], "failed": []}
+        for iid in instance_ids:
+            try:
+                success = await self._terminate_instance_internal(iid, force=force)
+                if success:
+                    results["terminated"].append(iid)
+                else:
+                    results["failed"].append(iid)
+            except Exception as e:
+                results["failed"].append({"instance_id": iid, "error": str(e)})
+        return results
+
+    def _get_instance_status_internal(self, instance_id: str | None = None) -> dict[str, Any]:
+        """Internal method to get status of instance(s).
+
+        Args:
+            instance_id: Specific instance ID, or None for all instances
+
+        Returns:
+            Instance status data
+        """
+        if instance_id:
+            if instance_id not in self.instances:
+                raise ValueError(f"Instance {instance_id} not found")
+            return self.instances[instance_id].copy()
+        else:
+            return {
+                "instances": {iid: inst.copy() for iid, inst in self.instances.items()},
+                "total_instances": len(self.instances),
+                "active_instances": len(
+                    [
+                        i
+                        for i in self.instances.values()
+                        if i["state"] in ["running", "idle", "busy"]
+                    ]
+                ),
+                "total_tokens_used": self.total_tokens_used,
+                "total_cost": self.total_cost,
+            }
+
+    @mcp.tool
+    def get_instance_status(
+        self,
+        instance_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get status for a single instance or all instances.
+
+        Args:
+            instance_id: Optional instance ID (omit for all instances)
+
+        Returns:
+            Dictionary with instance status information
+        """
+        return self._get_instance_status_internal(instance_id=instance_id)
+
+    @mcp.tool
+    async def get_live_instance_status(
+        self,
+        instance_id: str,
+    ) -> dict[str, Any]:
+        """Get live status with execution time and last activity for an instance.
+
+        Args:
+            instance_id: Instance ID
+
+        Returns:
+            Dictionary with live status including execution_time, state, last_activity
+        """
+        if instance_id not in self.instances:
+            raise ValueError(f"Instance {instance_id} not found")
+
+        instance = self.instances[instance_id]
+
+        # Calculate execution time
+        created_at = datetime.fromisoformat(instance["created_at"])
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+
+        current_time = datetime.now(UTC)
+        execution_time = (current_time - created_at).total_seconds()
+
+        return {
+            "instance_id": instance_id,
+            "execution_time": execution_time,
+            "state": instance["state"],
+            "last_activity": instance["last_activity"],
+            "name": instance.get("name"),
+            "role": instance.get("role"),
+        }
+
+    @mcp.tool
+    async def reply_to_caller(
+        self,
+        instance_id: str,
+        reply_message: str,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Reply back to the instance/coordinator that sent you a message.
+
+        Args:
+            instance_id: Your instance ID (the responder)
+            reply_message: Your reply content
+            correlation_id: Message ID from the incoming message (optional)
+
+        Returns:
+            Dictionary with reply status
+        """
+        return await self.handle_reply_to_caller(
+            instance_id=instance_id,
+            reply_message=reply_message,
+            correlation_id=correlation_id,
+        )
+
+    async def _get_pending_replies_internal(
+        self,
+        instance_id: str,
+        wait_timeout: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Internal method to check for pending replies.
+
+        Args:
+            instance_id: Instance ID to check inbox for
+            wait_timeout: Seconds to wait for at least one reply (0 = non-blocking)
+
+        Returns:
+            List of pending reply messages
+        """
+        if instance_id not in self.instances:
+            raise ValueError(f"Instance {instance_id} not found")
+
+        # Get the response queue for this instance
+        if instance_id not in self.tmux_manager.response_queues:
+            return []
+
+        queue = self.tmux_manager.response_queues[instance_id]
+        replies = []
+
+        # If wait_timeout > 0, wait for at least one message
+        if wait_timeout > 0:
+            try:
+                first_reply = await asyncio.wait_for(queue.get(), timeout=wait_timeout)
+                replies.append(first_reply)
+            except asyncio.TimeoutError:
+                return []
+
+        # Drain remaining queued messages (non-blocking)
+        while not queue.empty():
+            try:
+                reply = queue.get_nowait()
+                replies.append(reply)
+            except asyncio.QueueEmpty:
+                break
+
+        return replies
+
+    @mcp.tool
+    async def get_pending_replies(
+        self,
+        instance_id: str,
+        wait_timeout: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Check for pending replies from children or other instances.
+
+        When children use reply_to_caller, their replies are queued in the parent's
+        response queue. This tool allows the parent to poll for these queued replies.
+
+        Args:
+            instance_id: Your instance ID (to check your inbox)
+            wait_timeout: Seconds to wait for at least one reply (0 = non-blocking)
+
+        Returns:
+            List of pending reply messages from children
+        """
+        return await self._get_pending_replies_internal(instance_id, wait_timeout)
 
     async def spawn_instance(
         self,
@@ -104,29 +572,30 @@ class InstanceManager:
         self.instances[instance_id] = self.tmux_manager.instances[instance_id]
         return instance_id
 
+    @mcp.tool
     async def spawn_codex(
         self,
-        name: str | None = None,
+        name: str,
         model: str | None = None,
         sandbox_mode: str = "workspace-write",
         profile: str | None = None,
         initial_prompt: str | None = None,
         bypass_isolation: bool = False,
-        **kwargs,
-    ) -> str:
-        """Spawn a new Codex CLI instance.
+        parent_instance_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Spawn a new Codex CLI instance (OpenAI models only).
 
         Args:
-            name: Human-readable name for the instance
-            model: Codex model to use - OpenAI models only (None = use CLI default, typically gpt-5-codex)
+            name: Instance name
+            model: OpenAI model to use (e.g., gpt-5-codex, gpt-4, gpt-4o)
             sandbox_mode: Sandbox policy for shell commands
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session
             bypass_isolation: Allow full filesystem access
-            **kwargs: Additional configuration options
+            parent_instance_id: Parent instance ID for tracking
 
         Returns:
-            Instance ID
+            Dictionary with instance_id and status
         """
         # Validate model - Codex only supports OpenAI models
         if model and ("claude" in model.lower() or "anthropic" in model.lower()):
@@ -145,50 +614,18 @@ class InstanceManager:
             profile=profile,
             initial_prompt=initial_prompt,
             instance_type="codex",
-            **kwargs,
+            parent_instance_id=parent_instance_id,
         )
         # Copy instance to main instances dict for unified tracking
         self.instances[instance_id] = self.tmux_manager.instances[instance_id]
         self.instances[instance_id]["instance_type"] = "codex"
-        return instance_id
+        return {
+            "instance_id": instance_id,
+            "status": "spawned",
+            "name": name,
+            "instance_type": "codex",
+        }
 
-    async def send_to_instance(
-        self,
-        instance_id: str,
-        message: str,
-        wait_for_response: bool = True,
-        timeout_seconds: int = 30,
-        priority: int = 0,
-    ) -> dict[str, Any] | None:
-        """Send a message to a Claude or Codex instance.
-
-        Args:
-            instance_id: Target instance ID
-            message: Message to send
-            wait_for_response: Whether to wait for response
-            timeout_seconds: Response timeout
-            priority: Message priority (currently unused)
-
-        Returns:
-            If wait_for_response=True: Response data dict
-            If wait_for_response=False: Dict with job_id and status
-        """
-        if instance_id not in self.instances:
-            raise ValueError(f"Instance {instance_id} not found")
-
-        instance = self.instances[instance_id]
-
-        # Delegate to TmuxInstanceManager for Claude and Codex instances
-        if instance.get("instance_type") in ["claude", "codex"]:
-            return await self.tmux_manager.send_message(
-                instance_id=instance_id,
-                message=message,
-                wait_for_response=wait_for_response,
-                timeout_seconds=timeout_seconds,
-            )
-
-        # No other instance types supported
-        raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
 
     async def handle_reply_to_caller(
         self,
@@ -219,6 +656,7 @@ class InstanceManager:
             correlation_id=correlation_id,
         )
 
+    @mcp.tool
     async def get_job_status(
         self, job_id: str, wait_for_completion: bool = True, max_wait: int = 120
     ) -> dict[str, Any] | None:
@@ -251,8 +689,8 @@ class InstanceManager:
         # Return current status after max wait
         return self.jobs[job_id]
 
-    def get_children(self, parent_id: str) -> list[dict[str, Any]]:
-        """Get all child instances of a parent.
+    def _get_children_internal(self, parent_id: str) -> list[dict[str, Any]]:
+        """Internal method to get all child instances of a parent.
 
         Args:
             parent_id: Parent instance ID
@@ -277,6 +715,19 @@ class InstanceManager:
                 )
         return children
 
+    @mcp.tool
+    def get_children(self, parent_id: str) -> list[dict[str, Any]]:
+        """Get all child instances of a parent.
+
+        Args:
+            parent_id: Parent instance ID
+
+        Returns:
+            List of child instance details (excludes terminated instances)
+        """
+        return self._get_children_internal(parent_id)
+
+    @mcp.tool
     async def broadcast_to_children(
         self, parent_id: str, message: str, wait_for_responses: bool = False
     ) -> dict[str, Any]:
@@ -290,7 +741,7 @@ class InstanceManager:
         Returns:
             Dictionary with results for each child
         """
-        children = self.get_children(parent_id)
+        children = self._get_children_internal(parent_id)
 
         if not children:
             return {"children_count": 0, "results": []}
@@ -336,6 +787,7 @@ class InstanceManager:
             "results": formatted_results,
         }
 
+    @mcp.tool
     def get_instance_tree(self) -> str:
         """Build a hierarchical tree view of all instances.
 
@@ -385,7 +837,7 @@ class InstanceManager:
         lines.append(line)
 
         # Get children and recurse
-        children = self.get_children(instance_id)
+        children = self._get_children_internal(instance_id)
         child_count = len(children)
 
         # Sort children by name
@@ -399,74 +851,24 @@ class InstanceManager:
                 new_prefix = prefix + ("    " if is_last else "│   ")
             self._build_tree_recursive(child["id"], new_prefix, is_last_child, lines)
 
-    async def get_instance_output(
-        self, instance_id: str, since: str | None = None, limit: int = 100
-    ) -> list[dict[str, Any]]:
-        """Get recent output from an instance.
-
-        Args:
-            instance_id: Instance ID
-            since: ISO timestamp to get messages since
-            limit: Maximum number of messages
-
-        Returns:
-            List of output messages
-        """
-        if instance_id not in self.instances:
-            raise ValueError(f"Instance {instance_id} not found")
-
-        instance = self.instances[instance_id]
-
-        # All instances use tmux now - get history from tmux manager
-        if instance_id not in self.tmux_manager.message_history:
-            return []
-        messages = self.tmux_manager.message_history[instance_id]
-
-        # Convert messages to output format
-        output_messages = []
-        for i, msg in enumerate(messages):
-            output_messages.append(
-                {
-                    "instance_id": instance_id,
-                    "timestamp": instance["last_activity"],  # Would be better to track per-message
-                    "type": "user" if msg["role"] == "user" else "response",
-                    "content": msg["content"],
-                    "message_index": i,
-                }
-            )
-
-        # Apply since filter if provided
-        if since:
-            since_dt = datetime.fromisoformat(since)
-            # Note: In a real implementation, we'd track timestamps per message
-            # For now, we can only filter based on the last activity
-            last_activity = datetime.fromisoformat(instance["last_activity"])
-            if last_activity < since_dt:
-                return []
-
-        # Apply limit
-        if len(output_messages) > limit:
-            return output_messages[-limit:]
-
-        return output_messages
-
+    @mcp.tool
     async def coordinate_instances(
         self,
         coordinator_id: str,
         participant_ids: list[str],
         task_description: str,
         coordination_type: str = "sequential",
-    ) -> str:
-        """Coordinate multiple instances for a task.
+    ) -> dict[str, Any]:
+        """Coordinate multiple instances for a complex task.
 
         Args:
-            coordinator_id: ID of coordinating instance
-            participant_ids: List of participating instance IDs
-            task_description: Description of the coordination task
-            coordination_type: Type of coordination (sequential, parallel, consensus)
+            coordinator_id: Coordinating instance ID
+            participant_ids: Participant instance IDs
+            task_description: Description of the task
+            coordination_type: How to coordinate (sequential, parallel, consensus)
 
         Returns:
-            Coordination task ID
+            Dictionary with coordination results
         """
         task_id = str(uuid.uuid4())
 
@@ -496,10 +898,10 @@ class InstanceManager:
         # Start coordination process in background
         asyncio.create_task(self._execute_coordination(coordination_task))
 
-        return task_id
+        return {"task_id": task_id, "status": "started"}
 
-    async def interrupt_instance(self, instance_id: str) -> dict[str, Any]:
-        """Send interrupt signal (Ctrl+C) to a running instance.
+    async def _interrupt_instance_internal(self, instance_id: str) -> dict[str, Any]:
+        """Internal method to interrupt an instance.
 
         Args:
             instance_id: Instance ID to interrupt
@@ -522,8 +924,47 @@ class InstanceManager:
         # No other instance types supported
         raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
 
-    async def terminate_instance(self, instance_id: str, force: bool = False) -> bool:
-        """Terminate a Claude or Codex instance.
+    @mcp.tool
+    async def interrupt_instance(self, instance_id: str) -> dict[str, Any]:
+        """Send interrupt signal (Ctrl+C) to a running instance.
+
+        Args:
+            instance_id: Instance ID to interrupt
+
+        Returns:
+            Status dict with success/failure info
+        """
+        return await self._interrupt_instance_internal(instance_id)
+
+    @mcp.tool
+    async def interrupt_multiple_instances(
+        self,
+        instance_ids: list[str],
+    ) -> dict[str, Any]:
+        """Send interrupt signal (Ctrl+C) to multiple running instances.
+
+        Args:
+            instance_ids: List of instance IDs to interrupt
+
+        Returns:
+            Dictionary with interrupt results for each instance
+        """
+        results = {"interrupted": [], "failed": []}
+        for instance_id in instance_ids:
+            try:
+                result = await self._interrupt_instance_internal(instance_id)
+                if result.get("success"):
+                    results["interrupted"].append(instance_id)
+                else:
+                    results["failed"].append(
+                        {"instance_id": instance_id, "error": "Failed to interrupt"}
+                    )
+            except Exception as e:
+                results["failed"].append({"instance_id": instance_id, "error": str(e)})
+        return results
+
+    async def _terminate_instance_internal(self, instance_id: str, force: bool = False) -> bool:
+        """Internal method to terminate a Claude or Codex instance.
 
         Args:
             instance_id: Instance ID to terminate
@@ -548,33 +989,30 @@ class InstanceManager:
         # No other instance types supported
         raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
 
-    def get_instance_status(self, instance_id: str | None = None) -> dict[str, Any]:
-        """Get status of instance(s).
+    @mcp.tool
+    async def terminate_instance(
+        self,
+        instance_id: str,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Terminate a Claude instance.
 
         Args:
-            instance_id: Specific instance ID, or None for all instances
+            instance_id: ID of the instance to terminate
+            force: Force termination even if busy
 
         Returns:
-            Instance status data
+            Dictionary with termination status
         """
-        if instance_id:
-            if instance_id not in self.instances:
-                raise ValueError(f"Instance {instance_id} not found")
-            return self.instances[instance_id].copy()
-        else:
-            return {
-                "instances": {iid: inst.copy() for iid, inst in self.instances.items()},
-                "total_instances": len(self.instances),
-                "active_instances": len(
-                    [
-                        i
-                        for i in self.instances.values()
-                        if i["state"] in ["running", "idle", "busy"]
-                    ]
-                ),
-                "total_tokens_used": self.total_tokens_used,
-                "total_cost": self.total_cost,
-            }
+        success = await self._terminate_instance_internal(
+            instance_id=instance_id,
+            force=force,
+        )
+        return {
+            "instance_id": instance_id,
+            "status": "terminated" if success else "failed",
+            "success": success,
+        }
 
     def _get_role_prompt(self, role: str) -> str:
         """Get system prompt for a role by loading from resources/prompts directory.
@@ -714,7 +1152,7 @@ class InstanceManager:
 
                 # Get recent messages from main instance
                 try:
-                    messages = await self.get_instance_output(self.main_instance_id, limit=100)
+                    messages = await self._get_output_messages(self.main_instance_id, limit=100)
 
                     # Process new messages
                     for msg in messages:
@@ -735,6 +1173,7 @@ class InstanceManager:
                 logger.error(f"Error in main monitor: {e}")
                 await asyncio.sleep(5)
 
+    @mcp.tool
     def get_main_instance_id(self) -> str | None:
         """Get the main instance ID for child instances to communicate with.
 
@@ -771,30 +1210,30 @@ class InstanceManager:
                 last_activity = last_activity.replace(tzinfo=UTC)
             if current_time - last_activity > timedelta(minutes=timeout_minutes):
                 logger.warning(f"Instance {instance_id} timed out, terminating")
-                await self.terminate_instance(instance_id, force=True)
+                await self._terminate_instance_internal(instance_id, force=True)
                 continue
 
             # Check resource limits
             max_tokens = instance.get("resource_limits", {}).get("max_total_tokens")
             if max_tokens and instance["total_tokens_used"] > max_tokens:
                 logger.warning(f"Instance {instance_id} exceeded token limit, terminating")
-                await self.terminate_instance(instance_id, force=True)
+                await self._terminate_instance_internal(instance_id, force=True)
                 continue
 
             max_cost = instance.get("resource_limits", {}).get("max_cost")
             if max_cost and instance["total_cost"] > max_cost:
                 logger.warning(f"Instance {instance_id} exceeded cost limit, terminating")
-                await self.terminate_instance(instance_id, force=True)
+                await self._terminate_instance_internal(instance_id, force=True)
                 continue
 
         logger.info(
             f"Health check complete. Active instances: {len([i for i in self.instances.values() if i['state'] not in ['terminated', 'error']])}"
         )
 
-    async def retrieve_instance_file(
+    async def _retrieve_instance_file_internal(
         self, instance_id: str, filename: str, destination_path: str | None = None
     ) -> str | None:
-        """Retrieve a file from an instance's workspace directory.
+        """Internal method to retrieve a file from an instance's workspace directory.
 
         Args:
             instance_id: The instance ID
@@ -834,8 +1273,73 @@ class InstanceManager:
             logger.error(f"Failed to retrieve file: {e}")
             return None
 
-    async def list_instance_files(self, instance_id: str) -> list[str] | None:
-        """List all files in an instance's workspace directory.
+    @mcp.tool
+    async def retrieve_instance_file(
+        self, instance_id: str, filename: str, destination_path: str | None = None
+    ) -> str | None:
+        """Retrieve a file from an instance's workspace directory.
+
+        Args:
+            instance_id: The instance ID
+            filename: Name of the file to retrieve
+            destination_path: Optional destination path (defaults to current directory)
+
+        Returns:
+            Path to the retrieved file, or None if not found
+        """
+        return await self._retrieve_instance_file_internal(instance_id, filename, destination_path)
+
+    @mcp.tool
+    async def retrieve_multiple_instance_files(
+        self,
+        retrievals: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Retrieve files from multiple instances.
+
+        Args:
+            retrievals: List of dicts with instance_id, filename, destination_path
+
+        Returns:
+            Dictionary with retrieved file paths and errors
+        """
+        results = {"retrieved": [], "errors": []}
+        for retrieval in retrievals:
+            try:
+                instance_id = retrieval["instance_id"]
+                filename = retrieval["filename"]
+                destination_path = retrieval.get("destination_path")
+
+                path = await self._retrieve_instance_file_internal(
+                    instance_id, filename, destination_path
+                )
+                if path:
+                    results["retrieved"].append(
+                        {
+                            "instance_id": instance_id,
+                            "filename": filename,
+                            "path": path,
+                        }
+                    )
+                else:
+                    results["errors"].append(
+                        {
+                            "instance_id": instance_id,
+                            "filename": filename,
+                            "error": "File not found",
+                        }
+                    )
+            except Exception as e:
+                results["errors"].append(
+                    {
+                        "instance_id": retrieval.get("instance_id"),
+                        "filename": retrieval.get("filename"),
+                        "error": str(e),
+                    }
+                )
+        return results
+
+    async def _list_instance_files_internal(self, instance_id: str) -> list[str] | None:
+        """Internal method to list all files in an instance's workspace directory.
 
         Args:
             instance_id: The instance ID
@@ -867,6 +1371,59 @@ class InstanceManager:
             logger.error(f"Failed to list files: {e}")
             return []
 
+    @mcp.tool
+    async def list_instance_files(self, instance_id: str) -> list[str] | None:
+        """List all files in an instance's workspace directory.
+
+        Args:
+            instance_id: The instance ID
+
+        Returns:
+            List of file paths relative to workspace, or None if instance not found
+        """
+        return await self._list_instance_files_internal(instance_id)
+
+    @mcp.tool
+    async def list_multiple_instance_files(
+        self,
+        instance_ids: list[str],
+    ) -> dict[str, Any]:
+        """List files for multiple instances.
+
+        Args:
+            instance_ids: List of instance IDs
+
+        Returns:
+            Dictionary with file listings and errors for each instance
+        """
+        results = {"listings": [], "errors": []}
+        for instance_id in instance_ids:
+            try:
+                files = await self._list_instance_files_internal(instance_id)
+                if files is not None:
+                    results["listings"].append(
+                        {
+                            "instance_id": instance_id,
+                            "files": files,
+                            "file_count": len(files),
+                        }
+                    )
+                else:
+                    results["errors"].append(
+                        {
+                            "instance_id": instance_id,
+                            "error": "Instance not found",
+                        }
+                    )
+            except Exception as e:
+                results["errors"].append(
+                    {
+                        "instance_id": instance_id,
+                        "error": str(e),
+                    }
+                )
+        return results
+
     async def get_instance_logs(
         self, instance_id: str, log_type: str = "instance", tail: int = 100
     ) -> list[str]:
@@ -886,6 +1443,7 @@ class InstanceManager:
 
         return self.logging_manager.get_instance_logs(instance_id, log_type, tail)
 
+    @mcp.tool
     async def get_tmux_pane_content(self, instance_id: str, lines: int = 100) -> str:
         """Capture the current tmux pane content for an instance.
 
