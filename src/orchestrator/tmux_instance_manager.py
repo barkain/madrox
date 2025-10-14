@@ -139,7 +139,7 @@ class TmuxInstanceManager:
                         logger.info(f"Adding Codex MCP server: {codex_cmd}")
 
                         pane.send_keys(codex_cmd, enter=True)
-                        time.sleep(0.5)  # Wait for command to complete
+                        time.sleep(0.2)  # Optimized: 200ms sufficient for command completion
 
                     elif transport == "http":
                         url = server_config.get("url")
@@ -178,7 +178,7 @@ class TmuxInstanceManager:
                             toml.dump(config, f)
 
                         logger.info(f"Added HTTP MCP server '{server_name}' to Codex config: {url}")
-                        time.sleep(0.2)  # Brief delay for filesystem
+                        time.sleep(0.05)  # Optimized: 50ms sufficient for filesystem sync
 
                 except Exception as e:
                     logger.error(
@@ -531,7 +531,7 @@ class TmuxInstanceManager:
                     logger.debug("Sent pending system prompt")
 
                     # Wait for Claude to process system prompt
-                    await asyncio.sleep(8)
+                    await asyncio.sleep(0.5)  # Minimal delay - Claude processes immediately
 
                 # Clear the pending flag
                 instance["_system_prompt_pending"] = False
@@ -1099,13 +1099,13 @@ class TmuxInstanceManager:
         logger.debug(f"Started {instance_type} CLI in tmux session: {cmd}")
 
         # Adaptive wait - poll until CLI is ready
-        # MCP configuration can take 45+ seconds to load
-        max_init_wait = 60  # Increased from 30 to handle MCP server loading
+        # Performance-optimized: fast polling with early exit detection
+        max_init_wait = 6  # Optimized: Claude ready in 2-4s, 6s allows margin
         init_start = time.time()
         cli_ready = False
 
         while time.time() - init_start < max_init_wait:
-            await asyncio.sleep(1)  # Check every second
+            await asyncio.sleep(0.15)  # Optimized polling: 150ms balance between responsiveness and CPU
             output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
 
             # Detect ready state by checking for interactive indicators
@@ -1118,14 +1118,16 @@ class TmuxInstanceManager:
                     cli_ready = True
                     break
             else:
-                # Claude ready when it shows "What would you like" or similar ready prompt
+                # Claude ready when it shows interactive prompt indicators
                 # CRITICAL: Must see the actual ready message, not just initialization output
                 if any(
                     indicator in output
                     for indicator in [
-                        "What would you like",  # Standard ready prompt
-                        "How can I help",  # Alternative ready prompt
-                        "ready to assist",  # Another variant
+                        "Try \"",  # Claude Code v2 ready prompt: 'Try "...'
+                        "⏵⏵",  # Interactive prompt indicator
+                        "bypass permissions",  # Permission mode indicator (ready)
+                        "What would you like",  # Legacy prompt
+                        "How can I help",  # Alternative prompt
                     ]
                 ):
                     cli_ready = True
@@ -1143,7 +1145,7 @@ class TmuxInstanceManager:
         # Even after showing ready prompt, Claude needs time to be ready for C-j sequences
         if instance_type != "codex":
             logger.debug("Additional safety wait for multiline input readiness...")
-            await asyncio.sleep(3)  # Extra 3 seconds after ready detection
+            await asyncio.sleep(0.15)  # Optimized: 150ms sufficient for full readiness
             logger.debug("Ready for multiline input")
 
         # Handle initial prompts based on instance type
@@ -1152,7 +1154,7 @@ class TmuxInstanceManager:
             if initial_prompt := instance.get("initial_prompt"):
                 pane.send_keys(initial_prompt, enter=True)
                 logger.debug("Sent initial prompt to Codex instance")
-                await asyncio.sleep(5)
+                await asyncio.sleep(2)  # Optimized: 2s sufficient for Codex to process initial prompt
         else:
             # For Claude, DEFER system prompt until first message
             # This ensures Claude is fully ready and avoids shell execution
@@ -1190,6 +1192,8 @@ class TmuxInstanceManager:
                         f"\nWhen spawning child instances, pass your instance_id as parent_instance_id:\n"
                         f"  spawn_claude(name='child', role='general', parent_instance_id='{instance['id']}')\n"
                         f"This enables bidirectional communication between parent and child.\n\n"
+                        f"PERFORMANCE TIP: When spawning children, use timeout_seconds=10 for single instance spawns,\n"
+                        f"and timeout_seconds=20 for multiple instances (spawn_multiple_instances with 2+ children).\n\n"
                         f"HIERARCHICAL MESSAGE PASSING PATTERN:\n"
                         f"- Children send messages to you (their parent) using: send_to_instance(parent_instance_id='{instance['id']}', message='...')\n"
                         f"- You coordinate and decide how to route messages between children\n"
@@ -1278,10 +1282,10 @@ class TmuxInstanceManager:
             # Add newline between lines (not after last line)
             if i < total_lines - 1:
                 pane.send_keys("C-j", enter=False, literal=False)
-                time.sleep(0.01)  # Small delay to avoid paste detection
+                time.sleep(0.005)  # Optimized: 5ms sufficient to avoid paste detection
 
         # Final Enter to submit
-        time.sleep(0.05)
+        time.sleep(0.02)  # Optimized: 20ms sufficient for final submission
         pane.send_keys("", enter=True)
 
         logger.debug(f"Sent multiline message ({len(message)} chars, {total_lines} lines)")
