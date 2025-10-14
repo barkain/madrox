@@ -136,10 +136,52 @@ class MCPAdapter:
                     tool_name = params.get("name")
                     tool_args = params.get("arguments", {})
 
+                    # AUTO-DETECT CALLER INSTANCE (for parent_instance_id injection)
+                    # Strategy: Find instances currently in "busy" state - they're actively executing tools
+                    caller_instance_id = None
+
+                    # First pass: Look for busy instances (actively making MCP calls)
+                    busy_instances = []
+                    for instance_id, instance_data in self.manager.instances.items():
+                        if instance_data.get("state") == "busy" and instance_data.get("enable_madrox"):
+                            busy_instances.append((instance_id, instance_data.get("last_activity")))
+
+                    if busy_instances:
+                        # If multiple busy instances, pick most recently active
+                        busy_instances.sort(key=lambda x: x[1] if x[1] else "", reverse=True)
+                        caller_instance_id = busy_instances[0][0]
+                        logger.info(f"Auto-detected BUSY caller instance: {caller_instance_id}")
+                    else:
+                        # Fallback: Find most recently active instance with madrox that has made requests
+                        latest_activity = None
+                        for instance_id, instance_data in self.manager.instances.items():
+                            if not instance_data.get("enable_madrox", False):
+                                continue
+                            if instance_data.get("state") == "terminated":
+                                continue
+                            if instance_data.get("request_count", 0) == 0:
+                                continue
+
+                            last_activity = instance_data.get("last_activity")
+                            if last_activity:
+                                if latest_activity is None or last_activity > latest_activity:
+                                    latest_activity = last_activity
+                                    caller_instance_id = instance_id
+
+                        if caller_instance_id:
+                            logger.info(f"Auto-detected ACTIVE caller instance (fallback): {caller_instance_id}")
+
                     # Execute the tool
                     if tool_name == "spawn_claude":
-                        # Supervision pattern validation: Workers MUST have madrox enabled
+                        # AUTO-INJECT parent_instance_id if not provided and caller detected
                         parent_id = tool_args.get("parent_instance_id")
+                        if not parent_id and caller_instance_id:
+                            parent_id = caller_instance_id
+                            logger.info(
+                                f"Auto-injected parent_instance_id={caller_instance_id} for spawn_claude call from managed instance"
+                            )
+
+                        # Supervision pattern validation: Workers MUST have madrox enabled
                         enable_madrox = tool_args.get("enable_madrox", True)
 
                         if parent_id and not enable_madrox:
@@ -175,8 +217,15 @@ class MCPAdapter:
                         # Create spawn tasks for all instances
                         spawn_tasks = []
                         for instance_config in instances_config:
-                            # Supervision pattern validation: Workers MUST have madrox enabled
+                            # AUTO-INJECT parent_instance_id if not provided and caller detected
                             parent_id = instance_config.get("parent_instance_id")
+                            if not parent_id and caller_instance_id:
+                                parent_id = caller_instance_id
+                                logger.info(
+                                    f"Auto-injected parent_instance_id={caller_instance_id} for '{instance_config.get('name')}' in spawn_multiple_instances"
+                                )
+
+                            # Supervision pattern validation: Workers MUST have madrox enabled
                             enable_madrox = instance_config.get("enable_madrox", True)
 
                             if parent_id and not enable_madrox:
