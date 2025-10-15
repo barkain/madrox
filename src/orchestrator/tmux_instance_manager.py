@@ -63,6 +63,17 @@ class TmuxInstanceManager:
 
         self.server_port = int(os.getenv("ORCHESTRATOR_PORT", "8001"))
 
+        # Manager health monitoring
+        self._manager_health_task: asyncio.Task | None = None
+        self._manager_health_check_interval = 30  # seconds
+        self._manager_health_failures = 0
+        self._max_health_failures = 3  # Alert after 3 consecutive failures
+
+        # Start manager health monitoring if shared_state is available
+        if self.shared_state:
+            self._start_manager_health_monitoring()
+            logger.info("Manager health monitoring enabled")
+
     async def _get_from_shared_queue(self, instance_id: str, timeout: int) -> dict:
         """Get message from shared queue with async wrapper.
 
@@ -166,13 +177,44 @@ class TmuxInstanceManager:
                 project_root = Path(__file__).parent.parent.parent
                 orchestrator_script = str(project_root / "run_orchestrator.py")
 
+                # Prepare environment variables for child process
+                env_vars = {
+                    "MADROX_TRANSPORT": "stdio",  # Force STDIO mode
+                }
+
+                # Pass Manager connection details for IPC (Issue #1 fix)
+                if self.shared_state:
+                    import base64
+
+                    # Pass manager address and authkey
+                    # Address can be either (host, port) tuple or Unix socket path (string)
+                    manager_address = self.shared_state.manager_address
+
+                    if isinstance(manager_address, tuple):
+                        # TCP address: (host, port)
+                        manager_host, manager_port = manager_address
+                        env_vars["MADROX_MANAGER_HOST"] = str(manager_host)
+                        env_vars["MADROX_MANAGER_PORT"] = str(manager_port)
+                        logger.debug(
+                            f"Passing Manager IPC credentials to child (TCP): {manager_host}:{manager_port}"
+                        )
+                    else:
+                        # Unix socket path
+                        env_vars["MADROX_MANAGER_SOCKET"] = str(manager_address)
+                        logger.debug(
+                            f"Passing Manager IPC credentials to child (Unix socket): {manager_address}"
+                        )
+
+                    # Encode authkey as base64 for safe environment variable passing
+                    env_vars["MADROX_MANAGER_AUTHKEY"] = base64.b64encode(
+                        self.shared_state.manager_authkey
+                    ).decode("ascii")
+
                 mcp_servers["madrox"] = {
                     "transport": "stdio",
                     "command": sys.executable,  # Use same Python interpreter
                     "args": [orchestrator_script],
-                    "env": {
-                        "MADROX_TRANSPORT": "stdio",  # Force STDIO mode
-                    },
+                    "env": env_vars,
                 }
                 logger.debug(
                     f"Configured Codex instance with STDIO madrox: {sys.executable} {orchestrator_script}"
@@ -312,12 +354,21 @@ class TmuxInstanceManager:
                     continue
 
                 args = server_config.get("args", [])
+                env_vars = server_config.get("env", {})
+
                 # Claude Code expects stdio servers WITHOUT a "type" field
                 # It infers stdio from the presence of "command"
-                mcp_config["mcpServers"][server_name] = {
+                server_entry = {
                     "command": command,
                     "args": args if isinstance(args, list) else [args],
                 }
+
+                # Add environment variables if present
+                if env_vars:
+                    server_entry["env"] = env_vars
+                    logger.debug(f"Adding {len(env_vars)} env vars to MCP server '{server_name}'")
+
+                mcp_config["mcpServers"][server_name] = server_entry
 
             else:
                 logger.warning(
@@ -1055,6 +1106,11 @@ class TmuxInstanceManager:
             # Remove message history
             if instance_id in self.message_history:
                 del self.message_history[instance_id]
+
+            # Clean up shared state resources
+            if self.shared_state:
+                self.shared_state.cleanup_instance(instance_id)
+                logger.debug(f"Cleaned up shared state resources for instance {instance_id}")
 
             # Log termination
             if self.logging_manager:
@@ -1980,3 +2036,167 @@ class TmuxInstanceManager:
             wait_for_response=wait_for_response,
             timeout_seconds=timeout_seconds,
         )
+
+    def _start_manager_health_monitoring(self):
+        """Start background task for manager health monitoring.
+
+        This is called automatically during initialization if shared_state is available.
+        """
+        if not self.shared_state:
+            logger.warning("Cannot start manager health monitoring without shared_state")
+            return
+
+        # Create task for periodic health checks
+        self._manager_health_task = asyncio.create_task(self._manager_health_monitor_loop())
+        logger.info(
+            f"Manager health monitoring started (interval={self._manager_health_check_interval}s)"
+        )
+
+    async def _manager_health_monitor_loop(self):
+        """Background loop that periodically checks Manager daemon health.
+
+        This task runs continuously and checks the Manager daemon health every
+        _manager_health_check_interval seconds. If the manager becomes unresponsive,
+        it logs errors and eventually triggers graceful degradation.
+        """
+        logger.info("Manager health monitor loop started")
+
+        while True:
+            try:
+                # Wait for the check interval
+                await asyncio.sleep(self._manager_health_check_interval)
+
+                # Skip health check if no shared_state (HTTP transport)
+                if not self.shared_state:
+                    continue
+
+                # Perform health check
+                health_result = self.shared_state.health_check(timeout=5.0)
+
+                if health_result["healthy"]:
+                    # Health check passed - reset failure counter
+                    if self._manager_health_failures > 0:
+                        logger.info(
+                            f"Manager health recovered (was {self._manager_health_failures} failures)",
+                            extra={"response_time_ms": health_result["response_time_ms"]},
+                        )
+                    self._manager_health_failures = 0
+                    logger.debug(
+                        f"Manager health check passed ({health_result['response_time_ms']}ms)"
+                    )
+                else:
+                    # Health check failed
+                    self._manager_health_failures += 1
+                    logger.error(
+                        f"Manager health check failed (failure {self._manager_health_failures}/{self._max_health_failures}): {health_result['error']}",
+                        extra={
+                            "manager_alive": health_result.get("manager_alive", False),
+                            "error": health_result["error"],
+                        },
+                    )
+
+                    # Check if we've exceeded failure threshold
+                    if self._manager_health_failures >= self._max_health_failures:
+                        logger.critical(
+                            f"Manager daemon has failed {self._manager_health_failures} consecutive health checks - CRITICAL FAILURE",
+                            extra={
+                                "health_result": health_result,
+                                "active_instances": len(
+                                    [
+                                        i
+                                        for i in self.instances.values()
+                                        if i["state"] not in ["terminated", "error"]
+                                    ]
+                                ),
+                            },
+                        )
+
+                        # Trigger graceful degradation
+                        await self._handle_manager_failure()
+
+                        # Break the loop - manager is dead
+                        break
+
+            except asyncio.CancelledError:
+                logger.info("Manager health monitor loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in manager health monitor loop: {e}", exc_info=True)
+                # Continue monitoring even if there's an error
+                continue
+
+        logger.info("Manager health monitor loop stopped")
+
+    async def _handle_manager_failure(self):
+        """Handle graceful degradation when Manager daemon dies.
+
+        This method is called when the Manager daemon becomes unresponsive after
+        multiple consecutive health check failures. It:
+        1. Logs the critical failure
+        2. Disables shared_state to prevent further IPC attempts
+        3. Optionally terminates affected instances
+        4. Provides error reporting
+        """
+        logger.critical("═" * 80)
+        logger.critical("MANAGER DAEMON FAILURE DETECTED - INITIATING GRACEFUL DEGRADATION")
+        logger.critical("═" * 80)
+
+        if not self.shared_state:
+            logger.warning("Manager already disabled")
+            return
+
+        # Count affected instances
+        active_instances = [
+            (iid, inst)
+            for iid, inst in self.instances.items()
+            if inst["state"] not in ["terminated", "error"]
+        ]
+
+        logger.critical(
+            f"Manager daemon failure will affect {len(active_instances)} active instances",
+            extra={"affected_instances": [iid for iid, _ in active_instances]},
+        )
+
+        # Disable shared_state to prevent further IPC attempts
+        logger.warning("Disabling shared_state to prevent further IPC failures")
+        self.shared_state = None
+
+        # Log audit event if available
+        if self.logging_manager:
+            self.logging_manager.log_audit_event(
+                event_type="manager_daemon_failure",
+                instance_id="orchestrator",
+                details={
+                    "affected_instances_count": len(active_instances),
+                    "affected_instances": [iid for iid, _ in active_instances],
+                    "failure_reason": "Manager daemon unresponsive after multiple health checks",
+                },
+            )
+
+        # Mark all affected instances with error
+        for instance_id, instance in active_instances:
+            instance["error_message"] = "Manager daemon died - bidirectional messaging unavailable"
+            logger.error(
+                f"Instance {instance_id} ({instance.get('name')}) affected by manager failure",
+                extra={"instance_id": instance_id},
+            )
+
+        logger.critical(
+            "Graceful degradation complete. System will continue with degraded functionality."
+        )
+        logger.critical("Bidirectional messaging and IPC features are now DISABLED.")
+        logger.critical("═" * 80)
+
+    async def stop_manager_health_monitoring(self):
+        """Stop the manager health monitoring task.
+
+        This should be called during shutdown to cleanly stop the background task.
+        """
+        if self._manager_health_task and not self._manager_health_task.done():
+            logger.info("Stopping manager health monitoring")
+            self._manager_health_task.cancel()
+            try:
+                await self._manager_health_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Manager health monitoring stopped")
