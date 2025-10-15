@@ -95,10 +95,34 @@ class TmuxInstanceManager:
 
         # Auto-add Madrox if enable_madrox=True and not explicitly configured
         if instance.get("enable_madrox") and "madrox" not in mcp_servers:
-            mcp_servers["madrox"] = {
-                "transport": "http",
-                "url": f"http://localhost:{self.server_port}/mcp",
-            }
+            # Codex only supports STDIO transport, Claude supports both
+            if instance_type == "codex":
+                # Use STDIO transport with our orchestrator as subprocess
+                import sys
+
+                project_root = Path(__file__).parent.parent.parent
+                orchestrator_script = str(project_root / "run_orchestrator.py")
+
+                mcp_servers["madrox"] = {
+                    "transport": "stdio",
+                    "command": sys.executable,  # Use same Python interpreter
+                    "args": [orchestrator_script],
+                    "env": {
+                        "MADROX_TRANSPORT": "stdio",  # Force STDIO mode
+                    },
+                }
+                logger.debug(
+                    f"Configured Codex instance with STDIO madrox: {sys.executable} {orchestrator_script}"
+                )
+            else:
+                # Claude supports HTTP transport
+                mcp_servers["madrox"] = {
+                    "transport": "http",
+                    "url": f"http://localhost:{self.server_port}/mcp",
+                }
+                logger.debug(
+                    f"Configured Claude instance with HTTP madrox: http://localhost:{self.server_port}/mcp"
+                )
 
         # Handle Codex instances differently - use `codex mcp add` commands
         if instance_type == "codex":
@@ -158,6 +182,7 @@ class TmuxInstanceManager:
                         # Read existing config or create new one
                         if codex_config_path.exists():
                             import toml
+
                             config = toml.load(codex_config_path)
                         else:
                             config = {}
@@ -174,6 +199,7 @@ class TmuxInstanceManager:
 
                         # Write config back
                         import toml
+
                         with codex_config_path.open("w") as f:
                             toml.dump(config, f)
 
@@ -1109,7 +1135,9 @@ class TmuxInstanceManager:
         cli_ready = False
 
         while time.time() - init_start < max_init_wait:
-            await asyncio.sleep(0.15)  # Optimized polling: 150ms balance between responsiveness and CPU
+            await asyncio.sleep(
+                0.15
+            )  # Optimized polling: 150ms balance between responsiveness and CPU
             output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
 
             # Detect ready state by checking for interactive indicators
@@ -1127,7 +1155,7 @@ class TmuxInstanceManager:
                 if any(
                     indicator in output
                     for indicator in [
-                        "Try \"",  # Claude Code v2 ready prompt: 'Try "...'
+                        'Try "',  # Claude Code v2 ready prompt: 'Try "...'
                         "⏵⏵",  # Interactive prompt indicator
                         "bypass permissions",  # Permission mode indicator (ready)
                         "What would you like",  # Legacy prompt
@@ -1158,7 +1186,9 @@ class TmuxInstanceManager:
             if initial_prompt := instance.get("initial_prompt"):
                 pane.send_keys(initial_prompt, enter=True)
                 logger.debug("Sent initial prompt to Codex instance")
-                await asyncio.sleep(2)  # Optimized: 2s sufficient for Codex to process initial prompt
+                await asyncio.sleep(
+                    2
+                )  # Optimized: 2s sufficient for Codex to process initial prompt
         else:
             # For Claude, DEFER system prompt until first message
             # This ensures Claude is fully ready and avoids shell execution
@@ -1636,7 +1666,10 @@ class TmuxInstanceManager:
                 "instance_id": instance_id,
                 "error": str(e),
             }
-    async def get_audit_logs(self, since: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+
+    async def get_audit_logs(
+        self, since: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Retrieve audit trail logs.
 
         Args:
