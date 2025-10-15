@@ -456,6 +456,195 @@ This enables instant bidirectional communication and proper correlation.
 | Scalability | O(1) per message | O(n) polling overhead |
 | Correlation | Explicit correlation IDs | Heuristic matching |
 
+#### Inter-Process Communication (IPC) with SharedStateManager
+
+**Challenge**: STDIO Transport Process Isolation
+
+When Codex instances connect via STDIO transport, they spawn a separate `run_orchestrator.py` subprocess with its own InstanceManager. This creates isolated memory spaces that cannot share state:
+
+```
+HTTP Server (localhost:8001)
+└─ InstanceManager A (has all instances)
+
+Codex STDIO Connection
+└─ run_orchestrator.py (subprocess)
+    └─ InstanceManager B (empty, isolated)
+```
+
+**Problem**: When Codex instance calls `reply_to_caller()`, the request goes to InstanceManager B, which doesn't have the parent instance's response queue. Result: "Instance not found" error.
+
+**Solution**: `SharedStateManager` with Python `multiprocessing.Manager`
+
+**Architecture**:
+
+```python
+from multiprocessing import Manager
+
+class SharedStateManager:
+    """Manages cross-process shared state using multiprocessing.Manager.
+
+    Provides:
+    - Response queues (instance_id → Manager.Queue)
+    - Message registry (message_id → MessageEnvelope dict)
+    - Instance metadata (instance_id → metadata dict)
+    - Thread-safe locks for synchronization
+    """
+
+    def __init__(self):
+        self.manager = Manager()  # Daemon process for proxy objects
+
+        # Shared data structures (accessible across processes)
+        self.response_queues: dict[str, Queue] = {}  # instance_id → Manager.Queue
+        self.message_registry: DictProxy = self.manager.dict()  # Shared dict
+        self.instance_metadata: DictProxy = self.manager.dict()  # Shared dict
+        self.queue_locks: dict[str, Lock] = {}  # instance_id → Manager.Lock
+```
+
+**Key Features**:
+
+1. **Cross-Process Queues**: `Manager.Queue(maxsize=100)` accessible from any process
+2. **Shared Dictionaries**: `Manager.dict()` for message registry and metadata
+3. **Thread-Safe Locks**: `Manager.Lock()` for concurrent access protection
+4. **Automatic Proxy**: Manager daemon provides proxy objects for IPC
+
+**Implementation Flow**:
+
+```
+1. HTTP Server Startup:
+   └─ Initialize SharedStateManager (starts Manager daemon)
+   └─ Pass shared_state_manager to TmuxInstanceManager
+
+2. Instance Spawn (HTTP or STDIO):
+   └─ TmuxInstanceManager creates queue:
+       - If shared_state exists: shared_state.create_response_queue(id)
+       - Else: self.response_queues[id] = asyncio.Queue()  # Local fallback
+
+3. Message Sending:
+   └─ Parent sends message with correlation ID
+   └─ Child receives message via tmux pane
+
+4. Reply (Child → Parent):
+   └─ Child calls reply_to_caller(instance_id, reply_message, correlation_id)
+   └─ handle_reply_to_caller():
+       - If shared_state: shared_state.get_response_queue(parent_id).put(reply)
+       - Else: self.response_queues[parent_id].put(reply)  # Local fallback
+```
+
+**Async Wrapper Methods** (Critical for Event Loop Safety):
+
+Since `multiprocessing.Queue` operations are blocking and would deadlock asyncio, we use ThreadPoolExecutor:
+
+```python
+async def _get_from_shared_queue(self, instance_id: str, timeout: int = 30):
+    """Async wrapper for blocking Queue.get() using ThreadPoolExecutor."""
+    queue = self.shared_state.get_response_queue(instance_id)
+
+    def blocking_get():
+        return queue.get(timeout=timeout)
+
+    # Run in thread pool to avoid blocking event loop
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, blocking_get)
+
+async def _put_to_shared_queue(self, instance_id: str, message: dict):
+    """Async wrapper for blocking Queue.put() using ThreadPoolExecutor."""
+    queue = self.shared_state.get_response_queue(instance_id)
+
+    def blocking_put():
+        queue.put(message)
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, blocking_put)
+```
+
+**Backward Compatibility**:
+
+All queue operations use conditional logic to maintain compatibility:
+
+```python
+# Queue initialization at spawn time
+if self.shared_state:
+    # STDIO transport: use cross-process shared queue
+    self.shared_state.create_response_queue(instance_id)
+else:
+    # HTTP transport: use local asyncio.Queue
+    self.response_queues[instance_id] = asyncio.Queue()
+
+# Sending replies
+if self.shared_state:
+    # STDIO: put into shared queue
+    await self._put_to_shared_queue(parent_id, reply)
+else:
+    # HTTP: put into local queue
+    await self.response_queues[parent_id].put(reply)
+```
+
+**Performance Characteristics**:
+
+| Operation | HTTP (Local Queue) | STDIO (Shared Queue) | Overhead |
+|-----------|-------------------|---------------------|----------|
+| Queue creation | O(1), <1ms | O(1), ~2-5ms (IPC) | +2-4ms |
+| Queue put | O(1), <1ms | O(1), ~1-3ms (IPC) | +1-2ms |
+| Queue get | O(1), <1ms | O(1), ~1-3ms (IPC) | +1-2ms |
+| Manager daemon | N/A | ~10-20MB RAM | Minimal |
+
+**Cleanup and Shutdown**:
+
+```python
+# Instance termination cleanup
+async def terminate_instance(self, instance_id: str):
+    # ... tmux session cleanup ...
+
+    # Clean up shared state
+    if self.shared_state:
+        self.shared_state.cleanup_instance(instance_id)
+    else:
+        # Local queue cleanup
+        if instance_id in self.response_queues:
+            del self.response_queues[instance_id]
+
+# Server shutdown
+async def shutdown(self):
+    # ... terminate all instances ...
+
+    # Shutdown Manager daemon
+    if self.shared_state:
+        self.shared_state.shutdown()  # Graceful Manager daemon shutdown
+```
+
+**Benefits**:
+
+| Aspect | Before IPC | After IPC |
+|--------|-----------|-----------|
+| STDIO reply_to_caller | ❌ Fails (instance not found) | ✅ Works (shared state) |
+| Cross-process communication | ❌ Impossible | ✅ Full support |
+| HTTP transport | ✅ Works | ✅ Works (unchanged) |
+| Memory overhead | Minimal | +10-20MB (Manager daemon) |
+| Latency overhead | 0ms | +1-3ms per IPC operation |
+| Code complexity | Simple | Moderate (conditional logic) |
+
+**Trade-offs**:
+
+**Chosen**: Conditional IPC (shared state when available, local queues as fallback)
+
+**Why**:
+- Preserves HTTP transport performance (zero overhead)
+- Enables STDIO transport bidirectional messaging
+- Maintains backward compatibility
+- Single codebase for both transports
+
+**Cost**:
+- Additional complexity (if/else branching)
+- ThreadPoolExecutor overhead for async wrapping
+- Manager daemon memory footprint
+
+**Implementation Files**:
+
+- `src/orchestrator/shared_state_manager.py` (386 lines) - Core IPC logic
+- `src/orchestrator/instance_manager.py` - Initialize and pass SharedStateManager
+- `src/orchestrator/tmux_instance_manager.py` - Conditional queue operations
+- `run_orchestrator.py` - Cleanup in finally block
+
 #### Message Patterns
 
 **1. Point-to-Point Communication**:

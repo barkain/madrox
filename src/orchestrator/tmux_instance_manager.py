@@ -23,12 +23,13 @@ logger = logging.getLogger(__name__)
 class TmuxInstanceManager:
     """Manages Claude instances via tmux sessions."""
 
-    def __init__(self, config: dict[str, Any], logging_manager=None):
+    def __init__(self, config: dict[str, Any], logging_manager=None, shared_state_manager=None):
         """Initialize the tmux instance manager.
 
         Args:
             config: Configuration dictionary
             logging_manager: Optional LoggingManager instance for structured logging
+            shared_state_manager: Optional SharedStateManager for cross-process IPC
         """
         self.config = config
         self.instances: dict[str, dict[str, Any]] = {}
@@ -36,7 +37,10 @@ class TmuxInstanceManager:
         self.message_history: dict[str, list[dict]] = {}
         self.logging_manager = logging_manager
 
-        # Bidirectional messaging queues (in-memory, lightweight)
+        # NEW: Use shared state manager for IPC
+        self.shared_state = shared_state_manager
+
+        # DEPRECATED: Keep for backward compatibility with HTTP transport
         self.response_queues: dict[str, asyncio.Queue] = {}
         self.message_registry: dict[str, MessageEnvelope] = {}
         self.main_message_inbox: list[dict[str, Any]] = []
@@ -58,6 +62,65 @@ class TmuxInstanceManager:
         import os
 
         self.server_port = int(os.getenv("ORCHESTRATOR_PORT", "8001"))
+
+    async def _get_from_shared_queue(self, instance_id: str, timeout: int) -> dict:
+        """Get message from shared queue with async wrapper.
+
+        Wraps blocking multiprocessing.Queue.get() in executor to avoid blocking event loop.
+
+        Args:
+            instance_id: Instance ID whose queue to read from
+            timeout: Timeout in seconds
+
+        Returns:
+            Message dict from queue
+
+        Raises:
+            TimeoutError: If no message received within timeout
+        """
+        import concurrent.futures
+
+        queue = self.shared_state.get_response_queue(instance_id)
+        loop = asyncio.get_event_loop()
+
+        # Run blocking queue.get() in thread executor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = loop.run_in_executor(
+                executor,
+                queue.get,  # Blocking call
+                True,  # block=True
+                timeout,  # timeout in seconds
+            )
+            try:
+                return await future
+            except Exception as e:
+                # Convert queue.Empty to TimeoutError for consistency
+                if "Empty" in str(type(e).__name__):
+                    raise TimeoutError(
+                        f"No message received from instance {instance_id} within {timeout}s"
+                    ) from None
+                raise
+
+    async def _put_to_shared_queue(self, instance_id: str, message: dict):
+        """Put message to shared queue with async wrapper.
+
+        Args:
+            instance_id: Target instance ID whose queue to write to
+            message: Message dict to send
+        """
+        import concurrent.futures
+
+        queue = self.shared_state.get_response_queue(instance_id)
+        lock = self.shared_state.queue_locks[instance_id]
+        loop = asyncio.get_event_loop()
+
+        def put_with_lock():
+            with lock:
+                queue.put(message, block=True, timeout=5)
+
+        # Run blocking queue.put() in thread executor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            await loop.run_in_executor(executor, put_with_lock)
 
     def _configure_mcp_servers(self, pane, instance: dict[str, Any]):
         """Configure MCP servers in the tmux session before spawning Claude/Codex CLI.
@@ -374,7 +437,12 @@ class TmuxInstanceManager:
 
         # Initialize response queue for this instance immediately at spawn
         # This ensures the instance can receive replies from children even before sending messages
-        self.response_queues[instance_id] = asyncio.Queue()
+        if self.shared_state:
+            # Use shared queue for STDIO transport
+            self.shared_state.create_response_queue(instance_id)
+        else:
+            # Fall back to local queue for HTTP transport
+            self.response_queues[instance_id] = asyncio.Queue()
 
         # Setup instance-specific logger
         if self.logging_manager:
@@ -533,10 +601,15 @@ class TmuxInstanceManager:
                 content=message,
                 sent_at=send_timestamp,
             )
-            self.message_registry[message_id] = envelope
+
+            # Register in shared state or local state
+            if self.shared_state:
+                self.shared_state.register_message(message_id, envelope.to_dict())
+            else:
+                self.message_registry[message_id] = envelope
 
             # Initialize response queue for this instance if needed
-            if instance_id not in self.response_queues:
+            if not self.shared_state and instance_id not in self.response_queues:
                 self.response_queues[instance_id] = asyncio.Queue()
 
             # Check if system prompt is pending (first message after spawn)
@@ -599,15 +672,31 @@ class TmuxInstanceManager:
             # BIDIRECTIONAL MESSAGING: Check response queue first
             # Instance may use reply_to_caller tool for explicit response
             try:
-                queue_response = await asyncio.wait_for(
-                    self.response_queues[instance_id].get(), timeout=timeout_seconds
-                )
+                if self.shared_state:
+                    # Use shared queue with process-safe wrapper
+                    queue_response = await self._get_from_shared_queue(
+                        instance_id, timeout=timeout_seconds
+                    )
+                else:
+                    # Use local asyncio queue (HTTP transport)
+                    queue_response = await asyncio.wait_for(
+                        self.response_queues[instance_id].get(), timeout=timeout_seconds
+                    )
+
                 # Got explicit reply via bidirectional protocol
                 response_text = queue_response["reply_message"]
                 logger.info(f"Received bidirectional reply from instance {instance_id}")
 
-                # Mark envelope as replied
-                envelope.mark_replied(response_text)
+                # Update envelope status
+                if self.shared_state:
+                    self.shared_state.update_message_status(
+                        message_id,
+                        status="replied",
+                        reply_content=response_text,
+                        replied_at=datetime.now().isoformat(),
+                    )
+                else:
+                    envelope.mark_replied(response_text)
 
                 # Update stats and return
                 response_timestamp = datetime.now(UTC)
@@ -1397,36 +1486,45 @@ class TmuxInstanceManager:
             parent_id = instance.get("parent_instance_id")
             delivered_to = parent_id if parent_id else "coordinator"
 
-            # If there's a correlation_id, update the message envelope
-            if correlation_id and correlation_id in self.message_registry:
-                envelope = self.message_registry[correlation_id]
-                envelope.mark_replied(reply_message, datetime.now())
+            # Update message envelope if correlated
+            if correlation_id:
+                if self.shared_state:
+                    self.shared_state.update_message_status(
+                        correlation_id,
+                        status="replied",
+                        reply_content=reply_message,
+                        replied_at=datetime.now().isoformat(),
+                    )
+                elif correlation_id in self.message_registry:
+                    envelope = self.message_registry[correlation_id]
+                    envelope.mark_replied(reply_message, datetime.now())
+
                 logger.debug(f"Correlated reply to message {correlation_id}")
 
-            # Queue the reply in the caller's response queue
-            if parent_id and parent_id in self.response_queues:
-                await self.response_queues[parent_id].put(
-                    {
-                        "sender_id": instance_id,
-                        "reply_message": reply_message,
-                        "correlation_id": correlation_id,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-                logger.info(f"Reply queued for parent instance {parent_id}")
-            elif not parent_id:
-                # Reply to coordinator - use special coordinator queue
-                if "coordinator" not in self.response_queues:
-                    self.response_queues["coordinator"] = asyncio.Queue()
-                await self.response_queues["coordinator"].put(
-                    {
-                        "sender_id": instance_id,
-                        "reply_message": reply_message,
-                        "correlation_id": correlation_id,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-                logger.info("Reply queued for coordinator")
+            # Queue the reply
+            reply_payload = {
+                "sender_id": instance_id,
+                "reply_message": reply_message,
+                "correlation_id": correlation_id,
+                "timestamp": datetime.now().isoformat(),
+            }
+
+            if self.shared_state:
+                # Use shared queue for STDIO transport
+                target_id = parent_id if parent_id else "coordinator"
+                await self._put_to_shared_queue(target_id, reply_payload)
+                logger.info(f"Reply queued for {target_id} via shared queue")
+            else:
+                # Use local queue for HTTP transport
+                if parent_id and parent_id in self.response_queues:
+                    await self.response_queues[parent_id].put(reply_payload)
+                    logger.info(f"Reply queued for parent instance {parent_id}")
+                elif not parent_id:
+                    # Reply to coordinator - use special coordinator queue
+                    if "coordinator" not in self.response_queues:
+                        self.response_queues["coordinator"] = asyncio.Queue()
+                    await self.response_queues["coordinator"].put(reply_payload)
+                    logger.info("Reply queued for coordinator")
 
             # Log the communication
             if self.logging_manager:

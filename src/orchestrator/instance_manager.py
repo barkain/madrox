@@ -48,8 +48,18 @@ class InstanceManager:
         self.logging_manager = LoggingManager(log_dir=log_dir, log_level=log_level)
         logger.info(f"Logging manager initialized: {log_dir}")
 
+        # Initialize shared state manager for IPC
+        from .shared_state_manager import SharedStateManager
+
+        self.shared_state_manager = SharedStateManager()
+        logger.info("Shared state manager initialized for IPC")
+
         # Initialize Tmux instance manager for Claude and Codex instances
-        self.tmux_manager = TmuxInstanceManager(config, logging_manager=self.logging_manager)
+        self.tmux_manager = TmuxInstanceManager(
+            config,
+            logging_manager=self.logging_manager,
+            shared_state_manager=self.shared_state_manager,
+        )
 
         # Main instance tracking - will be populated after spawning real main instance
         self.main_instance_id: str | None = None
@@ -1583,3 +1593,19 @@ class InstanceManager:
                 instances_info.append({"instance_id": instance_id})
 
         return instances_info
+
+    async def shutdown(self):
+        """Shutdown the instance manager and clean up resources."""
+        logger.info("Shutting down instance manager")
+
+        # Terminate all instances
+        for instance_id in list(self.instances.keys()):
+            try:
+                await self._terminate_instance_internal(instance_id, force=True)
+            except Exception as e:
+                logger.error(f"Error terminating instance {instance_id}: {e}")
+
+        # Shutdown shared state manager
+        if self.shared_state_manager:
+            self.shared_state_manager.shutdown()
+            logger.info("Shared state manager shutdown complete")

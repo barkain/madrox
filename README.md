@@ -900,6 +900,7 @@ Comprehensive documentation is available in the `docs/` directory:
   - High-level architecture diagrams
   - Core components and their responsibilities
   - Communication patterns and protocols
+  - Inter-Process Communication (IPC) with SharedStateManager
   - Security model and isolation
   - Containerization and deployment
 
@@ -908,6 +909,13 @@ Comprehensive documentation is available in the `docs/` directory:
   - HTTP REST API endpoints
   - Configuration options and environment variables
   - Return types and error responses
+
+- **[IPC_IMPLEMENTATION_GUIDE.md](docs/IPC_IMPLEMENTATION_GUIDE.md)** - IPC implementation details
+  - Cross-process shared state architecture
+  - SharedStateManager API and usage
+  - Integration with STDIO transport
+  - Testing and verification guide
+  - Known issues and future improvements
 
 ### Usage & Features
 - **[FEATURES.md](docs/FEATURES.md)** - Feature documentation and usage patterns

@@ -64,11 +64,16 @@ async def start_stdio_server(config):
     # Create MCP server instance
     mcp_server = OrchestrationMCPServer(config)
 
-    # Get FastMCP instance and run with STDIO transport
-    mcp_instance = await mcp_server.run()
+    try:
+        # Get FastMCP instance and run with STDIO transport
+        mcp_instance = await mcp_server.run()
 
-    # Use FastMCP's built-in stdio transport
-    await mcp_instance.run_stdio_async()
+        # Use FastMCP's built-in stdio transport
+        await mcp_instance.run_stdio_async()
+    finally:
+        # Clean up shared resources on exit
+        if hasattr(mcp_server, "manager"):
+            await mcp_server.manager.shutdown()
 
 
 def main():
