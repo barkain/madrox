@@ -1059,8 +1059,12 @@ class TmuxInstanceManager:
         if instance_type == "codex":
             cmd_parts = ["codex"]
 
-            # Add sandbox mode if specified
-            if sandbox_mode := instance.get("sandbox_mode"):
+            # Add permission bypass if requested (equivalent to Claude's --dangerously-skip-permissions)
+            if instance.get("bypass_isolation"):
+                cmd_parts.append("--dangerously-bypass-approvals-and-sandbox")
+
+            # Add sandbox mode if specified (only if not bypassing)
+            elif sandbox_mode := instance.get("sandbox_mode"):
                 cmd_parts.extend(["--sandbox", sandbox_mode])
 
             # Add profile if specified
