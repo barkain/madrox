@@ -54,13 +54,15 @@ time.sleep(5)
 print("📍 Step 2: Asking parent to spawn Codex child...")
 spawn_request = """You have access to madrox MCP tools. Please:
 
-1. Use spawn_codex to create a child instance:
+1. Use spawn_codex to create a child instance with these parameters:
    - name: "codex-weather-child"
-   - model: "codex-1"
-   
-2. Send it this message: "What's the current weather like in Buenos Aires, Argentina? Include temperature and conditions."
+   - model: "gpt-5-codex"
+   - bypass_isolation: true (allows command execution without approval)
+   - enable_madrox: true (gives it access to madrox tools including reply_to_caller)
 
-3. Wait for its response and tell me what it said.
+2. Send it this message: "What's the current weather like in Buenos Aires, Argentina? Include temperature and conditions. When done, use reply_to_caller to send your findings back to me."
+
+3. Wait for its response using get_pending_replies and tell me what it said.
 
 Use the madrox tools to do this."""
 

@@ -489,7 +489,7 @@ class InstanceManager:
             try:
                 first_reply = await asyncio.wait_for(queue.get(), timeout=wait_timeout)
                 replies.append(first_reply)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return []
 
         # Drain remaining queued messages (non-blocking)
@@ -581,6 +581,7 @@ class InstanceManager:
         profile: str | None = None,
         initial_prompt: str | None = None,
         bypass_isolation: bool = False,
+        enable_madrox: bool = True,
         parent_instance_id: str | None = None,
     ) -> dict[str, Any]:
         """Spawn a new Codex CLI instance (OpenAI GPT models only).
@@ -596,6 +597,7 @@ class InstanceManager:
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session
             bypass_isolation: Allow full filesystem access
+            enable_madrox: Enable madrox MCP server (default: true, allows reply_to_caller and spawning sub-instances)
             parent_instance_id: Parent instance ID for tracking
 
         Returns:
@@ -622,6 +624,7 @@ class InstanceManager:
             name=name,
             model=model,
             bypass_isolation=bypass_isolation,
+            enable_madrox=enable_madrox,
             sandbox_mode=sandbox_mode,
             profile=profile,
             initial_prompt=initial_prompt,
@@ -637,7 +640,6 @@ class InstanceManager:
             "name": name,
             "instance_type": "codex",
         }
-
 
     async def handle_reply_to_caller(
         self,
