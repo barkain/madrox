@@ -1182,7 +1182,52 @@ class TmuxInstanceManager:
 
         # Handle initial prompts based on instance type
         if instance_type == "codex":
-            # For Codex, send initial_prompt if provided
+            # BUILD instance_id information for Codex
+            workspace_path = instance["workspace_dir"]
+
+            # Add instance ID information for parent communication
+            instance_id_info = (
+                f"Your instance ID: {instance['id']}\n"
+                f"This ID is also stored in {workspace_path}/.madrox_instance_id\n"
+            )
+
+            if instance.get("parent_instance_id"):
+                parent_info = (
+                    f"Your parent instance ID: {instance['parent_instance_id']}\n"
+                    f"You can send messages to your parent using: send_to_instance(parent_instance_id='{instance['parent_instance_id']}', message='your message')\n"
+                )
+                instance_id_info += parent_info
+
+            # Add instructions for spawning children with parent tracking
+            if instance.get("enable_madrox"):
+                spawn_info = (
+                    f"\nWhen spawning child instances, pass your instance_id as parent_instance_id.\n"
+                    f"This enables bidirectional communication between parent and child.\n\n"
+                    f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
+                    f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
+                    f"  [MSG:correlation-id] message content here\n\n"
+                    f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
+                    f"  reply_to_caller(\n"
+                    f"    instance_id='{instance['id']}',\n"
+                    f"    reply_message='your response here',\n"
+                    f"    correlation_id='correlation-id-from-message'\n"
+                    f"  )\n\n"
+                    f"IMPORTANT: Always use your own instance_id ('{instance['id']}') when calling reply_to_caller.\n"
+                    f"Do NOT use the correlation_id as the instance_id parameter.\n\n"
+                    f"Benefits of using reply_to_caller:\n"
+                    f"- Instant delivery (no polling delay)\n"
+                    f"- Proper request-response correlation\n"
+                    f"- More efficient than text output\n"
+                )
+                instance_id_info += spawn_info
+
+            # Send instance_id information first
+            initialization_message = f"SYSTEM INFORMATION:\n{instance_id_info}\n"
+            self._send_multiline_message_to_pane(pane, initialization_message)
+            logger.debug("Sent instance_id information to Codex instance")
+            await asyncio.sleep(2)  # Wait for Codex to process
+
+            # Then send initial_prompt if provided
             if initial_prompt := instance.get("initial_prompt"):
                 pane.send_keys(initial_prompt, enter=True)
                 logger.debug("Sent initial prompt to Codex instance")
