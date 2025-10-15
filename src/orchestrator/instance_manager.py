@@ -576,19 +576,23 @@ class InstanceManager:
     async def spawn_codex(
         self,
         name: str,
-        model: str | None = None,
+        model: str = "gpt-5-codex",
         sandbox_mode: str = "workspace-write",
         profile: str | None = None,
         initial_prompt: str | None = None,
         bypass_isolation: bool = False,
         parent_instance_id: str | None = None,
     ) -> dict[str, Any]:
-        """Spawn a new Codex CLI instance (OpenAI models only).
+        """Spawn a new Codex CLI instance (OpenAI GPT models only).
 
         Args:
             name: Instance name
-            model: OpenAI model to use (e.g., gpt-5-codex, gpt-4, gpt-4o)
-            sandbox_mode: Sandbox policy for shell commands
+            model: OpenAI GPT model to use. Common options:
+                   - gpt-5-codex (default)
+                   - gpt-4o
+                   - gpt-4
+                   - o3
+            sandbox_mode: Sandbox policy for shell commands (read-only, workspace-write, danger-full-access)
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session
             bypass_isolation: Allow full filesystem access
@@ -597,13 +601,21 @@ class InstanceManager:
         Returns:
             Dictionary with instance_id and status
         """
-        # Validate model - Codex only supports OpenAI models
-        if model and ("claude" in model.lower() or "anthropic" in model.lower()):
-            raise ValueError(
-                f"Invalid model '{model}' for Codex instance. "
-                f"Codex only supports OpenAI models (e.g., 'gpt-5-codex', 'gpt-4', 'gpt-4o'). "
-                f"Use spawn_instance() for Claude models."
-            )
+        # Validate model - Codex only supports OpenAI GPT models
+        if model:
+            if "claude" in model.lower() or "anthropic" in model.lower():
+                raise ValueError(
+                    f"Invalid model '{model}' for Codex instance. "
+                    f"Codex only supports OpenAI GPT models. "
+                    f"Common options: gpt-5-codex, gpt-4o, gpt-4, o3. "
+                    f"Use spawn_claude() for Claude models."
+                )
+            # Warn about common mistakes
+            if model.lower() in ["codex", "codex-1", "codex-mini"]:
+                raise ValueError(
+                    f"Invalid model '{model}'. Codex CLI uses OpenAI GPT models, not legacy Codex models. "
+                    f"Try: gpt-5-codex (default), gpt-4o, gpt-4, or o3."
+                )
 
         # Delegate to TmuxInstanceManager for Codex instances
         instance_id = await self.tmux_manager.spawn_instance(
