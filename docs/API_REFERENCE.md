@@ -412,9 +412,37 @@ await send_to_instance(
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `instance_id` | string | Yes | Your instance ID (the responder) |
+| `instance_id` | string | Yes | **YOUR OWN instance ID** (the responder's ID, NOT the correlation_id) |
 | `reply_message` | string | Yes | Reply content |
 | `correlation_id` | string | No | Message ID from incoming message (strongly recommended for tracking) |
+
+> **⚠️ CRITICAL - Common Mistake**
+>
+> **`instance_id` must be YOUR OWN instance ID, NOT the correlation_id from the message!**
+>
+> When you receive a message like `[MSG:abc-123-def] Hello child-1`, you must use:
+> - ✅ **`instance_id`**: Your actual instance ID (e.g., `79b048a8-46c7-43dc-846a-1266aead9e61`)
+> - ✅ **`correlation_id`**: The message ID from `[MSG:...]` (e.g., `abc-123-def`)
+>
+> **DON'T DO THIS** ❌:
+> ```python
+> reply_to_caller(
+>     instance_id="abc-123-def",  # WRONG! This is the correlation_id
+>     reply_message="My response",
+>     correlation_id="abc-123-def"
+> )
+> # Error: "Instance abc-123-def not found"
+> ```
+>
+> **DO THIS** ✅:
+> ```python
+> reply_to_caller(
+>     instance_id="79b048a8-46c7-43dc-846a-1266aead9e61",  # Your actual instance ID
+>     reply_message="My response",
+>     correlation_id="abc-123-def"  # Message ID from [MSG:...]
+> )
+> # Success: Reply delivered to parent
+> ```
 
 **Returns:**
 
