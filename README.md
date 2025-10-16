@@ -682,6 +682,53 @@ print(f"Tokens used: {status['total_tokens_used']}")
 print(f"Cost: ${status['total_cost']:.4f}")
 ```
 
+## 📑 Task Templates
+
+Madrox provides production-ready templates for common multi-agent workflows. Deploy complete teams in minutes instead of designing network structures from scratch.
+
+### Available Templates
+
+| Template | Team Size | Duration | Best For |
+|----------|-----------|----------|----------|
+| **[Software Engineering Team](templates/software_engineering_team.md)** | 6 instances | 2-4 hours | SaaS apps, APIs, full-stack products |
+| **[Research Analysis Team](templates/research_analysis_team.md)** | 5 instances | 2-3 hours | Market research, competitive intelligence |
+| **[Security Audit Team](templates/security_audit_team.md)** | 7 instances | 2-4 hours | Security reviews, compliance assessments |
+| **[Data Pipeline Team](templates/data_pipeline_team.md)** | 5 instances | 2-4 hours | ETL pipelines, data lake ingestion |
+
+### Quick Start with Templates
+
+**1. Choose a template** that matches your task (e.g., building a SaaS app → Software Engineering Team)
+
+**2. Spawn supervisor** with `enable_madrox=True`:
+```
+Use spawn_claude:
+- name: "tech-lead"
+- role: "architect"
+- enable_madrox: True
+```
+
+**3. Send template instructions** with your task description:
+```
+Execute the Software Engineering Team workflow:
+
+TASK: Build a task management SaaS with user auth, CRUD operations,
+PostgreSQL database, React frontend, and Docker deployment.
+
+Follow template phases: Team Assembly → Briefing → Design → Implementation →
+Integration → Documentation. Ensure bidirectional communication with reply_to_caller.
+```
+
+**4. Monitor progress** using `get_live_instance_status`, `get_pending_replies`, and `get_instance_tree`
+
+### Template Features
+
+- **Production-Ready**: Include error handling, monitoring, resource constraints
+- **Best Practices**: Proven coordination patterns and communication protocols
+- **Customizable**: Easily adapt team size, roles, and workflow phases
+- **Instruction-Based**: No code blocks - clear workflow guidance
+
+See **[docs/TEMPLATES.md](docs/TEMPLATES.md)** for complete template usage guide, customization options, and advanced patterns.
+
 ## 🛡️ Security & Isolation
 
 - **Workspace Isolation** - Each instance gets its own directory

@@ -200,6 +200,163 @@ Same format as `spawn_claude`.
 
 ---
 
+#### spawn_team_from_template
+
+Spawn a complete pre-configured team from a predefined template. Automatically spawns a supervisor and sends it template-based instructions to spawn and coordinate a team of specialist instances.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `template_name` | string | Yes | - | Name of the template to use |
+| `task_description` | string | Yes | - | Description of the task for the team |
+| `supervisor_role` | string | No | Template default | Optional supervisor role override |
+
+**Available Templates:**
+
+| Template | Team Size | Duration | Best For |
+|----------|-----------|----------|----------|
+| `software_engineering_team` | 6 instances | 2-4 hours | SaaS apps, APIs, microservices, full-stack development |
+| `research_analysis_team` | 5 instances | 2-3 hours | Market research, competitive intelligence, trend analysis |
+| `security_audit_team` | 7 instances | 2-4 hours | Security reviews, compliance assessments, vulnerability scanning |
+| `data_pipeline_team` | 5 instances | 2-4 hours | ETL pipelines, data lake ingestion, real-time streaming |
+
+**Returns:**
+
+```json
+{
+  "supervisor_id": "abc123-456def-789ghi",
+  "template_name": "software_engineering_team",
+  "team_size": 6,
+  "estimated_duration": "2-4 hours",
+  "estimated_cost": "$30",
+  "task_description": "Build a task management SaaS application...",
+  "status": "initializing",
+  "message": "Team spawned from template. Use get_pending_replies() to monitor progress."
+}
+```
+
+**Behavior:**
+
+1. **Template Loading**: Loads markdown template from `templates/` directory
+2. **Metadata Parsing**: Extracts team size, duration, supervisor role from template
+3. **Supervisor Spawn**: Spawns supervisor with `enable_madrox=True` for team management
+4. **Instruction Delivery**: Sends comprehensive instructions including:
+   - Team structure to spawn (with roles and responsibilities)
+   - Workflow phases to execute sequentially
+   - Communication protocols (broadcast, direct messaging, reply patterns)
+5. **Non-Blocking Execution**: Supervisor begins spawning team asynchronously
+6. **Network Assembly**: Brief wait period (15 seconds) for initial team spawn
+
+**Template Structure:**
+
+Each template includes:
+- **Team Structure**: Supervisor + worker roles with specific responsibilities
+- **Workflow Phases**: Step-by-step execution sequence (design → implementation → testing)
+- **Communication Protocols**: How workers coordinate (broadcast, direct, reply patterns)
+- **Error Handling**: Recovery strategies for common failures
+- **Resource Constraints**: Token/cost/time limits per worker
+- **Success Metrics**: Measurable outcomes for completion
+
+**Monitoring Team Progress:**
+
+```python
+# Spawn team
+result = await spawn_team_from_template(
+    template_name="software_engineering_team",
+    task_description="Build a REST API for a todo application with user authentication"
+)
+
+supervisor_id = result["supervisor_id"]
+
+# Monitor progress using pending replies
+import asyncio
+while True:
+    replies = await get_pending_replies(supervisor_id, wait_timeout=0)
+
+    for reply in replies:
+        print(f"Update from {reply['sender_id']}: {reply['reply_message']}")
+
+    # Check if supervisor reports completion
+    final_reply = next((r for r in replies if "complete" in r['reply_message'].lower()), None)
+    if final_reply:
+        break
+
+    await asyncio.sleep(15)  # Poll every 15 seconds
+
+# Get network topology
+tree = await get_instance_tree()
+print(tree)
+```
+
+**Example:**
+
+```python
+# Spawn software engineering team
+result = await spawn_team_from_template(
+    template_name="software_engineering_team",
+    task_description="""
+    Build a task management SaaS application with:
+    - User authentication (JWT)
+    - Task CRUD operations with categories and tags
+    - PostgreSQL database
+    - React frontend with Tailwind CSS
+    - Docker deployment
+    - Automated testing
+    """
+)
+
+# Monitor supervisor ID
+supervisor_id = result["supervisor_id"]
+
+# Poll for progress updates
+replies = await get_pending_replies(supervisor_id, wait_timeout=30)
+
+# View network hierarchy
+tree = await get_instance_tree()
+```
+
+**Example (Security Audit):**
+
+```python
+# Spawn security audit team
+result = await spawn_team_from_template(
+    template_name="security_audit_team",
+    task_description="""
+    Perform comprehensive security audit of the application:
+    - SAST analysis for code vulnerabilities
+    - Dependency audit against CVE databases
+    - Authentication/authorization review
+    - API security assessment
+    - Cryptography implementation review
+    """
+)
+
+# Team will execute in parallel:
+# 1. SAST Analyzer scans code
+# 2. Dependency Auditor checks packages
+# 3. Auth Specialist reviews auth flows
+# 4. API Security tests endpoints
+# 5. Crypto Analyst reviews encryption
+# 6. Security Reporter compiles findings
+```
+
+**Template Customization:**
+
+Templates can be customized by:
+- **Overriding supervisor role**: Specify `supervisor_role` parameter
+- **Adjusting task scope**: Provide detailed or simplified task descriptions
+- **Template modification**: Edit markdown templates in `templates/` directory
+
+**See Also:**
+
+- [TEMPLATES.md](/docs/TEMPLATES.md) - Complete template documentation and customization guide
+- [Template Files](/templates/) - All available team templates
+- [spawn_claude](#spawn_claude) - For manual instance spawning
+- [coordinate_instances](#coordinate_instances) - For custom coordination patterns
+
+---
+
 #### terminate_instance
 
 Terminate a Claude instance and clean up resources.
