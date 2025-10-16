@@ -68,11 +68,10 @@ class TmuxInstanceManager:
         self._manager_health_check_interval = 30  # seconds
         self._manager_health_failures = 0
         self._max_health_failures = 3  # Alert after 3 consecutive failures
+        self._health_monitoring_enabled = False
 
-        # Start manager health monitoring if shared_state is available
-        if self.shared_state:
-            self._start_manager_health_monitoring()
-            logger.info("Manager health monitoring enabled")
+        # NOTE: Don't start health monitoring here - no event loop yet!
+        # Health monitoring will start lazily when first instance is spawned
 
     async def _get_from_shared_queue(self, instance_id: str, timeout: int) -> dict:
         """Get message from shared queue with async wrapper.
@@ -439,6 +438,15 @@ class TmuxInstanceManager:
         # Write instance metadata file so child knows its own ID
         metadata_file = workspace_dir / ".madrox_instance_id"
         metadata_file.write_text(instance_id)
+
+        # Lazy startup of health monitoring (after event loop is running)
+        if self.shared_state and not self._health_monitoring_enabled:
+            try:
+                self._start_manager_health_monitoring()
+                self._health_monitoring_enabled = True
+                logger.info("Manager health monitoring started (lazy initialization)")
+            except Exception as e:
+                logger.error(f"Failed to start health monitoring: {e}", exc_info=True)
 
         # Build system prompt based on role
         has_custom_prompt = bool(system_prompt)
@@ -1535,22 +1543,33 @@ class TmuxInstanceManager:
         """
         try:
             instance = self.instances.get(instance_id)
-            if not instance:
+            # CRITICAL FIX: Skip instance validation for STDIO transport
+            # STDIO subprocesses don't have instances in their local dict - only HTTP server does
+            if not instance and not self.shared_state:
                 return {"success": False, "error": f"Instance {instance_id} not found"}
 
             # Determine the caller (parent instance or coordinator)
-            parent_id = instance.get("parent_instance_id")
+            # For STDIO transport, parent_id may not be available locally
+            parent_id = instance.get("parent_instance_id") if instance else None
             delivered_to = parent_id if parent_id else "coordinator"
 
             # Update message envelope if correlated
             if correlation_id:
                 if self.shared_state:
-                    self.shared_state.update_message_status(
-                        correlation_id,
-                        status="replied",
-                        reply_content=reply_message,
-                        replied_at=datetime.now().isoformat(),
-                    )
+                    try:
+                        self.shared_state.update_message_status(
+                            correlation_id,
+                            status="replied",
+                            reply_content=reply_message,
+                            replied_at=datetime.now().isoformat(),
+                        )
+                    except KeyError:
+                        # STDIO subprocess doesn't have access to parent's message registry
+                        # This is expected - just log and continue with queueing the reply
+                        logger.debug(
+                            f"Message {correlation_id} not in local registry (STDIO subprocess), "
+                            f"skipping status update"
+                        )
                 elif correlation_id in self.message_registry:
                     envelope = self.message_registry[correlation_id]
                     envelope.mark_replied(reply_message, datetime.now())

@@ -670,7 +670,10 @@ class InstanceManager:
         Returns:
             Dict with success status and delivery info
         """
-        if instance_id not in self.instances:
+        # CRITICAL FIX: When using shared_state (STDIO transport), STDIO subprocesses
+        # don't have instances in their local dict - only response queues are shared.
+        # Skip instance validation and let TmuxInstanceManager handle the reply.
+        if not self.shared_state_manager and instance_id not in self.instances:
             return {"success": False, "error": f"Instance {instance_id} not found"}
 
         # Delegate to TmuxInstanceManager for queue management
