@@ -285,46 +285,28 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 
 ### Prerequisites
 - Python 3.11+
-- [uv](https://docs.astral.sh/uv/) package manager (recommended) - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- Anthropic API key (optional if using Claude Desktop/CLI subscription)
+- [uv](https://docs.astral.sh/uv/) package manager - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-### Installation
+### Installation (3 steps)
 
-1. Clone and navigate to the orchestrator directory:
+**1. Clone and install:**
 ```bash
-cd src/orchestrator
-```
-
-2. Install dependencies:
-```bash
+git clone <repository-url>
+cd madrox
 uv sync --all-groups
 ```
 
-3. Set environment variables (API key optional if you're using Claude Desktop/CLI with a subscription):
+**2. Start the server:**
 ```bash
-export ORCHESTRATOR_PORT=8001
-export WORKSPACE_DIR="/tmp/claude_orchestrator"
+MADROX_TRANSPORT=http python run_orchestrator.py
 ```
 
-If you do need direct API access, also set `ANTHROPIC_API_KEY="your-api-key-here"`.
-
-### Running the Server
-
-#### Option 1: Using the launcher script (recommended)
+**3. Connect to Claude Code:**
 ```bash
-uv run python run_orchestrator.py
+claude mcp add madrox http://localhost:8001/mcp --transport http
 ```
 
-#### Option 2: Direct server start
-```bash
-uv run python -c "
-from src.orchestrator.server import main
-import asyncio
-asyncio.run(main())
-"
-```
-
-The server will start on `http://localhost:8001` by default.
+That's it! Start using Madrox tools in Claude Code to spawn and orchestrate AI instances.
 
 ## 🧪 Testing
 

@@ -7,8 +7,6 @@ import logging
 from fastapi import APIRouter, Request, Response
 from sse_starlette.sse import EventSourceResponse
 
-from .simple_models import InstanceRole
-
 logger = logging.getLogger(__name__)
 
 
@@ -467,7 +465,7 @@ class MCPAdapter:
                     elif tool_name == "coordinate_instances":
                         # Bypass decorator - inline coordination logic
                         import uuid
-                        from datetime import datetime, UTC
+                        from datetime import UTC, datetime
 
                         task_id = str(uuid.uuid4())
                         coordinator_id = tool_args["coordinator_id"]
@@ -1119,16 +1117,20 @@ class MCPAdapter:
                             ]
                         }
 
+                    # DEPRECATED: get_main_instance_id tool removed
+                    # Child instances should use their own instance_id in reply_to_caller, not main instance ID
+                    # This tool was causing unwanted auto-spawning of main orchestrator instances
                     elif tool_name == "get_main_instance_id":
-                        # Ensure main instance is spawned
-                        main_id = await self.manager.ensure_main_instance()
                         result = {
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Main instance ID: {main_id}\n\nUse this ID to send messages directly to the main orchestrator:\nsend_to_instance(instance_id='{main_id}', message='your message')",
+                                    "text": "⚠️ DEPRECATED: This tool has been removed.\n\n"
+                                    "Use your own instance_id in reply_to_caller, not the main instance ID.\n"
+                                    "Your instance_id is already provided in your system prompt.",
                                 }
-                            ]
+                            ],
+                            "isError": True,
                         }
 
                     elif tool_name == "reply_to_caller":
