@@ -7,8 +7,6 @@ import logging
 from fastapi import APIRouter, Request, Response
 from sse_starlette.sse import EventSourceResponse
 
-from .simple_models import InstanceRole
-
 logger = logging.getLogger(__name__)
 
 
@@ -104,6 +102,127 @@ class MCPAdapter:
             result["content"] = main_content + result["content"]
 
         return result
+
+    def _parse_template_metadata(self, template_content: str) -> dict:
+        """Extract metadata from template markdown.
+
+        Args:
+            template_content: Template markdown content
+
+        Returns:
+            Dictionary with team_size, duration, estimated_cost, supervisor_role
+        """
+        lines = template_content.split('\n')
+
+        # Parse Team Size from "Team Size: X instances"
+        team_size = 6  # default
+        for line in lines:
+            if "Team Size" in line and "instances" in line:
+                try:
+                    # Extract number before "instances"
+                    parts = line.split("instances")[0].split()
+                    team_size = int(parts[-1])
+                except (ValueError, IndexError):
+                    pass
+
+        # Parse Duration from "Estimated Duration: X hours"
+        duration = "2-4 hours"
+        for line in lines:
+            if "Estimated Duration" in line or "Duration:" in line:
+                # Extract everything after the colon
+                if ":" in line:
+                    duration = line.split(":", 1)[-1].strip()
+
+        # Parse Supervisor Role from markdown
+        supervisor_role = "general"
+        in_supervisor_section = False
+        for line in lines:
+            # Look for supervisor section headers
+            if any(header in line for header in ["### Technical Lead", "### Research Lead",
+                                                   "### Security Lead", "### Data Engineering Lead"]):
+                in_supervisor_section = True
+            elif line.startswith("###"):
+                in_supervisor_section = False
+
+            # Extract role from **Role**: `role_name`
+            if in_supervisor_section and "**Role**:" in line:
+                if "`" in line:
+                    supervisor_role = line.split("`")[1]
+                    break
+
+        return {
+            "team_size": team_size,
+            "duration": duration,
+            "estimated_cost": f"${team_size * 5}",
+            "supervisor_role": supervisor_role
+        }
+
+    def _extract_section(self, content: str, header: str) -> str:
+        """Extract markdown section by header.
+
+        Args:
+            content: Markdown content
+            header: Section header (e.g., "## Workflow Phases")
+
+        Returns:
+            Section content
+        """
+        lines = content.split('\n')
+        section_lines = []
+        in_section = False
+
+        for line in lines:
+            if line.strip().startswith(header):
+                in_section = True
+                continue
+            if in_section and line.startswith("## ") and line.strip() != header:
+                break
+            if in_section:
+                section_lines.append(line)
+
+        return '\n'.join(section_lines).strip()
+
+    def _build_template_instruction(self, template_content: str, task_description: str) -> str:
+        """Build instruction message for supervisor from template.
+
+        Args:
+            template_content: Template markdown content
+            task_description: User's specific task description
+
+        Returns:
+            Instruction message for supervisor
+        """
+        # Extract key sections
+        team_structure = self._extract_section(template_content, "## Team Structure")
+        workflow_phases = self._extract_section(template_content, "## Workflow Phases")
+        communication = self._extract_section(template_content, "## Communication Protocols")
+
+        instruction = f"""Execute the team workflow from this template:
+
+TASK DESCRIPTION:
+{task_description}
+
+TEAM STRUCTURE TO SPAWN:
+{team_structure[:500]}... [See full template for details]
+
+WORKFLOW PHASES TO EXECUTE:
+{workflow_phases[:800]}... [See full template for details]
+
+COMMUNICATION PROTOCOLS TO USE:
+{communication[:400]}... [See full template for details]
+
+CRITICAL EXECUTION INSTRUCTIONS:
+1. Spawn your team members with parent_instance_id set to YOUR instance_id
+2. Use broadcast_to_children for team-wide announcements
+3. Use send_to_instance for 1-on-1 coordination
+4. Workers MUST use reply_to_caller to report back to you
+5. Poll get_pending_replies every 5-15 minutes to collect worker responses
+6. Follow the workflow phases sequentially as outlined in the template
+7. Report final deliverables and status when complete
+
+Begin execution now. Spawn your team and start the workflow."""
+
+        return instruction
 
     def _register_routes(self):
         """Register MCP-compliant routes."""
@@ -467,7 +586,7 @@ class MCPAdapter:
                     elif tool_name == "coordinate_instances":
                         # Bypass decorator - inline coordination logic
                         import uuid
-                        from datetime import datetime, UTC
+                        from datetime import UTC, datetime
 
                         task_id = str(uuid.uuid4())
                         coordinator_id = tool_args["coordinator_id"]
@@ -1119,16 +1238,20 @@ class MCPAdapter:
                             ]
                         }
 
+                    # DEPRECATED: get_main_instance_id tool removed
+                    # Child instances should use their own instance_id in reply_to_caller, not main instance ID
+                    # This tool was causing unwanted auto-spawning of main orchestrator instances
                     elif tool_name == "get_main_instance_id":
-                        # Ensure main instance is spawned
-                        main_id = await self.manager.ensure_main_instance()
                         result = {
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Main instance ID: {main_id}\n\nUse this ID to send messages directly to the main orchestrator:\nsend_to_instance(instance_id='{main_id}', message='your message')",
+                                    "text": "⚠️ DEPRECATED: This tool has been removed.\n\n"
+                                    "Use your own instance_id in reply_to_caller, not the main instance ID.\n"
+                                    "Your instance_id is already provided in your system prompt.",
                                 }
-                            ]
+                            ],
+                            "isError": True,
                         }
 
                     elif tool_name == "reply_to_caller":
@@ -1206,6 +1329,102 @@ class MCPAdapter:
                                     }
                                 ]
                             }
+
+                    elif tool_name == "spawn_team_from_template":
+                        # Spawn a complete team from a predefined template
+                        from pathlib import Path
+
+                        template_name = tool_args["template_name"]
+                        task_description = tool_args["task_description"]
+                        supervisor_role = tool_args.get("supervisor_role")
+
+                        # Load template file
+                        template_path = Path("templates") / f"{template_name}.md"
+                        if not template_path.exists():
+                            raise ValueError(
+                                f"Template not found: {template_name}\n"
+                                f"Available templates: software_engineering_team, research_analysis_team, "
+                                f"security_audit_team, data_pipeline_team"
+                            )
+
+                        template_content = template_path.read_text()
+
+                        # Parse template metadata
+                        template_meta = self._parse_template_metadata(template_content)
+
+                        # Use provided supervisor role or template default
+                        role = supervisor_role or template_meta["supervisor_role"]
+
+                        # Spawn supervisor
+                        supervisor_id = await self.manager.spawn_instance(
+                            name=f"{template_name}-lead",
+                            role=role,
+                            enable_madrox=True,
+                            wait_for_ready=True,
+                        )
+
+                        # Build instruction message
+                        instruction = self._build_template_instruction(
+                            template_content=template_content,
+                            task_description=task_description
+                        )
+
+                        # Send instructions to supervisor (non-blocking)
+                        await self.manager.tmux_manager.send_message(
+                            instance_id=supervisor_id,
+                            message=instruction,
+                            wait_for_response=False
+                        )
+
+                        # Wait briefly for network assembly
+                        await asyncio.sleep(15)
+
+                        # Get network tree preview
+                        tree_preview = "Initializing network..."
+                        try:
+                            roots = []
+                            for instance_id, instance in self.manager.instances.items():
+                                if not instance.get("parent_instance_id") and instance.get("state") != "terminated":
+                                    roots.append((instance_id, instance.get("name", "unknown")))
+
+                            if roots:
+                                roots.sort(key=lambda x: x[1])
+                                lines = []
+                                for i, (root_id, _) in enumerate(roots):
+                                    is_last_root = i == len(roots) - 1
+                                    self.manager._build_tree_recursive(root_id, "", is_last_root, lines, is_root=True)
+                                tree_preview = "\n".join(lines)
+                        except Exception as e:
+                            logger.warning(f"Failed to build tree preview: {e}")
+
+                        # Build result
+                        result_text = f"""✅ Team spawned from template: {template_name}
+
+📋 **Template Details:**
+- Supervisor ID: {supervisor_id}
+- Team Size: {template_meta['team_size']} instances
+- Estimated Duration: {template_meta['duration']}
+- Estimated Cost: {template_meta['estimated_cost']}
+- Status: Initializing
+
+🌳 **Network Topology:**
+{tree_preview}
+
+📝 **Task:**
+{task_description[:200]}{'...' if len(task_description) > 200 else ''}
+
+⏳ The supervisor is now spawning the team and executing the workflow.
+Use get_pending_replies({supervisor_id}) to monitor progress.
+Use get_instance_tree() to see the full network hierarchy."""
+
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": result_text,
+                                }
+                            ]
+                        }
 
                     else:
                         result = {

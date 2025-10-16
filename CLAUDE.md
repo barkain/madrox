@@ -14,13 +14,37 @@ source .venv/bin/activate
 ```
 
 ### Running the Server
+
+The server supports two transport modes that are auto-detected:
+
+**HTTP/SSE Transport (Claude Code):**
 ```bash
-# Start MCP server (preferred method)
+# Start HTTP server (default when running in terminal)
 python run_orchestrator.py
 
-# Alternative direct start
-uv run python -c "from src.orchestrator.server import main; import asyncio; asyncio.run(main())"
+# Server starts on http://localhost:8001
+# Uses Server-Sent Events (SSE) for MCP protocol
 ```
+
+**STDIO Transport (Codex CLI):**
+```bash
+# STDIO mode is auto-activated when stdin is piped
+# Used by Codex CLI MCP client configuration
+
+# Force STDIO mode via environment variable
+MADROX_TRANSPORT=stdio python run_orchestrator.py
+
+# Example Codex CLI config (~/.codex/config.toml):
+# [mcp_servers.madrox]
+# command = "python"
+# args = ["/path/to/madrox/run_orchestrator.py"]
+# env = { MADROX_TRANSPORT = "stdio" }
+```
+
+**Transport Auto-Detection:**
+- Terminal input (stdin.isatty()) → HTTP server on port 8001
+- Piped input → STDIO server for MCP protocol
+- Override with `MADROX_TRANSPORT=stdio` or `MADROX_TRANSPORT=http`
 
 ### Testing
 ```bash
@@ -143,10 +167,17 @@ Three coordination types supported:
 ## Configuration
 
 Environment variables:
-- `ORCHESTRATOR_PORT`: Server port (default: 8001)
+- `MADROX_TRANSPORT`: Transport mode - `http` (default for terminal) or `stdio` (auto for piped)
+- `ORCHESTRATOR_PORT`: HTTP server port (default: 8001, HTTP mode only)
+- `ORCHESTRATOR_HOST`: HTTP server host (default: localhost, HTTP mode only)
 - `MAX_INSTANCES`: Concurrent instance limit (default: 10)
-- `WORKSPACE_DIR`: Base workspace path
-- `LOG_LEVEL`: Logging verbosity
+- `WORKSPACE_DIR`: Base workspace path (default: /tmp/claude_orchestrator)
+- `LOG_DIR`: Log directory (default: /tmp/madrox_logs)
+- `LOG_LEVEL`: Logging verbosity (default: INFO)
+
+**Transport Modes:**
+- **HTTP/SSE**: Used by Claude Code clients, provides web UI and REST API
+- **STDIO**: Used by Codex CLI clients, MCP protocol over stdin/stdout
 
 Note: ANTHROPIC_API_KEY is no longer required as the system now spawns Claude Code CLI processes that use the user's existing Claude authentication.
 

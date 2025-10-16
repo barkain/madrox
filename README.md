@@ -285,46 +285,28 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 
 ### Prerequisites
 - Python 3.11+
-- [uv](https://docs.astral.sh/uv/) package manager (recommended) - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- Anthropic API key (optional if using Claude Desktop/CLI subscription)
+- [uv](https://docs.astral.sh/uv/) package manager - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-### Installation
+### Installation (3 steps)
 
-1. Clone and navigate to the orchestrator directory:
+**1. Clone and install:**
 ```bash
-cd src/orchestrator
-```
-
-2. Install dependencies:
-```bash
+git clone <repository-url>
+cd madrox
 uv sync --all-groups
 ```
 
-3. Set environment variables (API key optional if you're using Claude Desktop/CLI with a subscription):
+**2. Start the server:**
 ```bash
-export ORCHESTRATOR_PORT=8001
-export WORKSPACE_DIR="/tmp/claude_orchestrator"
+MADROX_TRANSPORT=http python run_orchestrator.py
 ```
 
-If you do need direct API access, also set `ANTHROPIC_API_KEY="your-api-key-here"`.
-
-### Running the Server
-
-#### Option 1: Using the launcher script (recommended)
+**3. Connect to Claude Code:**
 ```bash
-uv run python run_orchestrator.py
+claude mcp add madrox http://localhost:8001/mcp --transport http
 ```
 
-#### Option 2: Direct server start
-```bash
-uv run python -c "
-from src.orchestrator.server import main
-import asyncio
-asyncio.run(main())
-"
-```
-
-The server will start on `http://localhost:8001` by default.
+That's it! Start using Madrox tools in Claude Code to spawn and orchestrate AI instances.
 
 ## 🧪 Testing
 
@@ -700,6 +682,53 @@ print(f"Tokens used: {status['total_tokens_used']}")
 print(f"Cost: ${status['total_cost']:.4f}")
 ```
 
+## 📑 Task Templates
+
+Madrox provides production-ready templates for common multi-agent workflows. Deploy complete teams in minutes instead of designing network structures from scratch.
+
+### Available Templates
+
+| Template | Team Size | Duration | Best For |
+|----------|-----------|----------|----------|
+| **[Software Engineering Team](templates/software_engineering_team.md)** | 6 instances | 2-4 hours | SaaS apps, APIs, full-stack products |
+| **[Research Analysis Team](templates/research_analysis_team.md)** | 5 instances | 2-3 hours | Market research, competitive intelligence |
+| **[Security Audit Team](templates/security_audit_team.md)** | 7 instances | 2-4 hours | Security reviews, compliance assessments |
+| **[Data Pipeline Team](templates/data_pipeline_team.md)** | 5 instances | 2-4 hours | ETL pipelines, data lake ingestion |
+
+### Quick Start with Templates
+
+**1. Choose a template** that matches your task (e.g., building a SaaS app → Software Engineering Team)
+
+**2. Spawn supervisor** with `enable_madrox=True`:
+```
+Use spawn_claude:
+- name: "tech-lead"
+- role: "architect"
+- enable_madrox: True
+```
+
+**3. Send template instructions** with your task description:
+```
+Execute the Software Engineering Team workflow:
+
+TASK: Build a task management SaaS with user auth, CRUD operations,
+PostgreSQL database, React frontend, and Docker deployment.
+
+Follow template phases: Team Assembly → Briefing → Design → Implementation →
+Integration → Documentation. Ensure bidirectional communication with reply_to_caller.
+```
+
+**4. Monitor progress** using `get_live_instance_status`, `get_pending_replies`, and `get_instance_tree`
+
+### Template Features
+
+- **Production-Ready**: Include error handling, monitoring, resource constraints
+- **Best Practices**: Proven coordination patterns and communication protocols
+- **Customizable**: Easily adapt team size, roles, and workflow phases
+- **Instruction-Based**: No code blocks - clear workflow guidance
+
+See **[docs/TEMPLATES.md](docs/TEMPLATES.md)** for complete template usage guide, customization options, and advanced patterns.
+
 ## 🛡️ Security & Isolation
 
 - **Workspace Isolation** - Each instance gets its own directory
@@ -900,6 +929,7 @@ Comprehensive documentation is available in the `docs/` directory:
   - High-level architecture diagrams
   - Core components and their responsibilities
   - Communication patterns and protocols
+  - Inter-Process Communication (IPC) with SharedStateManager
   - Security model and isolation
   - Containerization and deployment
 
@@ -908,6 +938,13 @@ Comprehensive documentation is available in the `docs/` directory:
   - HTTP REST API endpoints
   - Configuration options and environment variables
   - Return types and error responses
+
+- **[IPC_IMPLEMENTATION_GUIDE.md](docs/IPC_IMPLEMENTATION_GUIDE.md)** - IPC implementation details
+  - Cross-process shared state architecture
+  - SharedStateManager API and usage
+  - Integration with STDIO transport
+  - Testing and verification guide
+  - Known issues and future improvements
 
 ### Usage & Features
 - **[FEATURES.md](docs/FEATURES.md)** - Feature documentation and usage patterns

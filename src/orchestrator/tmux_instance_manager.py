@@ -23,12 +23,13 @@ logger = logging.getLogger(__name__)
 class TmuxInstanceManager:
     """Manages Claude instances via tmux sessions."""
 
-    def __init__(self, config: dict[str, Any], logging_manager=None):
+    def __init__(self, config: dict[str, Any], logging_manager=None, shared_state_manager=None):
         """Initialize the tmux instance manager.
 
         Args:
             config: Configuration dictionary
             logging_manager: Optional LoggingManager instance for structured logging
+            shared_state_manager: Optional SharedStateManager for cross-process IPC
         """
         self.config = config
         self.instances: dict[str, dict[str, Any]] = {}
@@ -36,7 +37,10 @@ class TmuxInstanceManager:
         self.message_history: dict[str, list[dict]] = {}
         self.logging_manager = logging_manager
 
-        # Bidirectional messaging queues (in-memory, lightweight)
+        # NEW: Use shared state manager for IPC
+        self.shared_state = shared_state_manager
+
+        # DEPRECATED: Keep for backward compatibility with HTTP transport
         self.response_queues: dict[str, asyncio.Queue] = {}
         self.message_registry: dict[str, MessageEnvelope] = {}
         self.main_message_inbox: list[dict[str, Any]] = []
@@ -58,6 +62,75 @@ class TmuxInstanceManager:
         import os
 
         self.server_port = int(os.getenv("ORCHESTRATOR_PORT", "8001"))
+
+        # Manager health monitoring
+        self._manager_health_task: asyncio.Task | None = None
+        self._manager_health_check_interval = 30  # seconds
+        self._manager_health_failures = 0
+        self._max_health_failures = 3  # Alert after 3 consecutive failures
+        self._health_monitoring_enabled = False
+
+        # NOTE: Don't start health monitoring here - no event loop yet!
+        # Health monitoring will start lazily when first instance is spawned
+
+    async def _get_from_shared_queue(self, instance_id: str, timeout: int) -> dict:
+        """Get message from shared queue with async wrapper.
+
+        Wraps blocking multiprocessing.Queue.get() in executor to avoid blocking event loop.
+
+        Args:
+            instance_id: Instance ID whose queue to read from
+            timeout: Timeout in seconds
+
+        Returns:
+            Message dict from queue
+
+        Raises:
+            TimeoutError: If no message received within timeout
+        """
+        import concurrent.futures
+
+        queue = self.shared_state.get_response_queue(instance_id)
+        loop = asyncio.get_event_loop()
+
+        # Run blocking queue.get() in thread executor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = loop.run_in_executor(
+                executor,
+                queue.get,  # Blocking call
+                True,  # block=True
+                timeout,  # timeout in seconds
+            )
+            try:
+                return await future
+            except Exception as e:
+                # Convert queue.Empty to TimeoutError for consistency
+                if "Empty" in str(type(e).__name__):
+                    raise TimeoutError(
+                        f"No message received from instance {instance_id} within {timeout}s"
+                    ) from None
+                raise
+
+    async def _put_to_shared_queue(self, instance_id: str, message: dict):
+        """Put message to shared queue with async wrapper.
+
+        Args:
+            instance_id: Target instance ID whose queue to write to
+            message: Message dict to send
+        """
+        import concurrent.futures
+
+        queue = self.shared_state.get_response_queue(instance_id)
+        lock = self.shared_state.queue_locks[instance_id]
+        loop = asyncio.get_event_loop()
+
+        def put_with_lock():
+            with lock:
+                queue.put(message, block=True, timeout=5)
+
+        # Run blocking queue.put() in thread executor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            await loop.run_in_executor(executor, put_with_lock)
 
     def _configure_mcp_servers(self, pane, instance: dict[str, Any]):
         """Configure MCP servers in the tmux session before spawning Claude/Codex CLI.
@@ -95,10 +168,65 @@ class TmuxInstanceManager:
 
         # Auto-add Madrox if enable_madrox=True and not explicitly configured
         if instance.get("enable_madrox") and "madrox" not in mcp_servers:
-            mcp_servers["madrox"] = {
-                "transport": "http",
-                "url": f"http://localhost:{self.server_port}/mcp",
-            }
+            # Codex only supports STDIO transport, Claude supports both
+            if instance_type == "codex":
+                # Use STDIO transport with our orchestrator as subprocess
+                import sys
+
+                project_root = Path(__file__).parent.parent.parent
+                orchestrator_script = str(project_root / "run_orchestrator.py")
+
+                # Prepare environment variables for child process
+                env_vars = {
+                    "MADROX_TRANSPORT": "stdio",  # Force STDIO mode
+                }
+
+                # Pass Manager connection details for IPC (Issue #1 fix)
+                if self.shared_state:
+                    import base64
+
+                    # Pass manager address and authkey
+                    # Address can be either (host, port) tuple or Unix socket path (string)
+                    manager_address = self.shared_state.manager_address
+
+                    if isinstance(manager_address, tuple):
+                        # TCP address: (host, port)
+                        manager_host, manager_port = manager_address
+                        env_vars["MADROX_MANAGER_HOST"] = str(manager_host)
+                        env_vars["MADROX_MANAGER_PORT"] = str(manager_port)
+                        logger.debug(
+                            f"Passing Manager IPC credentials to child (TCP): {manager_host}:{manager_port}"
+                        )
+                    else:
+                        # Unix socket path
+                        env_vars["MADROX_MANAGER_SOCKET"] = str(manager_address)
+                        logger.debug(
+                            f"Passing Manager IPC credentials to child (Unix socket): {manager_address}"
+                        )
+
+                    # Encode authkey as base64 for safe environment variable passing
+                    env_vars["MADROX_MANAGER_AUTHKEY"] = base64.b64encode(
+                        self.shared_state.manager_authkey
+                    ).decode("ascii")
+
+                mcp_servers["madrox"] = {
+                    "transport": "stdio",
+                    "command": sys.executable,  # Use same Python interpreter
+                    "args": [orchestrator_script],
+                    "env": env_vars,
+                }
+                logger.debug(
+                    f"Configured Codex instance with STDIO madrox: {sys.executable} {orchestrator_script}"
+                )
+            else:
+                # Claude supports HTTP transport
+                mcp_servers["madrox"] = {
+                    "transport": "http",
+                    "url": f"http://localhost:{self.server_port}/mcp",
+                }
+                logger.debug(
+                    f"Configured Claude instance with HTTP madrox: http://localhost:{self.server_port}/mcp"
+                )
 
         # Handle Codex instances differently - use `codex mcp add` commands
         if instance_type == "codex":
@@ -158,6 +286,7 @@ class TmuxInstanceManager:
                         # Read existing config or create new one
                         if codex_config_path.exists():
                             import toml
+
                             config = toml.load(codex_config_path)
                         else:
                             config = {}
@@ -174,6 +303,7 @@ class TmuxInstanceManager:
 
                         # Write config back
                         import toml
+
                         with codex_config_path.open("w") as f:
                             toml.dump(config, f)
 
@@ -223,12 +353,21 @@ class TmuxInstanceManager:
                     continue
 
                 args = server_config.get("args", [])
+                env_vars = server_config.get("env", {})
+
                 # Claude Code expects stdio servers WITHOUT a "type" field
                 # It infers stdio from the presence of "command"
-                mcp_config["mcpServers"][server_name] = {
+                server_entry = {
                     "command": command,
                     "args": args if isinstance(args, list) else [args],
                 }
+
+                # Add environment variables if present
+                if env_vars:
+                    server_entry["env"] = env_vars
+                    logger.debug(f"Adding {len(env_vars)} env vars to MCP server '{server_name}'")
+
+                mcp_config["mcpServers"][server_name] = server_entry
 
             else:
                 logger.warning(
@@ -300,6 +439,15 @@ class TmuxInstanceManager:
         metadata_file = workspace_dir / ".madrox_instance_id"
         metadata_file.write_text(instance_id)
 
+        # Lazy startup of health monitoring (after event loop is running)
+        if self.shared_state and not self._health_monitoring_enabled:
+            try:
+                self._start_manager_health_monitoring()
+                self._health_monitoring_enabled = True
+                logger.info("Manager health monitoring started (lazy initialization)")
+            except Exception as e:
+                logger.error(f"Failed to start health monitoring: {e}", exc_info=True)
+
         # Build system prompt based on role
         has_custom_prompt = bool(system_prompt)
         if not system_prompt:
@@ -348,7 +496,12 @@ class TmuxInstanceManager:
 
         # Initialize response queue for this instance immediately at spawn
         # This ensures the instance can receive replies from children even before sending messages
-        self.response_queues[instance_id] = asyncio.Queue()
+        if self.shared_state:
+            # Use shared queue for STDIO transport
+            self.shared_state.create_response_queue(instance_id)
+        else:
+            # Fall back to local queue for HTTP transport
+            self.response_queues[instance_id] = asyncio.Queue()
 
         # Setup instance-specific logger
         if self.logging_manager:
@@ -507,10 +660,15 @@ class TmuxInstanceManager:
                 content=message,
                 sent_at=send_timestamp,
             )
-            self.message_registry[message_id] = envelope
+
+            # Register in shared state or local state
+            if self.shared_state:
+                self.shared_state.register_message(message_id, envelope.to_dict())
+            else:
+                self.message_registry[message_id] = envelope
 
             # Initialize response queue for this instance if needed
-            if instance_id not in self.response_queues:
+            if not self.shared_state and instance_id not in self.response_queues:
                 self.response_queues[instance_id] = asyncio.Queue()
 
             # Check if system prompt is pending (first message after spawn)
@@ -573,15 +731,31 @@ class TmuxInstanceManager:
             # BIDIRECTIONAL MESSAGING: Check response queue first
             # Instance may use reply_to_caller tool for explicit response
             try:
-                queue_response = await asyncio.wait_for(
-                    self.response_queues[instance_id].get(), timeout=timeout_seconds
-                )
+                if self.shared_state:
+                    # Use shared queue with process-safe wrapper
+                    queue_response = await self._get_from_shared_queue(
+                        instance_id, timeout=timeout_seconds
+                    )
+                else:
+                    # Use local asyncio queue (HTTP transport)
+                    queue_response = await asyncio.wait_for(
+                        self.response_queues[instance_id].get(), timeout=timeout_seconds
+                    )
+
                 # Got explicit reply via bidirectional protocol
                 response_text = queue_response["reply_message"]
                 logger.info(f"Received bidirectional reply from instance {instance_id}")
 
-                # Mark envelope as replied
-                envelope.mark_replied(response_text)
+                # Update envelope status
+                if self.shared_state:
+                    self.shared_state.update_message_status(
+                        message_id,
+                        status="replied",
+                        reply_content=response_text,
+                        replied_at=datetime.now().isoformat(),
+                    )
+                else:
+                    envelope.mark_replied(response_text)
 
                 # Update stats and return
                 response_timestamp = datetime.now(UTC)
@@ -941,6 +1115,11 @@ class TmuxInstanceManager:
             if instance_id in self.message_history:
                 del self.message_history[instance_id]
 
+            # Clean up shared state resources
+            if self.shared_state:
+                self.shared_state.cleanup_instance(instance_id)
+                logger.debug(f"Cleaned up shared state resources for instance {instance_id}")
+
             # Log termination
             if self.logging_manager:
                 instance_logger = self.logging_manager.get_instance_logger(
@@ -1059,8 +1238,12 @@ class TmuxInstanceManager:
         if instance_type == "codex":
             cmd_parts = ["codex"]
 
-            # Add sandbox mode if specified
-            if sandbox_mode := instance.get("sandbox_mode"):
+            # Add permission bypass if requested (equivalent to Claude's --dangerously-skip-permissions)
+            if instance.get("bypass_isolation"):
+                cmd_parts.append("--dangerously-bypass-approvals-and-sandbox")
+
+            # Add sandbox mode if specified (only if not bypassing)
+            elif sandbox_mode := instance.get("sandbox_mode"):
                 cmd_parts.extend(["--sandbox", sandbox_mode])
 
             # Add profile if specified
@@ -1105,7 +1288,9 @@ class TmuxInstanceManager:
         cli_ready = False
 
         while time.time() - init_start < max_init_wait:
-            await asyncio.sleep(0.15)  # Optimized polling: 150ms balance between responsiveness and CPU
+            await asyncio.sleep(
+                0.15
+            )  # Optimized polling: 150ms balance between responsiveness and CPU
             output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
 
             # Detect ready state by checking for interactive indicators
@@ -1123,7 +1308,7 @@ class TmuxInstanceManager:
                 if any(
                     indicator in output
                     for indicator in [
-                        "Try \"",  # Claude Code v2 ready prompt: 'Try "...'
+                        'Try "',  # Claude Code v2 ready prompt: 'Try "...'
                         "⏵⏵",  # Interactive prompt indicator
                         "bypass permissions",  # Permission mode indicator (ready)
                         "What would you like",  # Legacy prompt
@@ -1150,11 +1335,67 @@ class TmuxInstanceManager:
 
         # Handle initial prompts based on instance type
         if instance_type == "codex":
-            # For Codex, send initial_prompt if provided
+            # BUILD instance_id information for Codex
+            workspace_path = instance["workspace_dir"]
+
+            # Add instance ID information for parent communication
+            instance_id_info = (
+                f"Your instance ID: {instance['id']}\n"
+                f"This ID is also stored in {workspace_path}/.madrox_instance_id\n"
+            )
+
+            if instance.get("parent_instance_id"):
+                parent_info = (
+                    f"Your parent instance ID: {instance['parent_instance_id']}\n"
+                    f"You can send messages to your parent using: send_to_instance(parent_instance_id='{instance['parent_instance_id']}', message='your message')\n"
+                )
+                instance_id_info += parent_info
+
+            # Add instructions for spawning children with parent tracking
+            if instance.get("enable_madrox"):
+                spawn_info = (
+                    f"\nWhen spawning child instances, pass your instance_id as parent_instance_id.\n"
+                    f"This enables bidirectional communication between parent and child.\n\n"
+                    f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
+                    f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
+                    f"  [MSG:correlation-id] message content here\n\n"
+                    f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
+                    f"  reply_to_caller(\n"
+                    f"    instance_id='{instance['id']}',\n"
+                    f"    reply_message='your response here',\n"
+                    f"    correlation_id='correlation-id-from-message'\n"
+                    f"  )\n\n"
+                    f"CRITICAL: When calling reply_to_caller, ALWAYS use YOUR OWN instance_id.\n"
+                    f"- Your instance_id: '{instance['id']}'\n"
+                    f"- Do NOT call get_main_instance_id() - that tool is deprecated\n"
+                    f"- Do NOT use correlation_id as the instance_id parameter\n"
+                    f"- Do NOT use any other instance's ID\n\n"
+                    f"Correct usage:\n"
+                    f"  reply_to_caller(\n"
+                    f"    instance_id='{instance['id']}',  # YOUR ID, not main/parent/coordinator\n"
+                    f"    reply_message='your response',\n"
+                    f"    correlation_id='correlation-id-from-message'\n"
+                    f"  )\n\n"
+                    f"Benefits of using reply_to_caller:\n"
+                    f"- Instant delivery (no polling delay)\n"
+                    f"- Proper request-response correlation\n"
+                    f"- More efficient than text output\n"
+                )
+                instance_id_info += spawn_info
+
+            # Send instance_id information first
+            initialization_message = f"SYSTEM INFORMATION:\n{instance_id_info}\n"
+            self._send_multiline_message_to_pane(pane, initialization_message)
+            logger.debug("Sent instance_id information to Codex instance")
+            await asyncio.sleep(2)  # Wait for Codex to process
+
+            # Then send initial_prompt if provided
             if initial_prompt := instance.get("initial_prompt"):
                 pane.send_keys(initial_prompt, enter=True)
                 logger.debug("Sent initial prompt to Codex instance")
-                await asyncio.sleep(2)  # Optimized: 2s sufficient for Codex to process initial prompt
+                await asyncio.sleep(
+                    2
+                )  # Optimized: 2s sufficient for Codex to process initial prompt
         else:
             # For Claude, DEFER system prompt until first message
             # This ensures Claude is fully ready and avoids shell execution
@@ -1311,43 +1552,63 @@ class TmuxInstanceManager:
         """
         try:
             instance = self.instances.get(instance_id)
-            if not instance:
+            # CRITICAL FIX: Skip instance validation for STDIO transport
+            # STDIO subprocesses don't have instances in their local dict - only HTTP server does
+            if not instance and not self.shared_state:
                 return {"success": False, "error": f"Instance {instance_id} not found"}
 
             # Determine the caller (parent instance or coordinator)
-            parent_id = instance.get("parent_instance_id")
+            # For STDIO transport, parent_id may not be available locally
+            parent_id = instance.get("parent_instance_id") if instance else None
             delivered_to = parent_id if parent_id else "coordinator"
 
-            # If there's a correlation_id, update the message envelope
-            if correlation_id and correlation_id in self.message_registry:
-                envelope = self.message_registry[correlation_id]
-                envelope.mark_replied(reply_message, datetime.now())
+            # Update message envelope if correlated
+            if correlation_id:
+                if self.shared_state:
+                    try:
+                        self.shared_state.update_message_status(
+                            correlation_id,
+                            status="replied",
+                            reply_content=reply_message,
+                            replied_at=datetime.now().isoformat(),
+                        )
+                    except KeyError:
+                        # STDIO subprocess doesn't have access to parent's message registry
+                        # This is expected - just log and continue with queueing the reply
+                        logger.debug(
+                            f"Message {correlation_id} not in local registry (STDIO subprocess), "
+                            f"skipping status update"
+                        )
+                elif correlation_id in self.message_registry:
+                    envelope = self.message_registry[correlation_id]
+                    envelope.mark_replied(reply_message, datetime.now())
+
                 logger.debug(f"Correlated reply to message {correlation_id}")
 
-            # Queue the reply in the caller's response queue
-            if parent_id and parent_id in self.response_queues:
-                await self.response_queues[parent_id].put(
-                    {
-                        "sender_id": instance_id,
-                        "reply_message": reply_message,
-                        "correlation_id": correlation_id,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-                logger.info(f"Reply queued for parent instance {parent_id}")
-            elif not parent_id:
-                # Reply to coordinator - use special coordinator queue
-                if "coordinator" not in self.response_queues:
-                    self.response_queues["coordinator"] = asyncio.Queue()
-                await self.response_queues["coordinator"].put(
-                    {
-                        "sender_id": instance_id,
-                        "reply_message": reply_message,
-                        "correlation_id": correlation_id,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-                logger.info("Reply queued for coordinator")
+            # Queue the reply
+            reply_payload = {
+                "sender_id": instance_id,
+                "reply_message": reply_message,
+                "correlation_id": correlation_id,
+                "timestamp": datetime.now().isoformat(),
+            }
+
+            if self.shared_state:
+                # Use shared queue for STDIO transport
+                target_id = parent_id if parent_id else "coordinator"
+                await self._put_to_shared_queue(target_id, reply_payload)
+                logger.info(f"Reply queued for {target_id} via shared queue")
+            else:
+                # Use local queue for HTTP transport
+                if parent_id and parent_id in self.response_queues:
+                    await self.response_queues[parent_id].put(reply_payload)
+                    logger.info(f"Reply queued for parent instance {parent_id}")
+                elif not parent_id:
+                    # Reply to coordinator - use special coordinator queue
+                    if "coordinator" not in self.response_queues:
+                        self.response_queues["coordinator"] = asyncio.Queue()
+                    await self.response_queues["coordinator"].put(reply_payload)
+                    logger.info("Reply queued for coordinator")
 
             # Log the communication
             if self.logging_manager:
@@ -1632,7 +1893,10 @@ class TmuxInstanceManager:
                 "instance_id": instance_id,
                 "error": str(e),
             }
-    async def get_audit_logs(self, since: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+
+    async def get_audit_logs(
+        self, since: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Retrieve audit trail logs.
 
         Args:
@@ -1800,3 +2064,167 @@ class TmuxInstanceManager:
             wait_for_response=wait_for_response,
             timeout_seconds=timeout_seconds,
         )
+
+    def _start_manager_health_monitoring(self):
+        """Start background task for manager health monitoring.
+
+        This is called automatically during initialization if shared_state is available.
+        """
+        if not self.shared_state:
+            logger.warning("Cannot start manager health monitoring without shared_state")
+            return
+
+        # Create task for periodic health checks
+        self._manager_health_task = asyncio.create_task(self._manager_health_monitor_loop())
+        logger.info(
+            f"Manager health monitoring started (interval={self._manager_health_check_interval}s)"
+        )
+
+    async def _manager_health_monitor_loop(self):
+        """Background loop that periodically checks Manager daemon health.
+
+        This task runs continuously and checks the Manager daemon health every
+        _manager_health_check_interval seconds. If the manager becomes unresponsive,
+        it logs errors and eventually triggers graceful degradation.
+        """
+        logger.info("Manager health monitor loop started")
+
+        while True:
+            try:
+                # Wait for the check interval
+                await asyncio.sleep(self._manager_health_check_interval)
+
+                # Skip health check if no shared_state (HTTP transport)
+                if not self.shared_state:
+                    continue
+
+                # Perform health check
+                health_result = self.shared_state.health_check(timeout=5.0)
+
+                if health_result["healthy"]:
+                    # Health check passed - reset failure counter
+                    if self._manager_health_failures > 0:
+                        logger.info(
+                            f"Manager health recovered (was {self._manager_health_failures} failures)",
+                            extra={"response_time_ms": health_result["response_time_ms"]},
+                        )
+                    self._manager_health_failures = 0
+                    logger.debug(
+                        f"Manager health check passed ({health_result['response_time_ms']}ms)"
+                    )
+                else:
+                    # Health check failed
+                    self._manager_health_failures += 1
+                    logger.error(
+                        f"Manager health check failed (failure {self._manager_health_failures}/{self._max_health_failures}): {health_result['error']}",
+                        extra={
+                            "manager_alive": health_result.get("manager_alive", False),
+                            "error": health_result["error"],
+                        },
+                    )
+
+                    # Check if we've exceeded failure threshold
+                    if self._manager_health_failures >= self._max_health_failures:
+                        logger.critical(
+                            f"Manager daemon has failed {self._manager_health_failures} consecutive health checks - CRITICAL FAILURE",
+                            extra={
+                                "health_result": health_result,
+                                "active_instances": len(
+                                    [
+                                        i
+                                        for i in self.instances.values()
+                                        if i["state"] not in ["terminated", "error"]
+                                    ]
+                                ),
+                            },
+                        )
+
+                        # Trigger graceful degradation
+                        await self._handle_manager_failure()
+
+                        # Break the loop - manager is dead
+                        break
+
+            except asyncio.CancelledError:
+                logger.info("Manager health monitor loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in manager health monitor loop: {e}", exc_info=True)
+                # Continue monitoring even if there's an error
+                continue
+
+        logger.info("Manager health monitor loop stopped")
+
+    async def _handle_manager_failure(self):
+        """Handle graceful degradation when Manager daemon dies.
+
+        This method is called when the Manager daemon becomes unresponsive after
+        multiple consecutive health check failures. It:
+        1. Logs the critical failure
+        2. Disables shared_state to prevent further IPC attempts
+        3. Optionally terminates affected instances
+        4. Provides error reporting
+        """
+        logger.critical("═" * 80)
+        logger.critical("MANAGER DAEMON FAILURE DETECTED - INITIATING GRACEFUL DEGRADATION")
+        logger.critical("═" * 80)
+
+        if not self.shared_state:
+            logger.warning("Manager already disabled")
+            return
+
+        # Count affected instances
+        active_instances = [
+            (iid, inst)
+            for iid, inst in self.instances.items()
+            if inst["state"] not in ["terminated", "error"]
+        ]
+
+        logger.critical(
+            f"Manager daemon failure will affect {len(active_instances)} active instances",
+            extra={"affected_instances": [iid for iid, _ in active_instances]},
+        )
+
+        # Disable shared_state to prevent further IPC attempts
+        logger.warning("Disabling shared_state to prevent further IPC failures")
+        self.shared_state = None
+
+        # Log audit event if available
+        if self.logging_manager:
+            self.logging_manager.log_audit_event(
+                event_type="manager_daemon_failure",
+                instance_id="orchestrator",
+                details={
+                    "affected_instances_count": len(active_instances),
+                    "affected_instances": [iid for iid, _ in active_instances],
+                    "failure_reason": "Manager daemon unresponsive after multiple health checks",
+                },
+            )
+
+        # Mark all affected instances with error
+        for instance_id, instance in active_instances:
+            instance["error_message"] = "Manager daemon died - bidirectional messaging unavailable"
+            logger.error(
+                f"Instance {instance_id} ({instance.get('name')}) affected by manager failure",
+                extra={"instance_id": instance_id},
+            )
+
+        logger.critical(
+            "Graceful degradation complete. System will continue with degraded functionality."
+        )
+        logger.critical("Bidirectional messaging and IPC features are now DISABLED.")
+        logger.critical("═" * 80)
+
+    async def stop_manager_health_monitoring(self):
+        """Stop the manager health monitoring task.
+
+        This should be called during shutdown to cleanly stop the background task.
+        """
+        if self._manager_health_task and not self._manager_health_task.done():
+            logger.info("Stopping manager health monitoring")
+            self._manager_health_task.cancel()
+            try:
+                await self._manager_health_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Manager health monitoring stopped")
