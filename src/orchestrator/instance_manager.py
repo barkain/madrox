@@ -9,6 +9,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from .config import validate_model
 from .logging_manager import LoggingManager
 from .tmux_instance_manager import TmuxInstanceManager
 
@@ -76,7 +77,7 @@ class InstanceManager:
         name: str,
         role: str = "general",
         system_prompt: str | None = None,
-        model: str = "claude-sonnet-4-20250514",
+        model: str | None = None,
         bypass_isolation: bool = True,
         enable_madrox: bool = False,
         parent_instance_id: str | None = None,
@@ -88,7 +89,10 @@ class InstanceManager:
             name: Instance name
             role: Predefined role for the instance
             system_prompt: Custom system prompt (overrides role)
-            model: Claude model to use (omit to use CLI default)
+            model: Claude model to use. Options:
+                   - claude-sonnet-4-5 (default, recommended, smartest model for daily use)
+                   - claude-opus-4-1 (legacy, reaches usage limits faster)
+                   - claude-haiku-4-5 (fastest model for simple tasks)
             bypass_isolation: Allow full filesystem access (default: true)
             enable_madrox: Enable madrox MCP server (allows spawning sub-instances)
             parent_instance_id: Parent instance ID for tracking bidirectional communication
@@ -97,11 +101,14 @@ class InstanceManager:
         Returns:
             Dictionary with instance_id and status
         """
+        # Validate model against allowed Claude models
+        validated_model = validate_model("claude", model)
+
         instance_id = await self.spawn_instance(
             name=name,
             role=role,
             system_prompt=system_prompt,
-            model=model,
+            model=validated_model,
             bypass_isolation=bypass_isolation,
             enable_madrox=enable_madrox,
             parent_instance_id=parent_instance_id,
@@ -586,7 +593,7 @@ class InstanceManager:
     async def spawn_codex(
         self,
         name: str,
-        model: str = "gpt-5-codex",
+        model: str | None = None,
         sandbox_mode: str = "workspace-write",
         profile: str | None = None,
         initial_prompt: str | None = None,
@@ -598,11 +605,8 @@ class InstanceManager:
 
         Args:
             name: Instance name
-            model: OpenAI GPT model to use. Common options:
-                   - gpt-5-codex (default)
-                   - gpt-4o
-                   - gpt-4
-                   - o3
+            model: OpenAI GPT model to use. Options:
+                   - gpt-5-codex (default and only allowed model)
             sandbox_mode: Sandbox policy for shell commands (read-only, workspace-write, danger-full-access)
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session
@@ -613,26 +617,13 @@ class InstanceManager:
         Returns:
             Dictionary with instance_id and status
         """
-        # Validate model - Codex only supports OpenAI GPT models
-        if model:
-            if "claude" in model.lower() or "anthropic" in model.lower():
-                raise ValueError(
-                    f"Invalid model '{model}' for Codex instance. "
-                    f"Codex only supports OpenAI GPT models. "
-                    f"Common options: gpt-5-codex, gpt-4o, gpt-4, o3. "
-                    f"Use spawn_claude() for Claude models."
-                )
-            # Warn about common mistakes
-            if model.lower() in ["codex", "codex-1", "codex-mini"]:
-                raise ValueError(
-                    f"Invalid model '{model}'. Codex CLI uses OpenAI GPT models, not legacy Codex models. "
-                    f"Try: gpt-5-codex (default), gpt-4o, gpt-4, or o3."
-                )
+        # Validate model against allowed Codex models
+        validated_model = validate_model("codex", model)
 
         # Delegate to TmuxInstanceManager for Codex instances
         instance_id = await self.tmux_manager.spawn_instance(
             name=name,
-            model=model,
+            model=validated_model,
             bypass_isolation=bypass_isolation,
             enable_madrox=enable_madrox,
             sandbox_mode=sandbox_mode,
@@ -705,15 +696,12 @@ class InstanceManager:
 
         # Build instruction message
         instruction = self._build_template_instruction(
-            template_content=template_content,
-            task_description=task_description
+            template_content=template_content, task_description=task_description
         )
 
         # Send instructions to supervisor (non-blocking)
         await self.tmux_manager.send_message(
-            instance_id=supervisor_id,
-            message=instruction,
-            wait_for_response=False
+            instance_id=supervisor_id, message=instruction, wait_for_response=False
         )
 
         # Wait briefly for network assembly
@@ -742,16 +730,16 @@ class InstanceManager:
 
 📋 **Template Details:**
 - Supervisor ID: {supervisor_id}
-- Team Size: {template_meta['team_size']} instances
-- Estimated Duration: {template_meta['duration']}
-- Estimated Cost: {template_meta['estimated_cost']}
+- Team Size: {template_meta["team_size"]} instances
+- Estimated Duration: {template_meta["duration"]}
+- Estimated Cost: {template_meta["estimated_cost"]}
 - Status: Initializing
 
 🌳 **Network Topology:**
 {tree_preview}
 
 📝 **Task:**
-{task_description[:200]}{'...' if len(task_description) > 200 else ''}
+{task_description[:200]}{"..." if len(task_description) > 200 else ""}
 
 ⏳ The supervisor is now spawning the team and executing the workflow.
 Use get_pending_replies({supervisor_id}) to monitor progress.
@@ -761,7 +749,7 @@ Use get_instance_tree() to see the full network hierarchy."""
 
     def _parse_template_metadata(self, template_content: str) -> dict[str, Any]:
         """Extract metadata from template markdown."""
-        lines = template_content.split('\n')
+        lines = template_content.split("\n")
 
         # Parse Team Size from "Team Size: X instances"
         team_size = 6  # default
@@ -784,8 +772,15 @@ Use get_instance_tree() to see the full network hierarchy."""
         supervisor_role = "general"
         in_supervisor_section = False
         for line in lines:
-            if any(header in line for header in ["### Technical Lead", "### Research Lead",
-                                                   "### Security Lead", "### Data Engineering Lead"]):
+            if any(
+                header in line
+                for header in [
+                    "### Technical Lead",
+                    "### Research Lead",
+                    "### Security Lead",
+                    "### Data Engineering Lead",
+                ]
+            ):
                 in_supervisor_section = True
             elif line.startswith("###"):
                 in_supervisor_section = False
@@ -799,12 +794,12 @@ Use get_instance_tree() to see the full network hierarchy."""
             "team_size": team_size,
             "duration": duration,
             "estimated_cost": f"${team_size * 5}",
-            "supervisor_role": supervisor_role
+            "supervisor_role": supervisor_role,
         }
 
     def _extract_section(self, content: str, header: str) -> str:
         """Extract markdown section by header."""
-        lines = content.split('\n')
+        lines = content.split("\n")
         section_lines = []
         in_section = False
 
@@ -817,7 +812,7 @@ Use get_instance_tree() to see the full network hierarchy."""
             if in_section:
                 section_lines.append(line)
 
-        return '\n'.join(section_lines).strip()
+        return "\n".join(section_lines).strip()
 
     def _build_template_instruction(self, template_content: str, task_description: str) -> str:
         """Build instruction message for supervisor from template."""
