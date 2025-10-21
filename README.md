@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="madrox.png" alt="Madrox Logo" width="400"/>
+  <img src="resources/assets/madrox.png" alt="Madrox Logo" width="400"/>
 </p>
 
 # Madrox - Hierarchical Multi-Agent Orchestrator
