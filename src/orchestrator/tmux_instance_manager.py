@@ -1527,7 +1527,7 @@ class TmuxInstanceManager:
 
         # Final Enter to submit
         time.sleep(0.02)  # Optimized: 20ms sufficient for final submission
-        pane.send_keys("", enter=True)
+        pane.send_keys("Enter", literal=False)
 
         logger.debug(f"Sent multiline message ({len(message)} chars, {total_lines} lines)")
 
