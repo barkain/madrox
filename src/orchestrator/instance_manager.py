@@ -82,6 +82,7 @@ class InstanceManager:
         enable_madrox: bool = False,
         parent_instance_id: str | None = None,
         wait_for_ready: bool = True,
+        initial_prompt: str | None = None,
     ) -> dict[str, Any]:
         """Spawn a new Claude instance with specific role and configuration.
 
@@ -97,6 +98,7 @@ class InstanceManager:
             enable_madrox: Enable madrox MCP server (allows spawning sub-instances)
             parent_instance_id: Parent instance ID for tracking bidirectional communication
             wait_for_ready: Wait for instance to initialize (default: true)
+            initial_prompt: Initial prompt to send as CLI argument (bypasses paste detection)
 
         Returns:
             Dictionary with instance_id and status
@@ -113,6 +115,7 @@ class InstanceManager:
             enable_madrox=enable_madrox,
             parent_instance_id=parent_instance_id,
             wait_for_ready=wait_for_ready,
+            initial_prompt=initial_prompt,
         )
         return {"instance_id": instance_id, "status": "spawned", "name": name}
 

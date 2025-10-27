@@ -320,6 +320,7 @@ Begin execution now. Spawn your team and start the workflow."""
                             wait_for_ready=tool_args.get("wait_for_ready", True),
                             parent_instance_id=parent_id,
                             mcp_servers=tool_args.get("mcp_servers", {}),
+                            initial_prompt=tool_args.get("initial_prompt"),
                         )
                         result = {
                             "content": [
@@ -366,6 +367,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     parent_instance_id=parent_id,
                                     mcp_servers=instance_config.get("mcp_servers", {}),
                                     instance_type=instance_config.get("instance_type", "claude"),
+                                    initial_prompt=instance_config.get("initial_prompt"),
                                 )
                             )
 
