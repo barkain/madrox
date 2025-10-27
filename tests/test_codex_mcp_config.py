@@ -18,7 +18,6 @@ def test_codex_mcp_configuration():
         "id": "test-codex-instance",
         "workspace_dir": Path(config["workspace_base_dir"]) / "test-codex-instance",
         "instance_type": "codex",
-        "enable_madrox": False,
         "mcp_servers": {"playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}},
     }
 
@@ -36,12 +35,14 @@ def test_codex_mcp_configuration():
     # Run the configuration
     manager._configure_mcp_servers(mock_pane, instance)
 
-    # Verify `codex mcp add` command was sent
-    assert len(sent_commands) == 1
-    command = sent_commands[0]
+    # Verify `codex mcp add` commands were sent (playwright + madrox)
+    assert len(sent_commands) == 2, f"Expected 2 commands (playwright + madrox), got {len(sent_commands)}: {sent_commands}"
 
-    # Should contain: codex mcp add playwright npx @playwright/mcp@latest
-    assert "codex mcp add playwright npx @playwright/mcp@latest" in command
+    # First command should be playwright
+    assert "codex mcp add playwright npx @playwright/mcp@latest" in sent_commands[0]
+
+    # Second command should be madrox (always added)
+    assert "codex mcp add madrox" in sent_commands[1]
 
     # Verify NO config file was created for Codex
     config_file = instance["workspace_dir"] / ".claude_mcp_config.json"
@@ -61,7 +62,6 @@ def test_codex_mcp_with_env_vars():
         "id": "test-codex-github",
         "workspace_dir": Path(config["workspace_base_dir"]) / "test-codex-github",
         "instance_type": "codex",
-        "enable_madrox": False,
         "mcp_servers": {
             "github": {
                 "command": "npx",
@@ -79,26 +79,28 @@ def test_codex_mcp_with_env_vars():
 
     manager._configure_mcp_servers(mock_pane, instance)
 
-    assert len(sent_commands) == 1
-    command = sent_commands[0]
+    # Should have 2 commands: github + madrox (always added)
+    assert len(sent_commands) == 2, f"Expected 2 commands (github + madrox), got {len(sent_commands)}: {sent_commands}"
 
-    # Should contain env var
-    assert "codex mcp add github npx -y @modelcontextprotocol/server-github" in command
-    assert "--env GITHUB_PERSONAL_ACCESS_TOKEN=test_token_123" in command
+    # First command should be github with env var
+    assert "codex mcp add github npx -y @modelcontextprotocol/server-github" in sent_commands[0]
+    assert "--env GITHUB_PERSONAL_ACCESS_TOKEN=test_token_123" in sent_commands[0]
+
+    # Second command should be madrox (always added)
+    assert "codex mcp add madrox" in sent_commands[1]
 
 
-def test_codex_http_mcp_warning():
-    """Test that Codex logs a warning for HTTP MCP servers (not supported yet)."""
+def test_codex_madrox_stdio_support():
+    """Test that Codex instances get Madrox via stdio transport (not HTTP)."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
     manager = TmuxInstanceManager(config)
 
     instance = {
-        "id": "test-codex-http",
-        "workspace_dir": Path(config["workspace_base_dir"]) / "test-codex-http",
+        "id": "test-codex-madrox",
+        "workspace_dir": Path(config["workspace_base_dir"]) / "test-codex-madrox",
         "instance_type": "codex",
-        "enable_madrox": True,  # This will try to add HTTP Madrox server
-        "mcp_servers": {},
+        "mcp_servers": {},  # Madrox is always added via stdio transport
     }
 
     instance["workspace_dir"].mkdir(parents=True, exist_ok=True)
@@ -107,15 +109,17 @@ def test_codex_http_mcp_warning():
     sent_commands = []
     mock_pane.send_keys = lambda cmd, enter=False: sent_commands.append(cmd)
 
-    # Run configuration (HTTP Madrox will be skipped with a warning)
+    # Run configuration - Madrox should be added via stdio
     manager._configure_mcp_servers(mock_pane, instance)
 
-    # Should not send any commands (HTTP not supported for Codex)
-    assert len(sent_commands) == 0
+    # Should send 1 command for Madrox via stdio transport
+    assert len(sent_commands) == 1, f"Expected 1 command (madrox stdio), got {len(sent_commands)}: {sent_commands}"
+    assert "codex mcp add madrox" in sent_commands[0]
+    assert "MADROX_TRANSPORT=stdio" in sent_commands[0]
 
 
 def test_claude_still_uses_json_config():
-    """Verify that Claude instances still use JSON config files."""
+    """Verify that Claude instances still use JSON config files. Madrox is always included."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
     manager = TmuxInstanceManager(config)
@@ -125,7 +129,6 @@ def test_claude_still_uses_json_config():
         "id": "test-claude-instance",
         "workspace_dir": Path(config["workspace_base_dir"]) / "test-claude-instance",
         "instance_type": "claude",
-        "enable_madrox": False,
         "mcp_servers": {"playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}},
     }
 

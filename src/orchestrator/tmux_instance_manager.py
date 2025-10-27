@@ -166,8 +166,8 @@ class TmuxInstanceManager:
             logger.error(f"mcp_servers is not a dict: {type(mcp_servers)}, value: {mcp_servers}")
             mcp_servers = {}
 
-        # Auto-add Madrox if enable_madrox=True and not explicitly configured
-        if instance.get("enable_madrox") and "madrox" not in mcp_servers:
+        # Auto-add Madrox if not explicitly configured
+        if "madrox" not in mcp_servers:
             # Codex only supports STDIO transport, Claude supports both
             if instance_type == "codex":
                 # Use STDIO transport with our orchestrator as subprocess
@@ -391,7 +391,6 @@ class TmuxInstanceManager:
         system_prompt: str | None = None,
         model: str | None = None,
         bypass_isolation: bool = True,
-        enable_madrox: bool = True,
         instance_type: str = "claude",
         sandbox_mode: str | None = None,
         profile: str | None = None,
@@ -407,7 +406,6 @@ class TmuxInstanceManager:
             system_prompt: Custom system prompt
             model: Claude/Codex model to use (None = use CLI default)
             bypass_isolation: Allow full filesystem access
-            enable_madrox: Enable madrox MCP server tools
             instance_type: Type of instance - "claude" or "codex"
             sandbox_mode: For Codex - sandbox policy (read-only, workspace-write, danger-full-access)
             profile: For Codex - configuration profile from config.toml
@@ -470,7 +468,6 @@ class TmuxInstanceManager:
             "has_custom_prompt": has_custom_prompt,
             "workspace_dir": str(workspace_dir),
             "bypass_isolation": bypass_isolation,
-            "enable_madrox": enable_madrox,
             "instance_type": instance_type,
             "sandbox_mode": sandbox_mode,
             "profile": profile,
@@ -517,7 +514,6 @@ class TmuxInstanceManager:
                     "role": role,
                     "instance_type": instance_type,
                     "model": model,
-                    "enable_madrox": enable_madrox,
                     "bypass_isolation": bypass_isolation,
                 },
             )
@@ -1357,36 +1353,35 @@ class TmuxInstanceManager:
                 instance_id_info += parent_info
 
             # Add instructions for spawning children with parent tracking
-            if instance.get("enable_madrox"):
-                spawn_info = (
-                    f"\nWhen spawning child instances, pass your instance_id as parent_instance_id.\n"
-                    f"This enables bidirectional communication between parent and child.\n\n"
-                    f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
-                    f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
-                    f"  [MSG:correlation-id] message content here\n\n"
-                    f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
-                    f"  reply_to_caller(\n"
-                    f"    instance_id='{instance['id']}',\n"
-                    f"    reply_message='your response here',\n"
-                    f"    correlation_id='correlation-id-from-message'\n"
-                    f"  )\n\n"
-                    f"CRITICAL: When calling reply_to_caller, ALWAYS use YOUR OWN instance_id.\n"
-                    f"- Your instance_id: '{instance['id']}'\n"
-                    f"- Do NOT call get_main_instance_id() - that tool is deprecated\n"
-                    f"- Do NOT use correlation_id as the instance_id parameter\n"
-                    f"- Do NOT use any other instance's ID\n\n"
-                    f"Correct usage:\n"
-                    f"  reply_to_caller(\n"
-                    f"    instance_id='{instance['id']}',  # YOUR ID, not main/parent/coordinator\n"
-                    f"    reply_message='your response',\n"
-                    f"    correlation_id='correlation-id-from-message'\n"
-                    f"  )\n\n"
-                    f"Benefits of using reply_to_caller:\n"
-                    f"- Instant delivery (no polling delay)\n"
-                    f"- Proper request-response correlation\n"
-                    f"- More efficient than text output\n"
-                )
-                instance_id_info += spawn_info
+            spawn_info = (
+                f"\nWhen spawning child instances, pass your instance_id as parent_instance_id.\n"
+                f"This enables bidirectional communication between parent and child.\n\n"
+                f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
+                f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
+                f"  [MSG:correlation-id] message content here\n\n"
+                f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
+                f"  reply_to_caller(\n"
+                f"    instance_id='{instance['id']}',\n"
+                f"    reply_message='your response here',\n"
+                f"    correlation_id='correlation-id-from-message'\n"
+                f"  )\n\n"
+                f"CRITICAL: When calling reply_to_caller, ALWAYS use YOUR OWN instance_id.\n"
+                f"- Your instance_id: '{instance['id']}'\n"
+                f"- Do NOT call get_main_instance_id() - that tool is deprecated\n"
+                f"- Do NOT use correlation_id as the instance_id parameter\n"
+                f"- Do NOT use any other instance's ID\n\n"
+                f"Correct usage:\n"
+                f"  reply_to_caller(\n"
+                f"    instance_id='{instance['id']}',  # YOUR ID, not main/parent/coordinator\n"
+                f"    reply_message='your response',\n"
+                f"    correlation_id='correlation-id-from-message'\n"
+                f"  )\n\n"
+                f"Benefits of using reply_to_caller:\n"
+                f"- Instant delivery (no polling delay)\n"
+                f"- Proper request-response correlation\n"
+                f"- More efficient than text output\n"
+            )
+            instance_id_info += spawn_info
 
             # Send instance_id information first
             initialization_message = f"SYSTEM INFORMATION:\n{instance_id_info}\n"
@@ -1433,35 +1428,34 @@ class TmuxInstanceManager:
                     instance_id_info += parent_info
 
                 # Add instructions for spawning children with parent tracking
-                if instance.get("enable_madrox"):
-                    spawn_info = (
-                        f"\nWhen spawning child instances, pass your instance_id as parent_instance_id:\n"
-                        f"  spawn_claude(name='child', role='general', parent_instance_id='{instance['id']}')\n"
-                        f"This enables bidirectional communication between parent and child.\n\n"
-                        f"PERFORMANCE TIP: When spawning children, use timeout_seconds=10 for single instance spawns,\n"
-                        f"and timeout_seconds=20 for multiple instances (spawn_multiple_instances with 2+ children).\n\n"
-                        f"HIERARCHICAL MESSAGE PASSING PATTERN:\n"
-                        f"- Children send messages to you (their parent) using: send_to_instance(parent_instance_id='{instance['id']}', message='...')\n"
-                        f"- You coordinate and decide how to route messages between children\n"
-                        f"- Use get_children(parent_id='{instance['id']}') to see all your children\n"
-                        f"- Use broadcast_to_children(parent_id='{instance['id']}', message='...') to message all children\n"
-                        f"- You control what information (IDs, tasks) flows up to your parent or down to your children\n\n"
-                        f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
-                        f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
-                        f"  [MSG:correlation-id] message content here\n\n"
-                        f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
-                        f"  reply_to_caller(\n"
-                        f"    instance_id='{instance['id']}',\n"
-                        f"    reply_message='your response here',\n"
-                        f"    correlation_id='correlation-id-from-message'\n"
-                        f"  )\n\n"
-                        f"Benefits of using reply_to_caller:\n"
-                        f"- Instant delivery (no polling delay)\n"
-                        f"- Proper request-response correlation\n"
-                        f"- More efficient than text output\n\n"
-                        f"If you don't use reply_to_caller, the system will fall back to polling your output (slower but works)."
-                    )
-                    instance_id_info += spawn_info
+                spawn_info = (
+                    f"\nWhen spawning child instances, pass your instance_id as parent_instance_id:\n"
+                    f"  spawn_claude(name='child', role='general', parent_instance_id='{instance['id']}')\n"
+                    f"This enables bidirectional communication between parent and child.\n\n"
+                    f"PERFORMANCE TIP: When spawning children, use timeout_seconds=10 for single instance spawns,\n"
+                    f"and timeout_seconds=20 for multiple instances (spawn_multiple_instances with 2+ children).\n\n"
+                    f"HIERARCHICAL MESSAGE PASSING PATTERN:\n"
+                    f"- Children send messages to you (their parent) using: send_to_instance(parent_instance_id='{instance['id']}', message='...')\n"
+                    f"- You coordinate and decide how to route messages between children\n"
+                    f"- Use get_children(parent_id='{instance['id']}') to see all your children\n"
+                    f"- Use broadcast_to_children(parent_id='{instance['id']}', message='...') to message all children\n"
+                    f"- You control what information (IDs, tasks) flows up to your parent or down to your children\n\n"
+                    f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
+                    f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
+                    f"  [MSG:correlation-id] message content here\n\n"
+                    f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
+                    f"  reply_to_caller(\n"
+                    f"    instance_id='{instance['id']}',\n"
+                    f"    reply_message='your response here',\n"
+                    f"    correlation_id='correlation-id-from-message'\n"
+                    f"  )\n\n"
+                    f"Benefits of using reply_to_caller:\n"
+                    f"- Instant delivery (no polling delay)\n"
+                    f"- Proper request-response correlation\n"
+                    f"- More efficient than text output\n\n"
+                    f"If you don't use reply_to_caller, the system will fall back to polling your output (slower but works)."
+                )
+                instance_id_info += spawn_info
 
                 if instance.get("bypass_isolation", False):
                     workspace_info = (
@@ -1479,22 +1473,20 @@ class TmuxInstanceManager:
                     )
 
                 # ALWAYS append bidirectional messaging instructions (even for custom prompts)
-                bidirectional_instructions = ""
-                if instance.get("enable_madrox"):
-                    bidirectional_instructions = (
-                        f"\n\n{'─' * 80}\n"
-                        f"BIDIRECTIONAL MESSAGING PROTOCOL (REQUIRED):\n"
-                        f"When you receive messages formatted as [MSG:correlation-id] content,\n"
-                        f"you MUST respond using the reply_to_caller tool:\n\n"
-                        f"  reply_to_caller(\n"
-                        f"    instance_id='{instance['id']}',\n"
-                        f"    reply_message='your response here',\n"
-                        f"    correlation_id='correlation-id-from-message'\n"
-                        f"  )\n\n"
-                        f"IMPORTANT: Always use reply_to_caller for every response to messages.\n"
-                        f"This enables instant bidirectional communication and proper correlation.\n"
-                        f"{'─' * 80}\n"
-                    )
+                bidirectional_instructions = (
+                    f"\n\n{'─' * 80}\n"
+                    f"BIDIRECTIONAL MESSAGING PROTOCOL (REQUIRED):\n"
+                    f"When you receive messages formatted as [MSG:correlation-id] content,\n"
+                    f"you MUST respond using the reply_to_caller tool:\n\n"
+                    f"  reply_to_caller(\n"
+                    f"    instance_id='{instance['id']}',\n"
+                    f"    reply_message='your response here',\n"
+                    f"    correlation_id='correlation-id-from-message'\n"
+                    f"  )\n\n"
+                    f"IMPORTANT: Always use reply_to_caller for every response to messages.\n"
+                    f"This enables instant bidirectional communication and proper correlation.\n"
+                    f"{'─' * 80}\n"
+                )
 
                 full_prompt = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}{bidirectional_instructions}"
 

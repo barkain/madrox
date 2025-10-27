@@ -28,9 +28,8 @@ async def main():
                     "arguments": {
                         "name": "parent-coordinator",
                         "role": "architect",
-                        "enable_madrox": True,
                         "system_prompt": "You are a parent coordinator. Your job is to spawn a child instance and communicate with it using bidirectional messaging.",
-                    },
+                    },  # Madrox is always enabled
                 },
             },
         )
@@ -63,9 +62,10 @@ async def main():
 spawn_claude(
     name='child-worker',
     role='general',
-    parent_instance_id='{parent_id}',
-    enable_madrox=True
+    parent_instance_id='{parent_id}'
 )
+
+Note: Madrox is always enabled for all instances.
 
 After spawning, send a test message to the child asking: "What is 2+2?"
 

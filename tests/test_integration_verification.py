@@ -77,7 +77,7 @@ class TestIntegrationAPI:
         call_kwargs = mock_instance_manager.spawn_instance.call_args.kwargs
         assert call_kwargs["name"] == "network-supervisor"
         assert call_kwargs["role"] == "general"
-        assert call_kwargs["enable_madrox"] is True
+        # Note: enable_madrox parameter has been removed - Madrox is always enabled
         assert "system_prompt" in call_kwargs
 
         # Verify supervisor was started

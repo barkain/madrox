@@ -82,7 +82,7 @@ All team members must be spawned with `parent_instance_id` set to the Technical 
 ### Phase 1: Team Assembly (5-10 minutes)
 
 **Supervisor Actions**:
-1. Spawn Technical Lead with `enable_madrox=True`
+1. Spawn Technical Lead
 2. Send message to Technical Lead with instructions to spawn 5 team members
 3. Technical Lead spawns each team member with `parent_instance_id` parameter
 4. Verify all team members spawned successfully using `get_children` tool
@@ -401,10 +401,6 @@ Technical Lead (Supervisor)
 ---
 
 ## Common Pitfalls
-
-### ❌ Forgetting `enable_madrox=True` on Supervisor
-**Result**: Supervisor cannot spawn children
-**Solution**: Always set `enable_madrox=True` when spawning supervisor
 
 ### ❌ Not Setting `parent_instance_id` on Workers
 **Result**: Workers cannot use `reply_to_caller`

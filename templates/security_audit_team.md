@@ -97,7 +97,7 @@ All team members must be spawned with `parent_instance_id` set to the Security L
 ### Phase 1: Audit Planning (10-15 minutes)
 
 **Supervisor Actions**:
-1. Spawn Security Lead with `enable_madrox=True`
+1. Spawn Security Lead
 2. Security Lead spawns 6 security specialists with `parent_instance_id`
 3. Define audit scope: codebase paths, API endpoints, dependencies
 4. Assign audit domains to each specialist

@@ -33,7 +33,7 @@ instance_id = await manager.spawn_instance(
 ```python
 # Spawn multiple instances concurrently for faster setup
 instances = await manager.spawn_multiple_instances([
-    {"name": "architect", "role": "architect", "enable_madrox": True},
+    {"name": "architect", "role": "architect"},
     {"name": "backend-dev", "role": "backend_developer"},
     {"name": "tester", "role": "testing_specialist"}
 ])
@@ -54,8 +54,7 @@ instance_ids = await manager.spawn_multiple_instances([
 # Mix Claude and Codex instances in the same network
 claude_id = await manager.spawn_instance(
     name="claude-architect",
-    role="architect",
-    enable_madrox=True
+    role="architect"
 )
 
 codex_id = await manager.spawn_codex_instance(
@@ -101,7 +100,7 @@ Madrox supports two distinct coordination patterns, each suited for different us
 
 **Characteristics:**
 - ✅ No `parent_instance_id` specified
-- ✅ `enable_madrox` is optional (defaults to `true`)
+- ✅ Madrox is enabled by default for all instances
 - ✅ Instances work independently in parallel
 - ✅ Main orchestrator sends tasks and collects results
 - ❌ Workers cannot communicate with each other
@@ -138,7 +137,7 @@ for analyzer_id in analyzer_ids:
 
 **Characteristics:**
 - ✅ Has `parent_instance_id` set to supervisor's ID
-- ✅ `enable_madrox=True` **ENFORCED** (automatically overridden if set to `false`)
+- ✅ Madrox is always enabled, providing bidirectional communication
 - ✅ Workers can use `reply_to_caller()` to send results to supervisor
 - ✅ Supervisor can use `send_to_instance()`, `broadcast_to_children()`
 - ✅ Hierarchical coordination and monitoring
@@ -149,8 +148,7 @@ for analyzer_id in analyzer_ids:
 # Spawn supervisor (needs madrox to spawn its own workers)
 supervisor_id = await manager.spawn_instance(
     name="repo-cleanup-supervisor",
-    role="general",
-    enable_madrox=True  # Required for spawning workers
+    role="general"
 )
 
 # Supervisor spawns workers with parent_instance_id
@@ -168,44 +166,25 @@ await manager.send_to_instance(
 # Supervisor aggregates results and reports to main orchestrator
 ```
 
-**Automatic Enforcement:**
+**Note:**
 
-When `parent_instance_id` is provided, the system automatically enforces `enable_madrox=True`:
-
-```python
-# User attempts to disable madrox for supervised worker
-worker_id = await manager.spawn_instance(
-    name="worker",
-    parent_instance_id="supervisor-abc123",
-    enable_madrox=False  # ❌ User mistake
-)
-
-# System automatically corrects it:
-# ⚠️  WARNING: Forcing enable_madrox=True for supervised instance 'worker'
-#              with parent supervisor-abc123. Workers must have madrox enabled
-#              for bidirectional communication.
-
-# Worker spawns with enable_madrox=True ✅
-```
-
-**Why This Validation Exists:**
-
-Supervised instances MUST have madrox enabled because:
-- `reply_to_caller()` requires madrox MCP server to function
-- `send_to_instance()` from supervisor to worker requires madrox
-- Without madrox, bidirectional communication breaks
-- Supervision networks would fail silently without this enforcement
+Madrox MCP server is now always enabled for all instances by default. This ensures:
+- All instances have access to bidirectional communication tools
+- Supervised workers can use `reply_to_caller()` to communicate with their supervisor
+- Any instance can spawn sub-instances when needed
+- `send_to_instance()` and other coordination tools work seamlessly
+- No configuration is needed to enable these capabilities
 
 ##### Decision Matrix
 
-| Scenario | Pattern | parent_instance_id | enable_madrox | Tools Available |
-|----------|---------|-------------------|---------------|-----------------|
-| Parallel data processing | Independent | ❌ Not set | Optional (default: true) | send_to_instance only |
-| Simple task execution | Independent | ❌ Not set | Optional | send_to_instance only |
-| Supervisor coordinates workers | Supervised | ✅ Set | ✅ **Forced true** | reply_to_caller, send_to_instance, broadcast |
-| Multi-tier delegation | Supervised | ✅ Set | ✅ **Forced true** | Full bidirectional communication |
-| Workers report findings | Supervised | ✅ Set | ✅ **Forced true** | reply_to_caller, send_to_instance |
-| Monitor existing instances | Independent | ❌ Not set | Optional | send_to_instance only |
+| Scenario | Pattern | parent_instance_id | Tools Available |
+|----------|---------|-------------------|-----------------|
+| Parallel data processing | Independent | ❌ Not set | send_to_instance only |
+| Simple task execution | Independent | ❌ Not set | send_to_instance only |
+| Supervisor coordinates workers | Supervised | ✅ Set | reply_to_caller, send_to_instance, broadcast |
+| Multi-tier delegation | Supervised | ✅ Set | Full bidirectional communication |
+| Workers report findings | Supervised | ✅ Set | reply_to_caller, send_to_instance |
+| Monitor existing instances | Independent | ❌ Not set | send_to_instance only |
 
 ##### Pattern Comparison
 
@@ -315,7 +294,6 @@ Response queues are initialized at spawn time (not just when sending messages):
 supervisor_id = await manager.spawn_instance(
     name="supervisor",
     role="general",
-    enable_madrox=True
 )
 # self.response_queues[supervisor_id] = asyncio.Queue()  ✅ Created now
 
@@ -512,7 +490,6 @@ Every instance gets its own isolated directory:
 child_id = await manager.spawn_instance(
     name="child",
     parent_instance_id=parent_id,
-    enable_madrox=True
 )
 # Child automatically knows parent's workspace location
 ```
@@ -595,7 +572,6 @@ mcp_servers = get_mcp_servers("playwright", "github", "memory")
 instance_id = await manager.spawn_instance(
     name="web-agent",
     role="data_analyst",
-    enable_madrox=True,
     mcp_servers=mcp_servers
 )
 ```
@@ -661,7 +637,6 @@ Use one main instance to coordinate specialized workers:
 coordinator_id = await manager.spawn_instance(
     name="Project Manager",
     role="general",
-    enable_madrox=True
 )
 
 # Coordinator spawns its own team
@@ -750,7 +725,6 @@ Create multi-level organizational structures:
 coordinator_id = await manager.spawn_instance(
     name="CTO",
     role="architect",
-    enable_madrox=True
 )
 
 # Level 2: Team leads (spawned by coordinator)
@@ -851,7 +825,6 @@ Combine strengths of different AI models:
 claude_architect = await manager.spawn_instance(
     name="claude-architect",
     role="architect",
-    enable_madrox=True
 )
 
 codex_coder = await manager.spawn_codex_instance(
@@ -885,7 +858,6 @@ implementation = await manager.send_to_instance(
 coordinator = await manager.spawn_instance(
     name="coordinator",
     role="architect",
-    enable_madrox=True
 )
 
 await manager.send_to_instance(
@@ -925,7 +897,6 @@ Coordinator (Architect)
 coordinator = await manager.spawn_instance(
     name="coordinator",
     role="debugger",
-    enable_madrox=True
 )
 
 await manager.send_to_instance(
@@ -1009,7 +980,6 @@ rust_code = await manager.send_to_instance(
 security_lead = await manager.spawn_instance(
     name="security-lead",
     role="security_analyst",
-    enable_madrox=True
 )
 
 await manager.send_to_instance(
@@ -1035,7 +1005,6 @@ await manager.send_to_instance(
 architect = await manager.spawn_instance(
     name="System Architect",
     role="architect",
-    enable_madrox=True
 )
 
 await manager.send_to_instance(
@@ -1086,7 +1055,6 @@ await manager.send_to_instance(
 debugger = await manager.spawn_instance(
     name="bug-hunter",
     role="debugger",
-    enable_madrox=True
 )
 
 await manager.send_to_instance(

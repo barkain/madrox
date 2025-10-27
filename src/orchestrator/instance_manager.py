@@ -79,7 +79,6 @@ class InstanceManager:
         system_prompt: str | None = None,
         model: str | None = None,
         bypass_isolation: bool = True,
-        enable_madrox: bool = False,
         parent_instance_id: str | None = None,
         wait_for_ready: bool = True,
         initial_prompt: str | None = None,
@@ -95,7 +94,6 @@ class InstanceManager:
                    - claude-opus-4-1 (legacy, reaches usage limits faster)
                    - claude-haiku-4-5 (fastest model for simple tasks)
             bypass_isolation: Allow full filesystem access (default: true)
-            enable_madrox: Enable madrox MCP server (allows spawning sub-instances)
             parent_instance_id: Parent instance ID for tracking bidirectional communication
             wait_for_ready: Wait for instance to initialize (default: true)
             initial_prompt: Initial prompt to send as CLI argument (bypasses paste detection)
@@ -112,7 +110,6 @@ class InstanceManager:
             system_prompt=system_prompt,
             model=validated_model,
             bypass_isolation=bypass_isolation,
-            enable_madrox=enable_madrox,
             parent_instance_id=parent_instance_id,
             wait_for_ready=wait_for_ready,
             initial_prompt=initial_prompt,
@@ -549,7 +546,6 @@ class InstanceManager:
         system_prompt: str | None = None,
         model: str | None = None,
         bypass_isolation: bool = False,
-        enable_madrox: bool = True,
         instance_type: str = "claude",
         **kwargs,
     ) -> str:
@@ -561,7 +557,6 @@ class InstanceManager:
             system_prompt: Custom system prompt
             model: Claude model to use (None = use CLI default)
             bypass_isolation: Allow full filesystem access
-            enable_madrox: Enable madrox MCP server tools (allows spawning sub-instances)
             instance_type: Type of instance (always "claude", handled by tmux)
             **kwargs: Additional configuration options (including parent_instance_id)
 
@@ -584,7 +579,6 @@ class InstanceManager:
             system_prompt=system_prompt,
             model=model,
             bypass_isolation=bypass_isolation,
-            enable_madrox=enable_madrox,
             instance_type=instance_type,
             **kwargs,
         )
@@ -601,7 +595,6 @@ class InstanceManager:
         profile: str | None = None,
         initial_prompt: str | None = None,
         bypass_isolation: bool = False,
-        enable_madrox: bool = True,
         parent_instance_id: str | None = None,
     ) -> dict[str, Any]:
         """Spawn a new Codex CLI instance (OpenAI GPT models only).
@@ -614,7 +607,6 @@ class InstanceManager:
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session
             bypass_isolation: Allow full filesystem access
-            enable_madrox: Enable madrox MCP server (default: true, allows reply_to_caller and spawning sub-instances)
             parent_instance_id: Parent instance ID for tracking
 
         Returns:
@@ -628,7 +620,6 @@ class InstanceManager:
             name=name,
             model=validated_model,
             bypass_isolation=bypass_isolation,
-            enable_madrox=enable_madrox,
             sandbox_mode=sandbox_mode,
             profile=profile,
             initial_prompt=initial_prompt,
@@ -693,7 +684,6 @@ class InstanceManager:
         supervisor_id = await self.spawn_instance(
             name=f"{template_name}-lead",
             role=role,
-            enable_madrox=True,
             wait_for_ready=True,
         )
 
@@ -1341,7 +1331,6 @@ Begin execution now. Spawn your team and start the workflow."""
                     "You can coordinate work across multiple specialized instances."
                 ),
                 bypass_isolation=False,
-                enable_madrox=True,
                 wait_for_ready=True,
             )
 

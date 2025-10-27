@@ -27,7 +27,6 @@ async def main():
                     "arguments": {
                         "name": "web-scraper",
                         "role": "data_analyst",
-                        "enable_madrox": True,
                         "mcp_servers": {
                             "playwright": {
                                 "transport": "stdio",

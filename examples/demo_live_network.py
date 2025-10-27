@@ -49,19 +49,16 @@ async def main():
                 "name": "code-analyzer",
                 "role": "backend_developer",
                 "bypass_isolation": False,
-                "enable_madrox": False,
             },
             {
                 "name": "code-tester",
                 "role": "testing_specialist",
                 "bypass_isolation": False,
-                "enable_madrox": False,
             },
             {
                 "name": "code-reviewer",
                 "role": "code_reviewer",
                 "bypass_isolation": False,
-                "enable_madrox": False,
             },
         ],
         supervision_config=SupervisionConfig(

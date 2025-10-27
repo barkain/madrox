@@ -78,7 +78,7 @@ All team members must be spawned with `parent_instance_id` set to the Data Engin
 ### Phase 1: Pipeline Design (20-30 minutes)
 
 **Supervisor Actions**:
-1. Spawn Data Engineering Lead with `enable_madrox=True`
+1. Spawn Data Engineering Lead
 2. Data Engineering Lead spawns 4 specialists with `parent_instance_id`
 3. Analyze data sources and target destination
 4. Design pipeline architecture (batch vs streaming, transformation logic)

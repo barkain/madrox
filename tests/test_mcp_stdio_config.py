@@ -17,7 +17,6 @@ def test_mcp_stdio_config_format():
     instance = {
         "id": "test-instance",
         "workspace_dir": Path(config["workspace_base_dir"]) / "test-instance",
-        "enable_madrox": False,
         "mcp_servers": {"playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}},
     }
 
@@ -54,7 +53,7 @@ def test_mcp_stdio_config_format():
 
 
 def test_mcp_http_config_format():
-    """Test that http MCP configs include the type field."""
+    """Test that http MCP configs include the type field and Madrox is always added."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
     manager = TmuxInstanceManager(config)
@@ -62,8 +61,7 @@ def test_mcp_http_config_format():
     instance = {
         "id": "test-instance",
         "workspace_dir": Path(config["workspace_base_dir"]) / "test-instance",
-        "enable_madrox": True,  # This will add http Madrox server
-        "mcp_servers": {},
+        "mcp_servers": {},  # Madrox should be added automatically
     }
 
     instance["workspace_dir"].mkdir(parents=True, exist_ok=True)
@@ -97,7 +95,6 @@ def test_mcp_transport_auto_detection():
     instance = {
         "id": "test-instance",
         "workspace_dir": Path(config["workspace_base_dir"]) / "test-instance",
-        "enable_madrox": False,
         "mcp_servers": {
             # No "transport" field - should auto-detect as stdio from "command"
             "playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}
@@ -124,7 +121,7 @@ def test_mcp_transport_auto_detection():
 
 
 def test_mcp_mixed_transports():
-    """Test config with both stdio and http MCP servers."""
+    """Test config with both stdio and http MCP servers. Madrox (http) is always added."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
     manager = TmuxInstanceManager(config)
@@ -132,13 +129,12 @@ def test_mcp_mixed_transports():
     instance = {
         "id": "test-instance",
         "workspace_dir": Path(config["workspace_base_dir"]) / "test-instance",
-        "enable_madrox": True,  # http
         "mcp_servers": {
             "playwright": {  # stdio
                 "command": "npx",
                 "args": ["@playwright/mcp@latest"],
             }
-        },
+        },  # Madrox (http) will be added automatically
     }
 
     instance["workspace_dir"].mkdir(parents=True, exist_ok=True)
