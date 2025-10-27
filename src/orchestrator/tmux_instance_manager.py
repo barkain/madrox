@@ -674,31 +674,25 @@ class TmuxInstanceManager:
             # Check if system prompt is pending (first message after spawn)
             if instance.get("_system_prompt_pending"):
                 logger.info(
-                    f"Sending pending system prompt with first message to instance {instance_id}"
+                    f"Combining pending system prompt with first message to instance {instance_id}"
                 )
                 # Get the pending system prompt
                 system_prompt = instance.get("_pending_system_prompt", "")
 
-                # Send system prompt first (without correlation ID)
-                session = self.tmux_sessions[instance_id]
-                window = session.windows[0]
-                pane = window.panes[0]
-
+                # Combine system prompt with user message for single send
                 if system_prompt:
-                    self._send_multiline_message_to_pane(pane, system_prompt)
-                    logger.debug("Sent pending system prompt")
-
-                    # Wait for Claude to process system prompt
-                    await asyncio.sleep(0.5)  # Minimal delay - Claude processes immediately
+                    formatted_message = f"{system_prompt}\n\n[MSG:{message_id}] {message}"
+                else:
+                    formatted_message = f"[MSG:{message_id}] {message}"
 
                 # Clear the pending flag
                 instance["_system_prompt_pending"] = False
                 instance.pop("_pending_system_prompt", None)
+            else:
+                # Normal flow - just format the user message
+                formatted_message = f"[MSG:{message_id}] {message}"
 
-            # Format message with correlation ID for bidirectional tracking
-            formatted_message = f"[MSG:{message_id}] {message}"
-
-            # Send message via tmux
+            # Send message via tmux (SINGLE SEND)
             session = self.tmux_sessions[instance_id]
             window = session.windows[0]
             pane = window.panes[0]
@@ -1276,6 +1270,17 @@ class TmuxInstanceManager:
             if model := instance.get("model"):
                 cmd_parts.extend(["--model", model])
 
+            # Add initial_prompt as CLI argument to avoid paste detection
+            # Claude CLI accepts prompts directly - bypasses paste detection entirely
+            if initial_prompt := instance.get("initial_prompt"):
+                # Escape single quotes for shell
+                escaped_prompt = initial_prompt.replace("'", "'\\''")
+                cmd_parts.append(f"'{escaped_prompt}'")
+                logger.info(
+                    f"Added initial prompt to CLI command ({len(initial_prompt)} chars, "
+                    f"{len(initial_prompt)/1024:.2f}KB)"
+                )
+
         # Start CLI
         cmd = " ".join(cmd_parts)
         pane.send_keys(cmd, enter=True)
@@ -1500,10 +1505,10 @@ class TmuxInstanceManager:
         logger.info(f"Tmux session initialized for {instance_type} instance {instance_id}")
 
     def _send_multiline_message_to_pane(self, pane, message: str) -> None:
-        """Send multiline message to tmux pane without getting stuck.
+        """Send multiline message to tmux pane without triggering paste detection.
 
-        Properly handles newlines by sending them line-by-line with C-j (newline without submit).
-        Final Enter submits the entire message.
+        Uses line-by-line send_keys with C-j (newline without submit) and adaptive timing.
+        CRITICAL: Adds delay AFTER each send_keys call to prevent instant keystroke bursts.
 
         Args:
             pane: libtmux pane object
@@ -1511,25 +1516,46 @@ class TmuxInstanceManager:
         """
         import time
 
+        message_size_kb = len(message) / 1024
         lines = message.split("\n")
         total_lines = len(lines)
 
+        # Adaptive timing based on message size
+        # Values chosen to stay well above paste detection threshold (10-15ms)
+        if message_size_kb >= 3.0:
+            delay_per_keystroke = 0.020  # 20ms for large messages (50 keystrokes/sec)
+        elif message_size_kb >= 1.0:
+            delay_per_keystroke = 0.015  # 15ms for medium messages (67 keystrokes/sec)
+        else:
+            delay_per_keystroke = 0.010  # 10ms for small messages (100 keystrokes/sec)
+
         # Send each line with C-j between them (newline without submit)
+        keystroke_count = 0
         for i, line in enumerate(lines):
             # Send the line content
             if line:  # Only send non-empty lines
                 pane.send_keys(line, enter=False, literal=True)
+                time.sleep(delay_per_keystroke)  # CRITICAL: Delay after line
+                keystroke_count += 1
 
             # Add newline between lines (not after last line)
             if i < total_lines - 1:
                 pane.send_keys("C-j", enter=False, literal=False)
-                time.sleep(0.005)  # Optimized: 5ms sufficient to avoid paste detection
+                time.sleep(delay_per_keystroke)  # CRITICAL: Delay after C-j
+                keystroke_count += 1
 
-        # Final Enter to submit
-        time.sleep(0.02)  # Optimized: 20ms sufficient for final submission
+        # Small delay before Enter
+        time.sleep(0.05)
+
+        # Send Enter keystroke
         pane.send_keys("Enter", literal=False)
 
-        logger.debug(f"Sent multiline message ({len(message)} chars, {total_lines} lines)")
+        total_time = keystroke_count * delay_per_keystroke
+        logger.info(
+            f"Sent message via send_keys: {len(message)} chars, {total_lines} lines, "
+            f"{message_size_kb:.2f}KB, {keystroke_count} keystrokes, "
+            f"{delay_per_keystroke*1000:.1f}ms/keystroke, {total_time:.2f}s total"
+        )
 
     async def handle_reply_to_caller(
         self,
