@@ -56,7 +56,6 @@ async def main():
         instance_id = await manager.spawn_instance(
             name=f"worker-{i}",
             role=role,
-            enable_madrox=False,
             bypass_isolation=False,
             wait_for_ready=True
         )

@@ -74,7 +74,7 @@ All team members must be spawned with `parent_instance_id` set to the Research L
 ### Phase 1: Research Planning (10-15 minutes)
 
 **Supervisor Actions**:
-1. Spawn Research Lead with `enable_madrox=True`
+1. Spawn Research Lead
 2. Research Lead spawns 4 specialists with `parent_instance_id`
 3. Define research questions and objectives
 4. Identify key topics and keywords

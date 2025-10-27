@@ -88,9 +88,8 @@ async def test_mcp_tools_functionality():
             name="test-main",
             role="general",
             bypass_isolation=True,
-            enable_madrox=True,
             wait_for_ready=True,
-        )
+        )  # Note: enable_madrox removed - Madrox is always enabled
         logger.info(f"   ✅ Spawned main instance: {main_id}")
 
         # Test 2: Spawn additional workers

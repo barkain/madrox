@@ -41,7 +41,6 @@ with open(config_path) as f:
 instance_id = await manager.spawn_instance(
     name="browser-agent",
     role="general",
-    enable_madrox=True,
     mcp_servers={
         mcp_def["name"]: mcp_def["config"]
     }
@@ -56,7 +55,6 @@ Pass MCP server configuration directly:
 instance_id = await manager.spawn_instance(
     name="browser-agent",
     role="general",
-    enable_madrox=True,
     mcp_servers={
         "playwright": {
             "command": "npx",
@@ -74,7 +72,6 @@ Combine multiple MCP servers:
 instance_id = await manager.spawn_instance(
     name="full-stack-agent",
     role="general",
-    enable_madrox=True,
     mcp_servers={
         "playwright": {
             "command": "npx",
@@ -163,6 +160,6 @@ To add a new MCP server configuration:
 ## Notes
 
 - The `transport` field is optional - if `command` is present, it defaults to `stdio`
-- The Madrox MCP server is automatically added when `enable_madrox=True`
+- The Madrox MCP server is automatically added to all instances unless explicitly configured
 - MCP servers are loaded when the Claude instance initializes (may take 30-60 seconds)
 - Each instance gets an isolated workspace directory

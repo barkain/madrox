@@ -32,9 +32,8 @@ async def test_spawn_instance():
                     "arguments": {
                         "name": "test-bidirectional",
                         "role": "general",
-                        "enable_madrox": True,
                         "wait_for_ready": True,
-                    },
+                    },  # Madrox is always enabled
                 },
             },
         )

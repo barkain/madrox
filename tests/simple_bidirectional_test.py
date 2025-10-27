@@ -27,8 +27,7 @@ async def main():
                     "arguments": {
                         "name": "simple-test",
                         "role": "general",
-                        "enable_madrox": True,
-                    },
+                    },  # Madrox is always enabled
                 },
             },
         )

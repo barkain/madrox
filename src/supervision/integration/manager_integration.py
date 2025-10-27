@@ -59,7 +59,6 @@ async def spawn_supervisor(
         role="general",  # Use general role with custom system prompt
         system_prompt=system_prompt,
         bypass_isolation=False,
-        enable_madrox=True,  # Supervisor needs madrox tools for spawning helpers
         wait_for_ready=True,
     )
 

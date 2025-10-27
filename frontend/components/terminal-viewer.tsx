@@ -31,7 +31,7 @@ export function TerminalViewer({ instanceId, instanceName, onClose, compact = fa
             name: "get_tmux_pane_content",
             arguments: {
               instance_id: instanceId,
-              lines: 100,
+              lines: 1000, // Increased from 100 to 1000 for more scrollback history
             },
           },
         }),

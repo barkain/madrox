@@ -262,7 +262,7 @@ Begin execution now. Spawn your team and start the workflow."""
                     # First pass: Look for busy instances (actively making MCP calls)
                     busy_instances = []
                     for instance_id, instance_data in self.manager.instances.items():
-                        if instance_data.get("state") == "busy" and instance_data.get("enable_madrox"):
+                        if instance_data.get("state") == "busy":
                             busy_instances.append((instance_id, instance_data.get("last_activity")))
 
                     if busy_instances:
@@ -271,11 +271,9 @@ Begin execution now. Spawn your team and start the workflow."""
                         caller_instance_id = busy_instances[0][0]
                         logger.info(f"Auto-detected BUSY caller instance: {caller_instance_id}")
                     else:
-                        # Fallback: Find most recently active instance with madrox that has made requests
+                        # Fallback: Find most recently active instance that has made requests
                         latest_activity = None
                         for instance_id, instance_data in self.manager.instances.items():
-                            if not instance_data.get("enable_madrox", False):
-                                continue
                             if instance_data.get("state") == "terminated":
                                 continue
                             if instance_data.get("request_count", 0) == 0:
@@ -300,23 +298,12 @@ Begin execution now. Spawn your team and start the workflow."""
                                 f"Auto-injected parent_instance_id={caller_instance_id} for spawn_claude call from managed instance"
                             )
 
-                        # Supervision pattern validation: Workers MUST have madrox enabled
-                        enable_madrox = tool_args.get("enable_madrox", True)
-
-                        if parent_id and not enable_madrox:
-                            logger.warning(
-                                f"Forcing enable_madrox=True for supervised instance '{tool_args.get('name')}' "
-                                f"with parent {parent_id}. Workers must have madrox enabled for bidirectional communication."
-                            )
-                            enable_madrox = True
-
                         instance_id = await self.manager.spawn_instance(
                             name=tool_args.get("name", "unnamed"),
                             role=tool_args.get("role", "general"),
                             system_prompt=tool_args.get("system_prompt"),
                             model=tool_args.get("model"),  # None = use CLI default
                             bypass_isolation=tool_args.get("bypass_isolation", False),
-                            enable_madrox=enable_madrox,
                             wait_for_ready=tool_args.get("wait_for_ready", True),
                             parent_instance_id=parent_id,
                             mcp_servers=tool_args.get("mcp_servers", {}),
@@ -345,16 +332,6 @@ Begin execution now. Spawn your team and start the workflow."""
                                     f"Auto-injected parent_instance_id={caller_instance_id} for '{instance_config.get('name')}' in spawn_multiple_instances"
                                 )
 
-                            # Supervision pattern validation: Workers MUST have madrox enabled
-                            enable_madrox = instance_config.get("enable_madrox", True)
-
-                            if parent_id and not enable_madrox:
-                                logger.warning(
-                                    f"Forcing enable_madrox=True for supervised instance '{instance_config.get('name')}' "
-                                    f"with parent {parent_id}. Workers must have madrox enabled for bidirectional communication."
-                                )
-                                enable_madrox = True
-
                             spawn_tasks.append(
                                 self.manager.spawn_instance(
                                     name=instance_config.get("name", "unnamed"),
@@ -362,7 +339,6 @@ Begin execution now. Spawn your team and start the workflow."""
                                     system_prompt=instance_config.get("system_prompt"),
                                     model=instance_config.get("model"),
                                     bypass_isolation=instance_config.get("bypass_isolation", False),
-                                    enable_madrox=enable_madrox,
                                     wait_for_ready=instance_config.get("wait_for_ready", True),
                                     parent_instance_id=parent_id,
                                     mcp_servers=instance_config.get("mcp_servers", {}),
@@ -1361,7 +1337,6 @@ Begin execution now. Spawn your team and start the workflow."""
                         supervisor_id = await self.manager.spawn_instance(
                             name=f"{template_name}-lead",
                             role=role,
-                            enable_madrox=True,
                             wait_for_ready=True,
                         )
 

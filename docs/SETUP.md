@@ -794,8 +794,7 @@ instance_id = await manager.spawn_instance(
 # Spawn coordinator with Madrox access
 coordinator = await manager.spawn_instance(
     name="Project Manager",
-    role="general",
-    enable_madrox=True
+    role="general"
 )
 
 # Coordinator spawns its own children

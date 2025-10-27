@@ -8,14 +8,14 @@ BASE_URL = "http://localhost:8001"
 
 
 async def test_1_empty_madrox():
-    """Test 1: Spawn empty Madrox (no MCP servers) and check /mcp."""
+    """Test 1: Spawn instance with no additional MCP servers and check /mcp. Madrox is always present."""
     print("\n" + "=" * 80)
-    print("TEST 1: Empty Madrox (enable_madrox=False)")
+    print("TEST 1: Instance with only Madrox (no additional MCP servers)")
     print("=" * 80)
 
     async with httpx.AsyncClient(timeout=180.0) as client:
-        # Spawn instance without Madrox MCP
-        print("\n[1/3] Spawning instance WITHOUT Madrox MCP...")
+        # Spawn instance with only Madrox (no additional MCP servers)
+        print("\n[1/3] Spawning instance with only Madrox MCP (no additional servers)...")
 
         response = await client.post(
             f"{BASE_URL}/mcp",
@@ -26,10 +26,9 @@ async def test_1_empty_madrox():
                 "params": {
                     "name": "spawn_claude",
                     "arguments": {
-                        "name": "empty-instance",
+                        "name": "madrox-only-instance",
                         "role": "general",
-                        "enable_madrox": False,  # No Madrox
-                        "mcp_servers": {},  # No additional servers
+                        "mcp_servers": {},  # No additional servers - Madrox is always present
                     },
                 },
             },
@@ -90,14 +89,14 @@ async def test_1_empty_madrox():
 
 
 async def test_2_madrox_enabled():
-    """Test 2: Spawn Madrox with enable_madrox=True and check /mcp."""
+    """Test 2: Spawn instance and verify Madrox MCP is always present."""
     print("\n" + "=" * 80)
-    print("TEST 2: Madrox with enable_madrox=True")
+    print("TEST 2: Verify Madrox is always enabled")
     print("=" * 80)
 
     async with httpx.AsyncClient(timeout=180.0) as client:
-        # Spawn instance with Madrox MCP
-        print("\n[1/3] Spawning instance WITH Madrox MCP...")
+        # Spawn instance - Madrox MCP is always present
+        print("\n[1/3] Spawning instance (Madrox is always present)...")
 
         response = await client.post(
             f"{BASE_URL}/mcp",
@@ -110,8 +109,7 @@ async def test_2_madrox_enabled():
                     "arguments": {
                         "name": "madrox-instance",
                         "role": "general",
-                        "enable_madrox": True,  # Enable Madrox
-                    },
+                    },  # Madrox is always enabled
                 },
             },
         )
@@ -217,14 +215,13 @@ async def test_3_playwright_headless():
                     "arguments": {
                         "name": "web-scraper",
                         "role": "data_analyst",
-                        "enable_madrox": True,
                         "mcp_servers": {
                             "playwright": {
                                 "transport": "stdio",
                                 "command": "npx",
                                 "args": ["@playwright/mcp@latest"],
                             }
-                        },
+                        },  # Madrox is always enabled
                     },
                 },
             },

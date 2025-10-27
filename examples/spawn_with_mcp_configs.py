@@ -20,7 +20,6 @@ async def example_playwright_agent():
     instance_id = await manager.spawn_instance(
         name="browser-agent",
         role="general",
-        enable_madrox=True,
         mcp_servers=mcp_servers,
     )
 
@@ -49,7 +48,6 @@ async def example_multiple_mcp_servers():
     instance_id = await manager.spawn_instance(
         name="full-stack-agent",
         role="general",
-        enable_madrox=True,
         mcp_servers=mcp_servers,
     )
 
@@ -82,7 +80,6 @@ async def example_custom_filesystem_config():
     instance_id = await manager.spawn_instance(
         name="file-agent",
         role="general",
-        enable_madrox=True,
         mcp_servers=mcp_servers,
     )
 
@@ -114,7 +111,6 @@ async def example_mix_configs_and_custom():
     instance_id = await manager.spawn_instance(
         name="hybrid-agent",
         role="general",
-        enable_madrox=True,
         mcp_servers=mcp_servers,
     )
 
@@ -137,7 +133,6 @@ async def example_github_with_token():
     instance_id = await manager.spawn_instance(
         name="github-agent",
         role="general",
-        enable_madrox=True,
         mcp_servers=mcp_servers,
         environment_vars=github_config.get("env", {}),
     )

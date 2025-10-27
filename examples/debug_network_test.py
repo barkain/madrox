@@ -132,8 +132,7 @@ async def spawn_network(manager: InstanceManager) -> dict[str, str]:
     logger.info("Spawning main orchestrator...")
     main_id = await manager.spawn_instance(
         name="main_orchestrator",
-        role="architect",
-        enable_madrox=True
+        role="architect"
     )
     logger.info(f"Main orchestrator spawned: {main_id}")
 
@@ -148,8 +147,7 @@ async def spawn_network(manager: InstanceManager) -> dict[str, str]:
         backend_id = await manager.spawn_instance(
             name=f"backend_dev_{i+1}",
             role="backend_developer",
-            parent_instance_id=main_id,
-            enable_madrox=True
+            parent_instance_id=main_id
         )
         backend_ids.append(backend_id)
         logger.info(f"Backend dev {i+1} spawned: {backend_id}")
@@ -164,8 +162,7 @@ async def spawn_network(manager: InstanceManager) -> dict[str, str]:
             tester_id = await manager.spawn_instance(
                 name=f"tester_{i+1}_{j+1}",
                 role="testing_specialist",
-                parent_instance_id=backend_id,
-                enable_madrox=True
+                parent_instance_id=backend_id
             )
             tester_ids.append(tester_id)
             logger.info(f"Tester {i+1}_{j+1} spawned: {tester_id}")

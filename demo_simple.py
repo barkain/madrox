@@ -7,13 +7,12 @@ import time
 
 BASE_URL = "http://localhost:8001"
 
-def spawn_claude(name: str, enable_madrox: bool = False) -> dict:
+def spawn_claude(name: str) -> dict:
     """Spawn a Claude instance."""
     response = requests.post(f"{BASE_URL}/spawn", json={
         "name": name,
         "role": "general",
-        "bypass_isolation": True,
-        "enable_madrox": enable_madrox
+        "bypass_isolation": True
     })
     return response.json()
 
@@ -42,8 +41,8 @@ print("=" * 70)
 print()
 
 # Step 1: Spawn Claude parent
-print("📍 Step 1: Spawning Claude parent with madrox enabled...")
-parent = spawn_claude("weather-claude-parent", enable_madrox=True)
+print("📍 Step 1: Spawning Claude parent...")
+parent = spawn_claude("weather-claude-parent")
 parent_id = parent["instance_id"]
 print(f"✅ Parent spawned: {parent_id}")
 print()
@@ -58,7 +57,6 @@ spawn_request = """You have access to madrox MCP tools. Please:
    - name: "codex-weather-child"
    - model: "gpt-5-codex"
    - bypass_isolation: true (allows command execution without approval)
-   - enable_madrox: true (gives it access to madrox tools including reply_to_caller)
 
 2. Send it this message: "What's the current weather like in Buenos Aires, Argentina? Include temperature and conditions. When done, use reply_to_caller to send your findings back to me."
 

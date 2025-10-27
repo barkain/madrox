@@ -46,31 +46,10 @@ Spawn a new Claude instance with specific role and configuration.
 | `system_prompt` | string | No | `null` | Custom system prompt (overrides role defaults) |
 | `model` | string | No | CLI default | Claude model to use (e.g., `claude-4-sonnet-20250514`) |
 | `bypass_isolation` | boolean | No | `false` | Allow full filesystem access (disables workspace isolation) |
-| `enable_madrox` | boolean | No | `true` | Enable Madrox MCP server (allows spawning sub-instances) |
 | `parent_instance_id` | string | No | `null` | Parent instance ID (for hierarchical networks) |
 | `mcp_servers` | object | No | `{}` | Additional MCP servers to configure (see [MCP Server Configuration](#mcp-server-configuration)) |
 
-**⚠️ Important - Automatic Enforcement:**
-
-When `parent_instance_id` is provided (supervised instances), the system **automatically enforces `enable_madrox=true`** regardless of the provided value. This is required for bidirectional communication between supervisor and workers.
-
-```python
-# If you try this:
-spawn_claude(
-    name="worker",
-    parent_instance_id="supervisor-123",
-    enable_madrox=False  # Will be overridden
-)
-
-# System automatically changes it to:
-# enable_madrox=True
-
-# With warning:
-# "Forcing enable_madrox=True for supervised instance 'worker' with parent
-#  supervisor-123. Workers must have madrox enabled for bidirectional communication."
-```
-
-**Why:** Supervised workers need madrox MCP server to use `reply_to_caller()` and receive messages from their supervisor. See [Coordination Patterns](FEATURES.md#coordination-patterns) for details on independent vs supervised instances.
+**Note:** Madrox MCP server is now always enabled for all instances by default, providing access to spawning sub-instances and bidirectional communication tools.
 
 **Returns:**
 
@@ -98,7 +77,6 @@ instance_id = await spawn_claude(
 instance_id = await spawn_claude(
     name="web-scraper",
     role="data_analyst",
-    enable_madrox=True,
     mcp_servers={
         "playwright": {
             "transport": "stdio",
@@ -240,7 +218,7 @@ Spawn a complete pre-configured team from a predefined template. Automatically s
 
 1. **Template Loading**: Loads markdown template from `templates/` directory
 2. **Metadata Parsing**: Extracts team size, duration, supervisor role from template
-3. **Supervisor Spawn**: Spawns supervisor with `enable_madrox=True` for team management
+3. **Supervisor Spawn**: Spawns supervisor for team management
 4. **Instruction Delivery**: Sends comprehensive instructions including:
    - Team structure to spawn (with roles and responsibilities)
    - Workflow phases to execute sequentially
@@ -1397,7 +1375,6 @@ mcp_servers = get_mcp_servers("playwright", "github", "memory")
 instance_id = await spawn_claude(
     name="agent",
     role="general",
-    enable_madrox=True,
     mcp_servers=mcp_servers
 )
 ```
@@ -1419,16 +1396,15 @@ instance_id = await spawn_claude(
 
 ⚠️ **Important**: Child instances inherit the user's global MCP configuration and add any servers specified via `mcp_servers` parameter. Complete MCP isolation is not currently possible due to Claude CLI's configuration merge behavior.
 
-- `enable_madrox=False` → Instance will NOT have Madrox MCP, but WILL have user's global MCP servers
-- `enable_madrox=True` → Instance will have Madrox MCP + user's global MCP servers
-- `mcp_servers={...}` → Additional servers are added to global + Madrox (if enabled)
+- All instances now include the Madrox MCP server by default
+- `mcp_servers={...}` → Additional servers are added to global + Madrox
 
 **Automatic Madrox Addition:**
 
-If `enable_madrox=True` and `"madrox"` is not explicitly in `mcp_servers`, Madrox is automatically added:
+The Madrox MCP server is automatically added to all instances:
 
 ```python
-if enable_madrox and "madrox" not in mcp_servers:
+if "madrox" not in mcp_servers:
     mcp_servers["madrox"] = {
         "transport": "http",
         "url": f"http://localhost:{server_port}/mcp"
@@ -1442,7 +1418,6 @@ if enable_madrox and "madrox" not in mcp_servers:
 spawn_claude(
     name="web-scraper",
     role="data_analyst",
-    enable_madrox=True,
     mcp_servers={
         "playwright": {
             "command": "npx",
@@ -1457,7 +1432,6 @@ spawn_claude(
 spawn_claude(
     name="data-processor",
     role="data_analyst",
-    enable_madrox=True,
     mcp_servers={
         "filesystem": {
             "command": "npx",
@@ -1644,9 +1618,8 @@ claude mcp add madrox http://localhost:8001/mcp --transport http
 
 **Stdio Transport (Codex - automatic):**
 ```python
-# Codex instances spawned with enable_madrox=true
-# automatically connect to stdio server
-spawn_codex_instance(name="codex-worker", enable_madrox=True)
+# Codex instances automatically connect to stdio server
+spawn_codex_instance(name="codex-worker")
 ```
 
 ---

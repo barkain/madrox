@@ -529,8 +529,7 @@ response = await manager.send_to_instance(
 # Spawn a coordinator parent
 coordinator_id = await manager.spawn_instance(
     name="Project Manager",
-    role="general",
-    enable_madrox=True
+    role="general"
 )
 
 # Parent spawns its own children
@@ -564,7 +563,7 @@ print(tree)
 ```python
 # Spawn both Claude and Codex instances in parallel
 instances = await manager.spawn_multiple_instances([
-    {"name": "claude-architect", "role": "architect", "enable_madrox": True},
+    {"name": "claude-architect", "role": "architect"},
     {"name": "codex-coder", "instance_type": "codex"}
 ])
 
@@ -699,12 +698,11 @@ Madrox provides production-ready templates for common multi-agent workflows. Dep
 
 **1. Choose a template** that matches your task (e.g., building a SaaS app → Software Engineering Team)
 
-**2. Spawn supervisor** with `enable_madrox=True`:
+**2. Spawn supervisor:**
 ```
 Use spawn_claude:
 - name: "tech-lead"
 - role: "architect"
-- enable_madrox: True
 ```
 
 **3. Send template instructions** with your task description:

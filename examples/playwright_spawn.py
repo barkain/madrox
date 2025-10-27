@@ -31,7 +31,6 @@ async def main():
     instance_id = await manager.spawn_instance(
         name="playwright-test",
         role="general",
-        enable_madrox=False,  # Only Playwright for this test
         mcp_servers=mcp_servers,
         wait_for_ready=True,
     )
