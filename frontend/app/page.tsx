@@ -60,7 +60,7 @@ function SortableTerminal({ terminal, size, onExpand, onClose, onResizeStart }: 
     transition: transition || 'transform 200ms ease-out',
     opacity: isDragging ? 0.4 : 1,
     zIndex: isDragging ? 1000 : 'auto',
-    width: size ? `${size.width}px` : '400px',
+    width: size ? `${size.width}px` : '600px', // Increased from 400px to 600px (150%)
     height: size ? `${size.height}px` : '320px',
     flexShrink: 0, // Prevent shrinking
   }
@@ -237,8 +237,8 @@ export default function MadroxMonitor() {
         const newWidth = e.clientX - rect.left
         const newHeight = e.clientY - rect.top
 
-        // Min size: 400x300px
-        const minWidth = 400
+        // Min size: 600x300px (width increased from 400px to 600px for 150% scaling)
+        const minWidth = 600
         const minHeight = 300
 
         const finalWidth = Math.max(newWidth, minWidth)
