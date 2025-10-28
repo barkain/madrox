@@ -82,6 +82,7 @@ class InstanceManager:
         parent_instance_id: str | None = None,
         wait_for_ready: bool = True,
         initial_prompt: str | None = None,
+        mcp_servers: str | None = None,
     ) -> dict[str, Any]:
         """Spawn a new Claude instance with specific role and configuration.
 
@@ -97,6 +98,8 @@ class InstanceManager:
             parent_instance_id: Parent instance ID for tracking bidirectional communication
             wait_for_ready: Wait for instance to initialize (default: true)
             initial_prompt: Initial prompt to send as CLI argument (bypasses paste detection)
+            mcp_servers: JSON string of MCP server configurations. Format:
+                        '{"server_name": {"transport": "http", "url": "http://localhost:8002/mcp"}}'
 
         Returns:
             Dictionary with instance_id and status
@@ -113,6 +116,7 @@ class InstanceManager:
             parent_instance_id=parent_instance_id,
             wait_for_ready=wait_for_ready,
             initial_prompt=initial_prompt,
+            mcp_servers=mcp_servers,
         )
         return {"instance_id": instance_id, "status": "spawned", "name": name}
 
@@ -596,6 +600,7 @@ class InstanceManager:
         initial_prompt: str | None = None,
         bypass_isolation: bool = False,
         parent_instance_id: str | None = None,
+        mcp_servers: str | None = None,
     ) -> dict[str, Any]:
         """Spawn a new Codex CLI instance (OpenAI GPT models only).
 
@@ -608,6 +613,8 @@ class InstanceManager:
             initial_prompt: Initial prompt to start the session
             bypass_isolation: Allow full filesystem access
             parent_instance_id: Parent instance ID for tracking
+            mcp_servers: JSON string of MCP server configurations. Format:
+                        '{"server_name": {"transport": "http", "url": "http://localhost:8002/mcp"}}'
 
         Returns:
             Dictionary with instance_id and status
@@ -625,6 +632,7 @@ class InstanceManager:
             initial_prompt=initial_prompt,
             instance_type="codex",
             parent_instance_id=parent_instance_id,
+            mcp_servers=mcp_servers,
         )
         # Copy instance to main instances dict for unified tracking
         self.instances[instance_id] = self.tmux_manager.instances[instance_id]
