@@ -2,7 +2,7 @@
 
 ## Overview
 
-Deploy a complete cross-functional software engineering team with a technical lead who coordinates development, testing, and delivery of SaaS products.
+Deploy a complete cross-functional software engineering team with a technical lead who **orchestrates and delegates** work to specialized team members. The supervisor NEVER does technical work themselves.
 
 **Best for**: Building web applications, APIs, microservices, full-stack products
 
@@ -10,45 +10,64 @@ Deploy a complete cross-functional software engineering team with a technical le
 
 **Estimated Duration**: 2-4 hours depending on complexity
 
+**Key Principle**: **Pure Delegation Pattern** - The supervisor only coordinates, never implements
+
 ---
 
 ## Team Structure
 
 ### Technical Lead (Supervisor)
-**Role**: `architect` or `general`
+**Role**: `technical_lead` or `general`
 **Enable Madrox**: ✅ Required (must spawn team members)
 
-**Responsibilities**:
-- Spawn and manage specialized team members
-- Coordinate development workflow across phases
-- Brief team on project requirements using broadcast
+**Responsibilities** (Orchestration Only - NO Technical Work):
+- Spawn all team members immediately upon receiving task
+- Delegate work to appropriate team members
+- Monitor progress via `get_pending_replies` polling
+- Unblock team members when they report issues
 - Aggregate results and ensure quality standards
-- Handle errors and blockers across team
-- Deliver final integrated solution
+- Report final deliverables to parent
+
+**CRITICAL**: The supervisor NEVER:
+- ❌ Writes code themselves
+- ❌ Creates design documents themselves
+- ❌ Implements features themselves
+- ❌ Writes tests themselves
+- ✅ ONLY delegates and coordinates
 
 ### Team Members (Workers)
 
 All team members must be spawned with `parent_instance_id` set to the Technical Lead's instance ID to enable bidirectional messaging.
 
-#### 1. Backend Developer
+#### 1. Solutions Architect
+**Role**: `architect`
+**Focus**: System design, architecture decisions, technical specifications
+**Deliverables**:
+- System architecture diagrams
+- Technical design documents
+- API specifications and contracts
+- Database schema design
+- Integration point definitions
+
+#### 2. Backend Developer
 **Role**: `backend_developer`
-**Focus**: API design, database architecture, business logic
+**Focus**: API implementation, database operations, business logic
 **Deliverables**:
 - RESTful/GraphQL API endpoints
-- Database schema and migrations
+- Database migrations and queries
 - Authentication and authorization logic
 - Core business logic implementation
 
-#### 2. Frontend Developer
+#### 3. Frontend Developer
 **Role**: `frontend_developer`
-**Focus**: UI/UX, client-side application, responsive design
+**Focus**: UI/UX implementation, client-side application
 **Deliverables**:
 - React/Vue/Angular components
 - State management implementation
 - Responsive layouts and styling
 - Client-side routing and navigation
 
-#### 3. DevOps Engineer
+#### 4. DevOps Engineer
 **Role**: `devops_engineer`
 **Focus**: Infrastructure, deployment, CI/CD
 **Deliverables**:
@@ -57,7 +76,7 @@ All team members must be spawned with `parent_instance_id` set to the Technical 
 - Cloud deployment setup (AWS/GCP/Azure)
 - Monitoring and logging infrastructure
 
-#### 4. QA Engineer
+#### 5. QA Engineer
 **Role**: `qa_engineer`
 **Focus**: Testing strategy, automation, quality assurance
 **Deliverables**:
@@ -66,76 +85,100 @@ All team members must be spawned with `parent_instance_id` set to the Technical 
 - End-to-end test automation
 - Quality gates and acceptance criteria
 
-#### 5. Technical Writer
-**Role**: `technical_writer`
-**Focus**: Documentation, API references, user guides
-**Deliverables**:
-- API documentation (OpenAPI/Swagger)
-- Setup and deployment guides
-- User documentation
-- Code comments and inline docs
-
 ---
 
 ## Workflow Phases
 
-### Phase 1: Team Assembly (5-10 minutes)
+### 🚨 CRITICAL EXECUTION INSTRUCTIONS FOR SUPERVISOR
 
-**Supervisor Actions**:
-1. Spawn Technical Lead
-2. Send message to Technical Lead with instructions to spawn 5 team members
-3. Technical Lead spawns each team member with `parent_instance_id` parameter
-4. Verify all team members spawned successfully using `get_children` tool
-5. Confirm 2-level hierarchy using `get_instance_tree` tool
+**YOU ARE A COORDINATOR, NOT A WORKER**
+
+When you receive a task:
+1. **IMMEDIATELY spawn all 5 team members** (do NOT analyze or design first)
+2. **DELEGATE all technical work** to team members
+3. **NEVER write code, designs, or documentation yourself**
+4. **ONLY coordinate, monitor, and aggregate results**
+
+Your workflow:
+```
+Receive task → Spawn team → Broadcast briefing → Delegate to specialists → Monitor → Aggregate → Deliver
+```
+
+If you find yourself:
+- Reading codebase files directly → ❌ STOP, delegate to Architect
+- Creating design documents → ❌ STOP, delegate to Architect
+- Writing implementation code → ❌ STOP, delegate to Developer
+- Writing tests → ❌ STOP, delegate to QA Engineer
+
+**Your only tools**: `spawn_claude`, `broadcast_to_children`, `send_to_instance`, `get_pending_replies`, `get_children`
+
+---
+
+### Phase 1: Team Assembly (2-5 minutes)
+
+**Supervisor Actions** (Immediate upon receiving task):
+1. **Immediately spawn all 5 team members** with `parent_instance_id` parameter:
+   - Solutions Architect (`architect` role)
+   - Backend Developer (`backend_developer` role)
+   - Frontend Developer (`frontend_developer` role)
+   - DevOps Engineer (`devops_engineer` role)
+   - QA Engineer (`qa_engineer` role)
+2. Verify all spawned using `get_children` tool
+3. Confirm 2-level hierarchy using `get_instance_tree` tool
 
 **Success Criteria**:
-- All 5 team members spawned with parent_instance_id
+- All 5 team members spawned immediately
 - Network topology shows single supervisor with 5 children
 - No unwanted extra instances spawned
+- Total time: <5 minutes
 
-### Phase 2: Project Briefing (10-15 minutes)
+### Phase 2: Project Briefing (5-10 minutes)
 
-**Supervisor Actions**:
-1. Technical Lead uses `broadcast_to_children` to send project briefing to all workers
-2. Briefing includes: project description, timeline, individual responsibilities, deliverables
-3. Technical Lead polls for acknowledgments using `get_pending_replies`
-4. Workers reply using `reply_to_caller` with their understanding and initial plan
+**Supervisor Actions** (Pure Delegation):
+1. Use `broadcast_to_children` to send project briefing to ALL workers
+2. Briefing includes: project description, timeline, individual responsibilities
+3. Poll for acknowledgments using `get_pending_replies` (every 2-3 minutes)
+4. Verify all workers acknowledged within 10 minutes
 
 **Communication Pattern**:
 - **Supervisor → All Workers**: `broadcast_to_children`
 - **Each Worker → Supervisor**: `reply_to_caller` (mandatory)
-- **Polling**: `get_pending_replies` every 5 minutes
+- **Polling**: `get_pending_replies` every 2-3 minutes
 
 **Success Criteria**:
 - All workers acknowledge briefing within 10 minutes
-- All workers provide initial approach/plan
-- Technical Lead has clear visibility into team readiness
+- All workers understand their responsibilities
+- Technical Lead confirms team readiness
 
-### Phase 3: Design Phase (30-45 minutes)
+### Phase 3: Design Phase (20-30 minutes)
 
-**Supervisor Actions**:
-1. Request design proposals from Backend Developer and Frontend Developer
-2. Request infrastructure requirements from DevOps Engineer
-3. Request test strategy from QA Engineer
-4. Coordinate design review across team
-5. Approve designs before implementation begins
+**Supervisor Actions** (Delegate to Architect):
+1. **Delegate design work to Solutions Architect** using `send_to_instance`
+2. Request architecture document from Architect
+3. Wait for Architect's design using `get_pending_replies`
+4. Once received, **broadcast design to all team members** for review
+5. Collect feedback from team via `get_pending_replies`
+6. Send feedback to Architect for revisions if needed
+7. Approve final design before proceeding to implementation
 
 **Communication Pattern**:
-- **1-on-1 coordination**: Use `send_to_instance` for individual worker requests
-- **Design review**: Use `broadcast_to_children` to share designs with full team
-- **Feedback collection**: Use `get_pending_replies` to gather input
+- **Supervisor → Architect**: `send_to_instance` (design request)
+- **Architect → Supervisor**: `reply_to_caller` (design document)
+- **Supervisor → All Workers**: `broadcast_to_children` (design review)
+- **Workers → Supervisor**: `reply_to_caller` (feedback)
 
-**Worker Deliverables**:
-- Backend: API architecture diagram, database schema, endpoint specifications
-- Frontend: Component structure, wireframes, state management approach
-- DevOps: Infrastructure diagram, deployment strategy
-- QA: Test plan, coverage targets, acceptance criteria
-- Tech Writer: Documentation structure outline
+**Architect Deliverables**:
+- System architecture diagram
+- API specifications and endpoints
+- Database schema design
+- Integration point definitions
+- Technology stack recommendations
 
 **Success Criteria**:
-- All designs reviewed and approved by Technical Lead
+- Architecture document received from Architect
+- All team members reviewed and approved design
 - No conflicting architectural decisions
-- Team alignment on implementation approach
+- Technical Lead never wrote design themselves (only coordinated)
 
 ### Phase 4: Implementation Phase (60-90 minutes)
 

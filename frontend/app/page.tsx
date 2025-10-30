@@ -237,9 +237,9 @@ export default function MadroxMonitor() {
         const newWidth = e.clientX - rect.left
         const newHeight = e.clientY - rect.top
 
-        // Min size: 600x300px (width increased from 400px to 600px for 150% scaling)
-        const minWidth = 600
-        const minHeight = 300
+        // Min size: 650x500px (width increased from 400px to 600px for 150% scaling)
+        const minWidth = 650
+        const minHeight = 500
 
         const finalWidth = Math.max(newWidth, minWidth)
         const finalHeight = Math.max(newHeight, minHeight)
