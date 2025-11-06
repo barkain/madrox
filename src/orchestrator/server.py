@@ -61,6 +61,12 @@ class ClaudeOrchestratorServer:
         """
         self.config = config
 
+        # Initialize artifacts configuration
+        self.artifacts_dir = os.getenv("ARTIFACTS_DIR", "/tmp/madrox_logs/artifacts")
+        self.preserve_artifacts = os.getenv("PRESERVE_ARTIFACTS", "true").lower() == "true"
+        artifact_patterns_str = os.getenv("ARTIFACT_PATTERNS", "*.md,*.pdf,*.csv,*.json,FINAL_*")
+        self.artifact_patterns = [p.strip() for p in artifact_patterns_str.split(",")]
+
         # Initialize logging manager
         log_dir = os.getenv("MADROX_LOG_DIR", "/tmp/madrox_logs")
         log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -81,8 +87,14 @@ class ClaudeOrchestratorServer:
         # Test the reconfigured module-level logger
         server_logger.info("Module-level logger reconfigured successfully")
 
-        # Initialize instance manager with logging
-        self.instance_manager = InstanceManager(config.to_dict())
+        # Initialize instance manager with logging and artifacts config
+        instance_manager_config = config.to_dict()
+        instance_manager_config.update({
+            "artifacts_dir": self.artifacts_dir,
+            "preserve_artifacts": self.preserve_artifacts,
+            "artifact_patterns": self.artifact_patterns,
+        })
+        self.instance_manager = InstanceManager(instance_manager_config)
 
         # Track server start time for session-only audit logs (use local time to match audit log timestamps)
         self.server_start_time = datetime.now().isoformat()

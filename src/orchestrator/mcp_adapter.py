@@ -1333,24 +1333,24 @@ Begin execution now. Spawn your team and start the workflow."""
                         # Use provided supervisor role or template default
                         role = supervisor_role or template_meta["supervisor_role"]
 
-                        # Spawn supervisor
-                        supervisor_id = await self.manager.spawn_instance(
-                            name=f"{template_name}-lead",
-                            role=role,
-                            wait_for_ready=True,
-                        )
-
-                        # Build instruction message
+                        # Build instruction message FIRST (before spawning)
                         instruction = self._build_template_instruction(
                             template_content=template_content,
                             task_description=task_description
                         )
 
-                        # Send instructions to supervisor (non-blocking)
-                        await self.manager.tmux_manager.send_message(
-                            instance_id=supervisor_id,
-                            message=instruction,
-                            wait_for_response=False
+                        # Spawn supervisor WITH instruction as initial_prompt (bypasses paste detection)
+                        supervisor_id = await self.manager.spawn_instance(
+                            name=f"{template_name}-lead",
+                            role=role,
+                            wait_for_ready=True,
+                            initial_prompt=instruction,
+                        )
+
+                        # No need to send_message - instruction already received via CLI argument
+                        logger.info(
+                            f"Spawned supervisor {supervisor_id} with initial instruction "
+                            f"({len(instruction)} chars, {len(instruction)/1024:.2f}KB)"
                         )
 
                         # Wait briefly for network assembly
