@@ -569,9 +569,10 @@ class InstanceManager:
         """
         # MANDATORY: Enforce parent_instance_id requirement
         is_main_instance = name == "main-orchestrator"
+        is_team_supervisor = name.endswith("-lead")  # Team supervisors can be root-level
         parent_id = kwargs.get("parent_instance_id")
 
-        if parent_id is None and not is_main_instance:
+        if parent_id is None and not is_main_instance and not is_team_supervisor:
             raise ValueError(
                 f"Cannot spawn instance '{name}': parent_instance_id is required but could not be determined. "
                 f"This instance is not the main orchestrator and no parent was detected. "
@@ -609,9 +610,11 @@ class InstanceManager:
             logger.info(f"Instance '{name}' will have parent: {parent_id}")
         elif is_main_instance:
             logger.info(f"Instance '{name}' is main orchestrator (no parent)")
+        elif is_team_supervisor:
+            logger.info(f"Instance '{name}' is team supervisor (root-level, no parent)")
         else:
             # Should never reach here due to exception above
-            raise RuntimeError(f"Invalid state: instance '{name}' has no parent but is not main orchestrator")
+            raise RuntimeError(f"Invalid state: instance '{name}' has no parent but is not main orchestrator or team supervisor")
 
         # All Claude instances are handled by TmuxInstanceManager
         instance_id = await self.tmux_manager.spawn_instance(
