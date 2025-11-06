@@ -587,6 +587,23 @@ class InstanceManager:
                 f"  3. First spawn the main orchestrator, then use it as parent\n"
             )
 
+        # Validate that parent_instance_id exists (if provided)
+        if parent_id and parent_id not in self.instances:
+            raise ValueError(
+                f"Cannot spawn instance '{name}': parent_instance_id '{parent_id}' does not exist. "
+                f"The specified parent instance was not found in the managed instances. "
+                f"\n"
+                f"Possible causes:\n"
+                f"  1. Parent instance ID is incorrect or misspelled\n"
+                f"  2. Parent instance has already been terminated\n"
+                f"  3. Using a placeholder value like 'supervisor' instead of actual instance ID\n"
+                f"\n"
+                f"Solutions:\n"
+                f"  1. Verify the parent instance ID is correct\n"
+                f"  2. Use your actual instance_id (provided in your system prompt)\n"
+                f"  3. Let auto-detection work by not providing parent_instance_id\n"
+            )
+
         # Log final parent assignment
         if parent_id:
             logger.info(f"Instance '{name}' will have parent: {parent_id}")
