@@ -182,6 +182,49 @@ class MCPAdapter:
 
         return '\n'.join(section_lines).strip()
 
+    def _detect_caller_instance(self) -> str | None:
+        """Detect which managed instance is making the MCP tool call.
+
+        Detection strategies (in order):
+        1. Find busy instances (actively executing tools)
+        2. Find most recently active instance with request_count > 0
+
+        Returns:
+            Instance ID of caller, or None if detection fails
+        """
+        # Strategy 1: Busy instances
+        busy_instances = []
+        for instance_id, instance_data in self.manager.instances.items():
+            if instance_data.get("state") == "busy":
+                busy_instances.append((instance_id, instance_data.get("last_activity")))
+
+        if busy_instances:
+            busy_instances.sort(key=lambda x: x[1] if x[1] else "", reverse=True)
+            caller_id = busy_instances[0][0]
+            logger.info(f"Auto-detected caller via busy state: {caller_id}")
+            return caller_id
+
+        # Strategy 2: Most recently active
+        latest_activity = None
+        caller_id = None
+        for instance_id, instance_data in self.manager.instances.items():
+            if instance_data.get("state") == "terminated":
+                continue
+            if instance_data.get("request_count", 0) == 0:
+                continue
+
+            last_activity = instance_data.get("last_activity")
+            if last_activity and (latest_activity is None or last_activity > latest_activity):
+                latest_activity = last_activity
+                caller_id = instance_id
+
+        if caller_id:
+            logger.info(f"Auto-detected caller via activity: {caller_id}")
+        else:
+            logger.warning("Failed to auto-detect caller instance")
+
+        return caller_id
+
     def _build_template_instruction(self, template_content: str, task_description: str) -> str:
         """Build instruction message for supervisor from template.
 
@@ -256,37 +299,7 @@ Begin execution now. Spawn your team and start the workflow."""
                     tool_args = params.get("arguments", {})
 
                     # AUTO-DETECT CALLER INSTANCE (for parent_instance_id injection)
-                    # Strategy: Find instances currently in "busy" state - they're actively executing tools
-                    caller_instance_id = None
-
-                    # First pass: Look for busy instances (actively making MCP calls)
-                    busy_instances = []
-                    for instance_id, instance_data in self.manager.instances.items():
-                        if instance_data.get("state") == "busy":
-                            busy_instances.append((instance_id, instance_data.get("last_activity")))
-
-                    if busy_instances:
-                        # If multiple busy instances, pick most recently active
-                        busy_instances.sort(key=lambda x: x[1] if x[1] else "", reverse=True)
-                        caller_instance_id = busy_instances[0][0]
-                        logger.info(f"Auto-detected BUSY caller instance: {caller_instance_id}")
-                    else:
-                        # Fallback: Find most recently active instance that has made requests
-                        latest_activity = None
-                        for instance_id, instance_data in self.manager.instances.items():
-                            if instance_data.get("state") == "terminated":
-                                continue
-                            if instance_data.get("request_count", 0) == 0:
-                                continue
-
-                            last_activity = instance_data.get("last_activity")
-                            if last_activity:
-                                if latest_activity is None or last_activity > latest_activity:
-                                    latest_activity = last_activity
-                                    caller_instance_id = instance_id
-
-                        if caller_instance_id:
-                            logger.info(f"Auto-detected ACTIVE caller instance (fallback): {caller_instance_id}")
+                    caller_instance_id = self._detect_caller_instance()
 
                     # Execute the tool
                     if tool_name == "spawn_claude":

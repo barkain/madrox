@@ -567,14 +567,34 @@ class InstanceManager:
         Returns:
             Instance ID
         """
-        # Auto-assign main as parent if no parent specified and this isn't the main instance
+        # MANDATORY: Enforce parent_instance_id requirement
         is_main_instance = name == "main-orchestrator"
         parent_id = kwargs.get("parent_instance_id")
 
-        if parent_id is None and not is_main_instance and self.main_instance_id is not None:
-            # Auto-assign main as parent
-            kwargs["parent_instance_id"] = self.main_instance_id
-            logger.debug(f"Auto-assigning main as parent for {name}")
+        if parent_id is None and not is_main_instance:
+            raise ValueError(
+                f"Cannot spawn instance '{name}': parent_instance_id is required but could not be determined. "
+                f"This instance is not the main orchestrator and no parent was detected. "
+                f"\n"
+                f"Possible causes:\n"
+                f"  1. Spawning from external client without explicit parent_instance_id\n"
+                f"  2. Caller instance detection failed (instance not in 'busy' state)\n"
+                f"  3. Spawning before any managed instances exist\n"
+                f"\n"
+                f"Solutions:\n"
+                f"  1. Provide parent_instance_id explicitly: spawn_claude(..., parent_instance_id='abc123')\n"
+                f"  2. Spawn from within a managed instance (auto-detection will work)\n"
+                f"  3. First spawn the main orchestrator, then use it as parent\n"
+            )
+
+        # Log final parent assignment
+        if parent_id:
+            logger.info(f"Instance '{name}' will have parent: {parent_id}")
+        elif is_main_instance:
+            logger.info(f"Instance '{name}' is main orchestrator (no parent)")
+        else:
+            # Should never reach here due to exception above
+            raise RuntimeError(f"Invalid state: instance '{name}' has no parent but is not main orchestrator")
 
         # All Claude instances are handled by TmuxInstanceManager
         instance_id = await self.tmux_manager.spawn_instance(
