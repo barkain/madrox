@@ -1764,7 +1764,11 @@ class TmuxInstanceManager:
                 logger.info(f"Reply queued for {target_id} via shared queue")
             else:
                 # Use local queue for HTTP transport
-                if parent_id and parent_id in self.response_queues:
+                if parent_id:
+                    # Ensure parent's response queue exists
+                    if parent_id not in self.response_queues:
+                        self.response_queues[parent_id] = asyncio.Queue()
+                        logger.debug(f"Created response queue for parent {parent_id}")
                     await self.response_queues[parent_id].put(reply_payload)
                     logger.info(f"Reply queued for parent instance {parent_id}")
                 elif not parent_id:
