@@ -670,6 +670,7 @@ class InstanceManager:
         template_name: str,
         task_description: str,
         supervisor_role: str | None = None,
+        parent_instance_id: str | None = None,
     ) -> str:
         """Spawn a complete team from a predefined template.
 
@@ -683,6 +684,7 @@ class InstanceManager:
             template_name: Name of the template to use
             task_description: Description of the task for the team
             supervisor_role: Optional supervisor role (defaults to template's recommended role)
+            parent_instance_id: Optional parent instance ID for supervisor (for auto-detection if not provided)
 
         Returns:
             Formatted result text with supervisor ID and network topology
@@ -719,6 +721,7 @@ class InstanceManager:
             role=role,
             wait_for_ready=True,
             initial_prompt=instruction,
+            parent_instance_id=parent_instance_id,
         )
 
         # No need to send_message - instruction already received via CLI argument
