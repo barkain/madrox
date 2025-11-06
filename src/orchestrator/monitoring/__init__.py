@@ -28,6 +28,7 @@ from .config import MonitoringConfig
 from .log_reader import IncrementalLogReader
 from .models import AgentSummary, LogPosition, OnTrackStatus
 from .position_tracker import PositionTracker
+from .summary_generator import SummaryGenerator
 
 __all__ = [
     "MonitoringConfig",
@@ -36,6 +37,7 @@ __all__ = [
     "LogPosition",
     "AgentSummary",
     "OnTrackStatus",
+    "SummaryGenerator",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
