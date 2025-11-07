@@ -1862,7 +1862,6 @@ Begin execution now. Spawn your team and start the workflow."""
 
         return instances_info
 
-    @mcp.tool
     async def collect_team_artifacts(self, team_supervisor_id: str) -> dict[str, Any]:
         """Collect and organize artifacts from all team members.
 
