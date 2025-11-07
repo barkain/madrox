@@ -65,6 +65,36 @@ class MCPAdapter:
                 "inputSchema": input_schema,
             })
 
+        # Add MonitoringService tools
+        tools_list.extend([
+            {
+                "name": "get_agent_summary",
+                "description": "Get AI-generated activity summary for a specific Claude instance",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "instance_id": {"type": "string", "description": "Instance ID to retrieve summary for"}
+                    },
+                    "required": ["instance_id"]
+                }
+            },
+            {
+                "name": "get_all_agent_summaries",
+                "description": "Get activity summaries for all monitored instances",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "status_filter": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional filter by status"
+                        }
+                    },
+                    "required": []
+                }
+            }
+        ])
+
         logger.info(f"Built tools list: {len(tools_list)} tools discovered from FastMCP")
         return tools_list
 
@@ -187,7 +217,8 @@ class MCPAdapter:
 
         Detection strategies (in order):
         1. Find busy instances (actively executing tools)
-        2. Find most recently active instance with request_count > 0
+        2. Find most recently active instance (ignoring request_count requirement)
+        3. If only one running instance exists, use that
 
         Returns:
             Instance ID of caller, or None if detection fails
@@ -204,13 +235,11 @@ class MCPAdapter:
             logger.info(f"Auto-detected caller via busy state: {caller_id}")
             return caller_id
 
-        # Strategy 2: Most recently active
+        # Strategy 2: Most recently active (removed request_count > 0 requirement)
         latest_activity = None
         caller_id = None
         for instance_id, instance_data in self.manager.instances.items():
             if instance_data.get("state") == "terminated":
-                continue
-            if instance_data.get("request_count", 0) == 0:
                 continue
 
             last_activity = instance_data.get("last_activity")
@@ -219,11 +248,22 @@ class MCPAdapter:
                 caller_id = instance_id
 
         if caller_id:
-            logger.info(f"Auto-detected caller via activity: {caller_id}")
-        else:
-            logger.warning("Failed to auto-detect caller instance")
+            logger.info(f"Auto-detected caller via recent activity: {caller_id}")
+            return caller_id
 
-        return caller_id
+        # Strategy 3: If only one running instance, it must be the caller
+        running_instances = [
+            iid for iid, inst in self.manager.instances.items()
+            if inst.get("state") in ["running", "idle", "busy"]
+        ]
+
+        if len(running_instances) == 1:
+            caller_id = running_instances[0]
+            logger.info(f"Auto-detected caller as only running instance: {caller_id}")
+            return caller_id
+
+        logger.warning(f"Failed to auto-detect caller instance (found {len(running_instances)} running instances)")
+        return None
 
     def _build_template_instruction(self, template_content: str, task_description: str) -> str:
         """Build instruction message for supervisor from template.
@@ -976,8 +1016,11 @@ Begin execution now. Spawn your team and start the workflow."""
 
                     elif tool_name == "get_instance_status":
                         # Bypass decorator - use internal method
+                        # Use summary_only=True when getting all instances to avoid huge payloads
+                        instance_id = tool_args.get("instance_id")
                         status = self.manager._get_instance_status_internal(
-                            instance_id=tool_args.get("instance_id")
+                            instance_id=instance_id,
+                            summary_only=(instance_id is None)
                         )
                         result = {
                             "content": [{"type": "text", "text": json.dumps(status, indent=2)}]
@@ -1423,6 +1466,68 @@ Use get_instance_tree() to see the full network hierarchy."""
                                 }
                             ]
                         }
+
+                    elif tool_name == "get_agent_summary":
+                        instance_id = tool_args["instance_id"]
+                        monitoring_service = getattr(self.manager, 'monitoring_service', None) or getattr(getattr(self.manager, 'tmux_manager', None), 'monitoring_service', None)
+                        if not monitoring_service:
+                            result = {"error": {"code": -32603, "message": "MonitoringService not available"}}
+                        elif not monitoring_service.is_running():
+                            result = {"error": {"code": -32603, "message": "MonitoringService not running"}}
+                        else:
+                            try:
+                                summary = await monitoring_service.get_summary(instance_id)
+                                if not summary:
+                                    result = {
+                                        "error": {
+                                            "code": -32603,
+                                            "message": f"No summary found for instance {instance_id}"
+                                        }
+                                    }
+                                else:
+                                    result = {
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": json.dumps(summary, indent=2),
+                                            }
+                                        ]
+                                    }
+                            except Exception as e:
+                                result = {"error": {"code": -32603, "message": str(e)}}
+
+                    elif tool_name == "get_all_agent_summaries":
+                        status_filter = tool_args.get("status_filter")
+                        monitoring_service = getattr(self.manager, 'monitoring_service', None) or getattr(getattr(self.manager, 'tmux_manager', None), 'monitoring_service', None)
+                        if not monitoring_service:
+                            result = {"error": {"code": -32603, "message": "MonitoringService not available"}}
+                        elif not monitoring_service.is_running():
+                            result = {"error": {"code": -32603, "message": "MonitoringService not running"}}
+                        else:
+                            try:
+                                summaries = await monitoring_service.get_all_summaries()
+
+                                # Apply status filter if provided
+                                if status_filter:
+                                    summaries = {
+                                        iid: summary
+                                        for iid, summary in summaries.items()
+                                        if summary.get("status") in status_filter
+                                    }
+
+                                result = {
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": json.dumps({
+                                                "summaries": summaries,
+                                                "count": len(summaries)
+                                            }, indent=2),
+                                        }
+                                    ]
+                                }
+                            except Exception as e:
+                                result = {"error": {"code": -32603, "message": str(e)}}
 
                     else:
                         result = {

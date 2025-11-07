@@ -94,9 +94,16 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_spawn_instance_basic(self, manager):
         """Test basic instance spawning."""
+        # Spawn main orchestrator first
+        main_id = await manager.spawn_instance(
+            name="main-orchestrator",
+            role="general",
+        )
+
         instance_id = await manager.spawn_instance(
             name="test-instance",
             role="general",
+            parent_instance_id=main_id,
         )
 
         assert instance_id is not None
@@ -111,10 +118,17 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_spawn_instance_with_role(self, manager):
         """Test spawning instance with specific role."""
+        # Spawn main orchestrator first
+        main_id = await manager.spawn_instance(
+            name="main-orchestrator",
+            role="general",
+        )
+
         instance_id = await manager.spawn_instance(
             name="frontend-dev",
             role=InstanceRole.FRONTEND_DEVELOPER.value,
             system_prompt="You are a frontend developer",
+            parent_instance_id=main_id,
         )
 
         instance = manager.instances[instance_id]
@@ -124,33 +138,44 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_spawn_multiple_instances(self, manager):
         """Test spawning multiple instances."""
+        # Spawn main orchestrator first
+        main_id = await manager.spawn_instance(
+            name="main-orchestrator",
+            role="general",
+        )
+
         instances = []
 
         for i in range(3):
             instance_id = await manager.spawn_instance(
                 name=f"instance-{i}",
                 role="general",
+                parent_instance_id=main_id,
             )
             instances.append(instance_id)
 
-        assert len(manager.instances) == 3
+        assert len(manager.instances) == 4  # 3 + main
         assert all(iid in manager.instances for iid in instances)
 
     @pytest.mark.asyncio
     async def test_max_instances_limit(self, manager):
         """Test maximum instance limit enforcement."""
-        # Spawn up to the limit
-        for i in range(5):  # max_concurrent_instances = 5
-            await manager.spawn_instance(name=f"instance-{i}")
+        # Spawn main orchestrator first
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+
+        # Spawn up to the limit (main + 4 more = 5 total)
+        for i in range(4):  # max_concurrent_instances = 5
+            await manager.spawn_instance(name=f"instance-{i}", role="general", parent_instance_id=main_id)
 
         # Try to spawn one more - should fail
         with pytest.raises(RuntimeError, match="Maximum concurrent instances reached"):
-            await manager.spawn_instance(name="overflow-instance")
+            await manager.spawn_instance(name="overflow-instance", role="general", parent_instance_id=main_id)
 
     @pytest.mark.asyncio
     async def test_send_message_to_instance(self, manager):
         """Test sending messages to instances."""
-        instance_id = await manager.spawn_instance(name="test-instance")
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+        instance_id = await manager.spawn_instance(name="test-instance", role="general", parent_instance_id=main_id)
 
         response = await manager.send_to_instance(
             instance_id=instance_id,
@@ -166,7 +191,8 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_send_message_no_wait(self, manager):
         """Test sending message without waiting for response."""
-        instance_id = await manager.spawn_instance(name="test-instance")
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+        instance_id = await manager.spawn_instance(name="test-instance", role="general", parent_instance_id=main_id)
 
         response = await manager.send_to_instance(
             instance_id=instance_id,
@@ -179,7 +205,8 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_send_message_timeout(self, manager):
         """Test message timeout handling."""
-        instance_id = await manager.spawn_instance(name="test-instance")
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+        instance_id = await manager.spawn_instance(name="test-instance", role="general", parent_instance_id=main_id)
 
         # Mock the _send_and_receive_message to simulate timeout
         with patch.object(manager, "_send_and_receive_message", side_effect=TimeoutError()):
@@ -193,7 +220,8 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_get_instance_output(self, manager):
         """Test getting instance output."""
-        instance_id = await manager.spawn_instance(name="test-instance")
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+        instance_id = await manager.spawn_instance(name="test-instance", role="general", parent_instance_id=main_id)
 
         output = await manager.get_instance_output(instance_id)
 
@@ -203,13 +231,16 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_coordinate_instances(self, manager):
         """Test instance coordination."""
+        # Spawn main orchestrator first
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+
         # Spawn coordinator and participants
-        coordinator_id = await manager.spawn_instance(name="coordinator", role="architect")
+        coordinator_id = await manager.spawn_instance(name="coordinator", role="architect", parent_instance_id=main_id)
         participant1_id = await manager.spawn_instance(
-            name="participant1", role="frontend_developer"
+            name="participant1", role="frontend_developer", parent_instance_id=main_id
         )
         participant2_id = await manager.spawn_instance(
-            name="participant2", role="backend_developer"
+            name="participant2", role="backend_developer", parent_instance_id=main_id
         )
 
         task_id = await manager.coordinate_instances(
@@ -225,7 +256,8 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_terminate_instance(self, manager):
         """Test instance termination."""
-        instance_id = await manager.spawn_instance(name="test-instance")
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+        instance_id = await manager.spawn_instance(name="test-instance", role="general", parent_instance_id=main_id)
 
         # Verify instance exists and is running
         assert instance_id in manager.instances
@@ -240,7 +272,8 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_terminate_busy_instance_without_force(self, manager):
         """Test terminating busy instance without force flag."""
-        instance_id = await manager.spawn_instance(name="test-instance")
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+        instance_id = await manager.spawn_instance(name="test-instance", role="general", parent_instance_id=main_id)
 
         # Set instance to busy
         manager.instances[instance_id]["state"] = "busy"
@@ -254,7 +287,8 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_terminate_busy_instance_with_force(self, manager):
         """Test force terminating busy instance."""
-        instance_id = await manager.spawn_instance(name="test-instance")
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+        instance_id = await manager.spawn_instance(name="test-instance", role="general", parent_instance_id=main_id)
 
         # Set instance to busy
         manager.instances[instance_id]["state"] = "busy"
@@ -284,8 +318,10 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_health_check(self, manager):
         """Test health check functionality."""
+        # Spawn main orchestrator first
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
         # Spawn an instance
-        instance_id = await manager.spawn_instance(name="test-instance")
+        instance_id = await manager.spawn_instance(name="test-instance", role="general", parent_instance_id=main_id)
 
         # Run health check
         await manager.health_check()
@@ -296,8 +332,10 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_health_check_timeout(self, manager):
         """Test health check with timeout."""
+        # Spawn main orchestrator first
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
         # Create instance and set old last_activity
-        instance_id = await manager.spawn_instance(name="test-instance")
+        instance_id = await manager.spawn_instance(name="test-instance", role="general", parent_instance_id=main_id)
 
         # Set last activity to very old timestamp to trigger timeout
         from datetime import UTC, datetime, timedelta
@@ -334,7 +372,8 @@ class TestInstanceManager:
     @pytest.mark.asyncio
     async def test_workspace_isolation(self, manager, temp_workspace):
         """Test workspace directory isolation."""
-        instance_id = await manager.spawn_instance(name="test-instance")
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+        instance_id = await manager.spawn_instance(name="test-instance", role="general", parent_instance_id=main_id)
 
         instance = manager.instances[instance_id]
         workspace_dir = Path(instance["workspace_dir"])
@@ -412,26 +451,35 @@ class TestIntegration:
         """Test complete orchestration workflow with multiple specialized instances."""
         # Scenario: Build a simple web application using 3 specialized instances
 
+        # 0. Spawn main orchestrator first
+        main_id = await manager.spawn_instance(
+            name="main-orchestrator",
+            role="general",
+        )
+
         # 1. Spawn architect to design the system
         architect_id = await manager.spawn_instance(
             name="system-architect",
             role=InstanceRole.ARCHITECT.value,
+            parent_instance_id=main_id,
         )
 
         # 2. Spawn frontend developer
         frontend_id = await manager.spawn_instance(
             name="frontend-developer",
             role=InstanceRole.FRONTEND_DEVELOPER.value,
+            parent_instance_id=main_id,
         )
 
         # 3. Spawn backend developer
         backend_id = await manager.spawn_instance(
             name="backend-developer",
             role=InstanceRole.BACKEND_DEVELOPER.value,
+            parent_instance_id=main_id,
         )
 
         # Verify all instances are created
-        assert len(manager.instances) == 3
+        assert len(manager.instances) == 4  # 3 + main
         assert all(
             manager.instances[iid]["state"] == "running"
             for iid in [architect_id, frontend_id, backend_id]
@@ -484,9 +532,16 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_resource_limits_enforcement(self, manager):
         """Test resource limits are properly enforced."""
+        # Spawn main orchestrator first
+        main_id = await manager.spawn_instance(
+            name="main-orchestrator",
+            role="general",
+        )
+
         # Create instance with resource limits
         instance_id = await manager.spawn_instance(
             name="limited-instance",
+            parent_instance_id=main_id,
             resource_limits={
                 "max_total_tokens": 100,
                 "max_cost": 0.01,
@@ -506,7 +561,8 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_concurrent_message_handling(self, manager):
         """Test handling multiple concurrent messages."""
-        instance_id = await manager.spawn_instance(name="concurrent-test")
+        main_id = await manager.spawn_instance(name="main-orchestrator", role="general")
+        instance_id = await manager.spawn_instance(name="concurrent-test", role="general", parent_instance_id=main_id)
 
         # Send multiple messages concurrently
         tasks = []

@@ -4,6 +4,179 @@ Comprehensive guide to Madrox's capabilities, usage patterns, and practical appl
 
 ## Core Features
 
+### Automatic Instance Monitoring
+
+MonitoringService provides real-time, LLM-powered monitoring of all active Claude instances. The service runs in the background, continuously tracking instance activity and generating intelligent activity summaries.
+
+#### Features
+
+**Automatic Activity Tracking**
+- Monitors all active instances without manual intervention
+- Tracks logs, outputs, and execution history
+- Polls instance state at configurable intervals (default: 12 seconds)
+- Persists summaries to disk for historical analysis
+
+**LLM-Powered Summaries**
+- Uses Claude via OpenRouter API to generate intelligent summaries
+- Extracts key accomplishments from raw logs and outputs
+- Provides contextual insights about instance performance
+- Estimates completion percentage and next steps
+- Caches summaries to reduce API calls
+
+**Performance Metrics**
+- Tracks tokens used per instance
+- Measures execution time and task duration
+- Calculates completion percentage for long-running tasks
+- Aggregates metrics across entire team
+
+**Team-Wide Monitoring**
+- Get summary for single instance: `get_agent_summary(instance_id)`
+- Get summaries for all instances: `get_all_agent_summaries()`
+- Automatically aggregates insights across team
+- Provides team-wide status and progress overview
+
+#### How It Works
+
+**Architecture Overview:**
+
+```
+TmuxInstanceManager
+    ↓
+MonitoringService (polls every 12s)
+    ↓
+Instance Logs & Outputs
+    ↓
+LLMSummarizer (with OpenRouter)
+    ↓
+Claude Analysis
+    ↓
+Summary Cache
+    ↓
+MCP Tools (get_agent_summary, get_all_agent_summaries)
+```
+
+**Process Flow:**
+
+1. **Background Service**: MonitoringService starts with TmuxInstanceManager
+2. **Polling**: Periodically polls instance logs and outputs (default: 12 seconds)
+3. **LLM Summarization**: Sends logs to Claude via OpenRouter API
+   - Claude analyzes instance activity
+   - Extracts key accomplishments
+   - Estimates progress and completion
+   - Identifies next steps
+4. **Storage**: Persists summaries to `/tmp/madrox_logs/summaries/` with timestamps
+5. **Caching**: Caches recent summaries (default: 60 seconds) to reduce API calls
+6. **MCP Tools**: Exposes tools for retrieving summaries programmatically
+
+#### LLMSummarizer Component
+
+The LLMSummarizer class handles all OpenRouter API integration:
+
+**Initialization:**
+- Validates OPENROUTER_API_KEY environment variable
+- Initializes OpenRouter client with fallback model (claude-3.5-sonnet)
+- Sets up retry logic for API failures
+
+**Summarization Process:**
+- Receives raw instance logs and outputs
+- Constructs Claude prompt with contextual analysis instructions
+- Sends request to OpenRouter API
+- Parses structured response (JSON format)
+- Returns:
+  ```json
+  {
+    "activity_overview": "string",
+    "key_accomplishments": ["string"],
+    "next_steps": ["string"],
+    "completion_percentage": 0-100,
+    "tokens_used": number
+  }
+  ```
+
+**Error Handling:**
+- Gracefully falls back to generic summaries if API fails
+- Logs all API errors and retries
+- Implements exponential backoff for rate limiting
+- Never stops monitoring if OpenRouter is unavailable
+
+**Configuration:**
+```python
+LLMSummarizer(
+    api_key="sk-or-v1-xxx",        # From OPENROUTER_API_KEY
+    model="claude-3.5-sonnet",      # Configurable via OPENROUTER_MODEL
+    timeout=30,                     # Request timeout
+    cache_ttl=60                    # Cache freshness (seconds)
+)
+```
+
+#### Usage Examples
+
+**Monitor Single Instance Progress**
+
+```python
+# Check what a data analyst has accomplished
+summary = await get_agent_summary(instance_id="analyst-1")
+
+print(f"Overview: {summary['summary']['activity_overview']}")
+print(f"Accomplishments: {summary['summary']['key_accomplishments']}")
+print(f"Next Steps: {summary['summary']['next_steps']}")
+print(f"Completion: {summary['summary']['completion_percentage']}%")
+```
+
+**Monitor Team Progress**
+
+```python
+# Get status of entire team
+result = await get_all_agent_summaries()
+
+# Check team-wide insights
+print(f"Team Status: {result['aggregated_insights']['team_status']}")
+print(f"Total Tokens: {result['aggregated_insights']['total_tokens_used']}")
+print(f"Avg Completion: {result['aggregated_insights']['average_completion_percentage']}%")
+
+# List each member's accomplishments
+for summary in result['summaries']:
+    print(f"\n{summary['instance_name']}:")
+    for acc in summary['summary']['key_accomplishments']:
+        print(f"  ✓ {acc}")
+```
+
+**Monitor During Long-Running Tasks**
+
+```python
+# Start long-running analysis task
+await send_to_instance(analyst_id, "Analyze large dataset...")
+
+# Check progress periodically
+for i in range(10):
+    summary = await get_agent_summary(analyst_id)
+    percent = summary['summary']['completion_percentage']
+    print(f"Progress: {percent}%")
+    await asyncio.sleep(30)  # Check every 30 seconds
+```
+
+#### Configuration
+
+**Environment Variables**
+
+- `OPENROUTER_API_KEY` (optional) - Enables LLM-powered summaries
+  - Get key from https://openrouter.ai
+  - Without this, summaries fall back to generic format
+
+**Monitoring Parameters**
+
+- `poll_interval` (default: 12 seconds) - How often to check instances
+- `storage_path` (default: `/tmp/madrox_logs/summaries`) - Where to store summaries
+- `summary_cache_age` (default: 60 seconds) - Cache freshness threshold
+
+#### Requirements
+
+- **Optional**: `OPENROUTER_API_KEY` environment variable for enhanced summaries
+- Without this key, MonitoringService provides generic summaries
+- No additional dependencies beyond base Madrox installation
+
+---
+
 ### Instance Management
 
 #### Spawning Instances
@@ -82,6 +255,118 @@ await manager.terminate_instance(parent_id)
 ```python
 # Terminate multiple instances in parallel
 await manager.terminate_multiple_instances([id1, id2, id3])
+```
+
+### Automatic Parent Instance Detection
+
+Madrox automatically manages parent-child relationships in instance hierarchies through intelligent parent instance ID detection. This eliminates manual tracking and ensures proper hierarchical structure formation.
+
+#### How It Works
+
+When you spawn a new instance, Madrox uses a two-tier detection system to automatically assign the correct parent:
+
+**Tier 1: Explicit Parent (Highest Priority)**
+If you provide `parent_instance_id` explicitly, it's always used:
+
+```python
+# You specify the parent explicitly
+supervisor = await spawn_instance(name="supervisor", role="architect")
+worker = await spawn_instance(
+    name="worker",
+    role="developer",
+    parent_instance_id=supervisor  # ✅ Uses this parent
+)
+```
+
+**Tier 2: Auto-Detected Caller**
+If `parent_instance_id` is omitted, Madrox detects which instance is making the spawn call:
+
+```python
+# Supervisor sends instruction to spawn child
+await send_to_instance(
+    supervisor_id,
+    """Spawn a worker:
+    spawn_claude(name="worker", role="developer")
+    # Madrox auto-detects supervisor as parent ✅
+    """
+)
+```
+
+#### Detection Strategies
+
+The auto-detection uses two complementary strategies:
+
+**Strategy 1: Busy State Detection (Primary)**
+- Detects instances currently executing (in "busy" state)
+- Examines instance state flags and activity timestamps
+- Highest reliability when supervisor is actively processing
+
+**Strategy 2: Activity-Based Detection (Fallback)**
+- Detects most recently active instance with request history
+- Examines request count and last activity timestamp
+- Provides coverage when busy state not available
+
+#### Exception Cases
+
+The only exception to the parent requirement is the **main orchestrator**:
+
+```python
+# ✅ Main orchestrator allowed without parent
+main = await spawn_instance(name="main-orchestrator", role="general")
+# parent_instance_id = None (allowed)
+
+# ❌ All other instances require parent
+worker = await spawn_instance(name="worker", role="developer")
+# ❌ ValueError: parent_instance_id required but could not be determined
+```
+
+#### When Auto-Detection Works
+
+| Scenario | Auto-Detection | How to Fix |
+|----------|---|---|
+| Child spawns from message handler | ✅ Works | Call from `send_to_instance` task |
+| Supervisor spawns child internally | ✅ Works | Instance automatically detected |
+| External API client spawns | ❌ Fails | Provide explicit `parent_instance_id` |
+| Batch spawn from manager | ✅ Works | All instances get same parent |
+
+#### Benefits
+
+1. **Eliminates Manual Tracking**: No need to manually pass parent IDs around
+2. **Ensures Hierarchy Formation**: Automatic parent linkage creates proper tree structures
+3. **Simplifies Multi-Level Coordination**: Team members can spawn their own sub-teams
+4. **Reduces Errors**: Missing parent IDs detected immediately with clear guidance
+
+#### Use Cases
+
+**Hierarchical Team Structure:**
+```python
+# Supervisor spawns team members
+await send_to_instance(
+    supervisor_id,
+    """Spawn 3 developers:
+    spawn_claude(name="dev-1", role="backend_developer")  # Auto-parent: supervisor
+    spawn_claude(name="dev-2", role="frontend_developer") # Auto-parent: supervisor
+    spawn_claude(name="dev-3", role="qa_engineer")        # Auto-parent: supervisor
+    """
+)
+```
+
+**Multi-Level Delegation:**
+```python
+# CTO spawns team leads
+# Each lead spawns their team members
+# Automatic parent detection creates proper 3-level hierarchy
+```
+
+**Batch Spawning with Auto-Detection:**
+```python
+# All get same auto-detected parent
+instances = await spawn_multiple_instances([
+    {"name": "worker-1", "role": "developer"},
+    {"name": "worker-2", "role": "developer"},
+    {"name": "worker-3", "role": "developer"}
+])
+# All have same parent (auto-detected from caller)
 ```
 
 ### Communication

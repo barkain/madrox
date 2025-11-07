@@ -14,6 +14,8 @@ from typing import Any
 
 import libtmux
 
+from .llm_summarizer import LLMSummarizer
+from .monitoring_service import MonitoringService
 from .name_generator import get_instance_name
 from .simple_models import MessageEnvelope
 
@@ -63,12 +65,39 @@ class TmuxInstanceManager:
 
         self.server_port = int(os.getenv("ORCHESTRATOR_PORT", "8001"))
 
+        # Initialize monitoring service if OPENROUTER_API_KEY is available
+        self.monitoring_service = None
+        if os.getenv("OPENROUTER_API_KEY"):
+            try:
+                llm_summarizer = LLMSummarizer()
+                self.monitoring_service = MonitoringService(
+                    instance_manager=self,
+                    llm_summarizer=llm_summarizer,
+                    poll_interval=12
+                )
+
+                # Configure loggers for MonitoringService and LLMSummarizer
+                # These loggers use src.orchestrator.* namespace which needs explicit parent setup
+                for logger_name in ["src.orchestrator.monitoring_service", "src.orchestrator.llm_summarizer"]:
+                    module_logger = logging.getLogger(logger_name)
+                    module_logger.setLevel(logging.DEBUG)
+                    module_logger.propagate = True
+                    module_logger.handlers.clear()
+                    module_logger.parent = logging.getLogger("orchestrator")
+
+                logger.info("MonitoringService initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize MonitoringService: {e}", exc_info=True)
+        else:
+            logger.info("MonitoringService disabled (OPENROUTER_API_KEY not set)")
+
         # Manager health monitoring
         self._manager_health_task: asyncio.Task | None = None
         self._manager_health_check_interval = 30  # seconds
         self._manager_health_failures = 0
         self._max_health_failures = 3  # Alert after 3 consecutive failures
         self._health_monitoring_enabled = False
+        self._monitoring_service_started = False
 
         # NOTE: Don't start health monitoring here - no event loop yet!
         # Health monitoring will start lazily when first instance is spawned
@@ -445,6 +474,15 @@ class TmuxInstanceManager:
                 logger.info("Manager health monitoring started (lazy initialization)")
             except Exception as e:
                 logger.error(f"Failed to start health monitoring: {e}", exc_info=True)
+
+        # Start monitoring service if available
+        if self.monitoring_service and not self._monitoring_service_started:
+            try:
+                asyncio.create_task(self.monitoring_service.start())
+                self._monitoring_service_started = True
+                logger.info("MonitoringService background task started")
+            except Exception as e:
+                logger.error(f"Failed to start MonitoringService: {e}", exc_info=True)
 
         # Build system prompt based on role
         has_custom_prompt = bool(system_prompt)
@@ -1219,6 +1257,15 @@ class TmuxInstanceManager:
                     logger.warning(f"Failed to kill tmux session {session_name}: {e}")
                 del self.tmux_sessions[instance_id]
 
+            # Stop monitoring service if this is the last active instance
+            active_count = len([
+                i for i in self.instances.values()
+                if i["state"] not in ["terminated", "error"] and i["id"] != instance_id
+            ])
+            if active_count == 0 and self.monitoring_service and self.monitoring_service.is_running():
+                await self.monitoring_service.stop()
+                logger.info("MonitoringService stopped (no active instances)")
+
             # Update instance state
             instance["state"] = "terminated"
             instance["terminated_at"] = datetime.now(UTC).isoformat()
@@ -1328,6 +1375,37 @@ class TmuxInstanceManager:
                 "total_tokens_used": self.total_tokens_used,
                 "total_cost": self.total_cost,
             }
+
+    def get_all_instances(self) -> dict[str, dict[str, Any]]:
+        """
+        Get all instances (required by MonitoringService).
+
+        Returns:
+            Dict mapping instance_id to instance data
+        """
+        return {iid: inst.copy() for iid, inst in self.instances.items()}
+
+    async def get_instance_output(self, instance_id: str, limit: int = 1000) -> dict[str, Any]:
+        """
+        Get recent output for an instance (required by MonitoringService).
+
+        Args:
+            instance_id: Instance ID
+            limit: Maximum number of lines (default 1000)
+
+        Returns:
+            Dict with 'output' key containing recent output text
+        """
+        if instance_id not in self.instances:
+            return {"output": ""}
+
+        try:
+            # Use get_tmux_pane_content to retrieve recent output
+            output = await self.get_tmux_pane_content(instance_id, lines=limit)
+            return {"output": output}
+        except Exception as e:
+            logger.warning(f"Failed to get output for instance {instance_id}: {e}")
+            return {"output": ""}
 
     async def _initialize_tmux_session(self, instance_id: str):
         """Initialize a tmux session for the instance."""

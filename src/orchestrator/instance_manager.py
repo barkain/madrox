@@ -380,11 +380,12 @@ class InstanceManager:
                 results["failed"].append({"instance_id": iid, "error": str(e)})
         return results
 
-    def _get_instance_status_internal(self, instance_id: str | None = None) -> dict[str, Any]:
+    def _get_instance_status_internal(self, instance_id: str | None = None, summary_only: bool = False) -> dict[str, Any]:
         """Internal method to get status of instance(s).
 
         Args:
             instance_id: Specific instance ID, or None for all instances
+            summary_only: If True and instance_id is None, return only basic summary without full instance data
 
         Returns:
             Instance status data
@@ -394,19 +395,42 @@ class InstanceManager:
                 raise ValueError(f"Instance {instance_id} not found")
             return self.instances[instance_id].copy()
         else:
-            return {
-                "instances": {iid: inst.copy() for iid, inst in self.instances.items()},
-                "total_instances": len(self.instances),
-                "active_instances": len(
-                    [
-                        i
-                        for i in self.instances.values()
-                        if i["state"] in ["running", "idle", "busy"]
-                    ]
-                ),
-                "total_tokens_used": self.total_tokens_used,
-                "total_cost": self.total_cost,
-            }
+            # When returning all instances, optionally return just summary to avoid large payloads
+            if summary_only:
+                # Return minimal summary - just IDs, names, and states
+                return {
+                    "instances": {
+                        iid: {
+                            "id": inst["id"],
+                            "name": inst["name"],
+                            "state": inst["state"],
+                            "role": inst["role"],
+                        }
+                        for iid, inst in self.instances.items()
+                    },
+                    "total_instances": len(self.instances),
+                    "active_instances": len(
+                        [
+                            i
+                            for i in self.instances.values()
+                            if i["state"] in ["running", "idle", "busy"]
+                        ]
+                    ),
+                }
+            else:
+                return {
+                    "instances": {iid: inst.copy() for iid, inst in self.instances.items()},
+                    "total_instances": len(self.instances),
+                    "active_instances": len(
+                        [
+                            i
+                            for i in self.instances.values()
+                            if i["state"] in ["running", "idle", "busy"]
+                        ]
+                    ),
+                    "total_tokens_used": self.total_tokens_used,
+                    "total_cost": self.total_cost,
+                }
 
     @mcp.tool
     def get_instance_status(
