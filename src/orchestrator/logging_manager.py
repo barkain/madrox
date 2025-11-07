@@ -237,17 +237,21 @@ class LoggingManager:
         # Setup audit logger
         self._setup_audit_logger()
 
-        # Configure all existing orchestrator.* loggers to inherit from orchestrator logger
+        # Configure all existing orchestrator.* and src.orchestrator.* loggers to inherit from orchestrator logger
         # This ensures any module using logging.getLogger(__name__) will work
         # We need to reconfigure ALL existing loggers in the orchestrator namespace
         # EXCEPT orchestrator.audit which has its own handlers
         for name in list(logging.Logger.manager.loggerDict.keys()):
-            if name.startswith("orchestrator.") and name != "orchestrator.audit":
+            if (name.startswith("orchestrator.") or name.startswith("src.orchestrator.")) and name != "orchestrator.audit":
                 child_logger = logging.getLogger(name)
                 if isinstance(child_logger, logging.Logger):  # Skip PlaceHolders
                     child_logger.setLevel(logging.DEBUG)  # Let parent's handlers filter
                     child_logger.propagate = True
                     child_logger.handlers.clear()  # Remove any existing handlers
+
+                    # For src.orchestrator.* loggers, also set parent to orchestrator logger
+                    if name.startswith("src.orchestrator."):
+                        child_logger.parent = logging.getLogger("orchestrator")
 
     def _setup_orchestrator_logger(self):
         """Setup main orchestrator logger with file and console handlers."""

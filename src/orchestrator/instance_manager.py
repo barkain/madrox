@@ -380,11 +380,12 @@ class InstanceManager:
                 results["failed"].append({"instance_id": iid, "error": str(e)})
         return results
 
-    def _get_instance_status_internal(self, instance_id: str | None = None) -> dict[str, Any]:
+    def _get_instance_status_internal(self, instance_id: str | None = None, summary_only: bool = False) -> dict[str, Any]:
         """Internal method to get status of instance(s).
 
         Args:
             instance_id: Specific instance ID, or None for all instances
+            summary_only: If True and instance_id is None, return only basic summary without full instance data
 
         Returns:
             Instance status data
@@ -394,19 +395,42 @@ class InstanceManager:
                 raise ValueError(f"Instance {instance_id} not found")
             return self.instances[instance_id].copy()
         else:
-            return {
-                "instances": {iid: inst.copy() for iid, inst in self.instances.items()},
-                "total_instances": len(self.instances),
-                "active_instances": len(
-                    [
-                        i
-                        for i in self.instances.values()
-                        if i["state"] in ["running", "idle", "busy"]
-                    ]
-                ),
-                "total_tokens_used": self.total_tokens_used,
-                "total_cost": self.total_cost,
-            }
+            # When returning all instances, optionally return just summary to avoid large payloads
+            if summary_only:
+                # Return minimal summary - just IDs, names, and states
+                return {
+                    "instances": {
+                        iid: {
+                            "id": inst["id"],
+                            "name": inst["name"],
+                            "state": inst["state"],
+                            "role": inst["role"],
+                        }
+                        for iid, inst in self.instances.items()
+                    },
+                    "total_instances": len(self.instances),
+                    "active_instances": len(
+                        [
+                            i
+                            for i in self.instances.values()
+                            if i["state"] in ["running", "idle", "busy"]
+                        ]
+                    ),
+                }
+            else:
+                return {
+                    "instances": {iid: inst.copy() for iid, inst in self.instances.items()},
+                    "total_instances": len(self.instances),
+                    "active_instances": len(
+                        [
+                            i
+                            for i in self.instances.values()
+                            if i["state"] in ["running", "idle", "busy"]
+                        ]
+                    ),
+                    "total_tokens_used": self.total_tokens_used,
+                    "total_cost": self.total_cost,
+                }
 
     @mcp.tool
     def get_instance_status(
@@ -567,14 +591,54 @@ class InstanceManager:
         Returns:
             Instance ID
         """
-        # Auto-assign main as parent if no parent specified and this isn't the main instance
+        # MANDATORY: Enforce parent_instance_id requirement
         is_main_instance = name == "main-orchestrator"
+        is_team_supervisor = name.endswith("-lead")  # Team supervisors can be root-level
         parent_id = kwargs.get("parent_instance_id")
 
-        if parent_id is None and not is_main_instance and self.main_instance_id is not None:
-            # Auto-assign main as parent
-            kwargs["parent_instance_id"] = self.main_instance_id
-            logger.debug(f"Auto-assigning main as parent for {name}")
+        if parent_id is None and not is_main_instance and not is_team_supervisor:
+            raise ValueError(
+                f"Cannot spawn instance '{name}': parent_instance_id is required but could not be determined. "
+                f"This instance is not the main orchestrator and no parent was detected. "
+                f"\n"
+                f"Possible causes:\n"
+                f"  1. Spawning from external client without explicit parent_instance_id\n"
+                f"  2. Caller instance detection failed (instance not in 'busy' state)\n"
+                f"  3. Spawning before any managed instances exist\n"
+                f"\n"
+                f"Solutions:\n"
+                f"  1. Provide parent_instance_id explicitly: spawn_claude(..., parent_instance_id='abc123')\n"
+                f"  2. Spawn from within a managed instance (auto-detection will work)\n"
+                f"  3. First spawn the main orchestrator, then use it as parent\n"
+            )
+
+        # Validate that parent_instance_id exists (if provided)
+        if parent_id and parent_id not in self.instances:
+            raise ValueError(
+                f"Cannot spawn instance '{name}': parent_instance_id '{parent_id}' does not exist. "
+                f"The specified parent instance was not found in the managed instances. "
+                f"\n"
+                f"Possible causes:\n"
+                f"  1. Parent instance ID is incorrect or misspelled\n"
+                f"  2. Parent instance has already been terminated\n"
+                f"  3. Using a placeholder value like 'supervisor' instead of actual instance ID\n"
+                f"\n"
+                f"Solutions:\n"
+                f"  1. Verify the parent instance ID is correct\n"
+                f"  2. Use your actual instance_id (provided in your system prompt)\n"
+                f"  3. Let auto-detection work by not providing parent_instance_id\n"
+            )
+
+        # Log final parent assignment
+        if parent_id:
+            logger.info(f"Instance '{name}' will have parent: {parent_id}")
+        elif is_main_instance:
+            logger.info(f"Instance '{name}' is main orchestrator (no parent)")
+        elif is_team_supervisor:
+            logger.info(f"Instance '{name}' is team supervisor (root-level, no parent)")
+        else:
+            # Should never reach here due to exception above
+            raise RuntimeError(f"Invalid state: instance '{name}' has no parent but is not main orchestrator or team supervisor")
 
         # All Claude instances are handled by TmuxInstanceManager
         instance_id = await self.tmux_manager.spawn_instance(
@@ -650,6 +714,7 @@ class InstanceManager:
         template_name: str,
         task_description: str,
         supervisor_role: str | None = None,
+        parent_instance_id: str | None = None,
     ) -> str:
         """Spawn a complete team from a predefined template.
 
@@ -663,6 +728,7 @@ class InstanceManager:
             template_name: Name of the template to use
             task_description: Description of the task for the team
             supervisor_role: Optional supervisor role (defaults to template's recommended role)
+            parent_instance_id: Optional parent instance ID for supervisor (for auto-detection if not provided)
 
         Returns:
             Formatted result text with supervisor ID and network topology
@@ -688,25 +754,28 @@ class InstanceManager:
         # Use provided supervisor role or template default
         role = supervisor_role or template_meta["supervisor_role"]
 
-        # Spawn supervisor
-        supervisor_id = await self.spawn_instance(
-            name=f"{template_name}-lead",
-            role=role,
-            wait_for_ready=True,
-        )
-
-        # Build instruction message
+        # Build instruction message FIRST (before spawning)
         instruction = self._build_template_instruction(
             template_content=template_content, task_description=task_description
         )
 
-        # Send instructions to supervisor (non-blocking)
-        await self.tmux_manager.send_message(
-            instance_id=supervisor_id, message=instruction, wait_for_response=False
+        # Spawn supervisor WITH instruction as initial_prompt (bypasses paste detection)
+        supervisor_id = await self.spawn_instance(
+            name=f"{template_name}-lead",
+            role=role,
+            wait_for_ready=True,
+            initial_prompt=instruction,
+            parent_instance_id=parent_instance_id,
+        )
+
+        # No need to send_message - instruction already received via CLI argument
+        logger.info(
+            f"Spawned supervisor {supervisor_id} with initial instruction "
+            f"({len(instruction)} chars, {len(instruction)/1024:.2f}KB)"
         )
 
         # Wait briefly for network assembly
-        await asyncio.sleep(15)
+        await asyncio.sleep(10)
 
         # Get network tree preview
         tree_preview = "Initializing network..."
@@ -1792,6 +1861,186 @@ Begin execution now. Spawn your team and start the workflow."""
                 instances_info.append({"instance_id": instance_id})
 
         return instances_info
+
+    @mcp.tool
+    async def collect_team_artifacts(self, team_supervisor_id: str) -> dict[str, Any]:
+        """Collect and organize artifacts from all team members.
+
+        Gets all children of supervisor, creates team artifacts directory,
+        copies artifacts from each child's workspace, generates team manifest JSON,
+        and returns collection summary.
+
+        Args:
+            team_supervisor_id: Instance ID of the team supervisor/coordinator
+
+        Returns:
+            Dictionary with collection summary including artifacts_dir, manifest_path,
+            members_count, total_files_collected, etc.
+        """
+        if team_supervisor_id not in self.instances:
+            raise ValueError(f"Team supervisor instance {team_supervisor_id} not found")
+
+        supervisor = self.instances[team_supervisor_id]
+
+        try:
+            # Get all children of the supervisor
+            children = self._get_children_internal(team_supervisor_id)
+
+            if not children:
+                logger.warning(f"Team supervisor {team_supervisor_id} has no child instances")
+                return {
+                    "success": True,
+                    "team_supervisor_id": team_supervisor_id,
+                    "members_count": 0,
+                    "total_files_collected": 0,
+                    "message": "No child instances found",
+                }
+
+            # Create team artifacts directory structure
+            artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
+            artifacts_base.mkdir(parents=True, exist_ok=True)
+
+            # Create team-specific directory (use supervisor ID)
+            team_artifacts_dir = artifacts_base / f"team_{team_supervisor_id}"
+            team_artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create subdirectory for each team member
+            total_files_collected = 0
+            member_summaries = []
+            collection_errors = []
+
+            import json
+            import shutil
+
+            for child in children:
+                child_id = child["id"]
+                child_name = child.get("name", "unknown")
+
+                try:
+                    # Get child's workspace artifacts
+                    child_instance = self.instances[child_id]
+                    child_workspace = Path(child_instance.get("workspace_dir", ""))
+
+                    if not child_workspace.exists():
+                        logger.warning(f"Child workspace does not exist for {child_id}")
+                        collection_errors.append(
+                            {"child_id": child_id, "error": "Workspace does not exist"}
+                        )
+                        continue
+
+                    # Create child's artifacts subdirectory
+                    child_artifacts_dir = team_artifacts_dir / child_id
+                    child_artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Get artifact patterns from config
+                    artifact_patterns = self.config.get(
+                        "artifact_patterns",
+                        ["*.py", "*.md", "*.json", "*.txt", "*.log", "*.yaml", "*.yml", "*.toml"],
+                    )
+
+                    # Copy matching files from child workspace
+                    child_files_copied = 0
+                    import fnmatch
+
+                    for item in child_workspace.rglob("*"):
+                        if not item.is_file():
+                            continue
+
+                        filename = item.name
+                        matches_pattern = any(
+                            fnmatch.fnmatch(filename, pattern) for pattern in artifact_patterns
+                        )
+
+                        if matches_pattern:
+                            try:
+                                relative_path = item.relative_to(child_workspace)
+                                target_path = child_artifacts_dir / relative_path
+                                target_path.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(item, target_path)
+                                child_files_copied += 1
+                                total_files_collected += 1
+                            except Exception as e:
+                                logger.warning(f"Failed to copy artifact {item}: {e}")
+                                collection_errors.append(
+                                    {"file": str(item), "error": str(e), "child_id": child_id}
+                                )
+
+                    # Create child metadata file
+                    child_metadata = {
+                        "child_id": child_id,
+                        "child_name": child_name,
+                        "instance_type": child.get("instance_type"),
+                        "role": child.get("role"),
+                        "model": child.get("model"),
+                        "created_at": child.get("created_at"),
+                        "files_collected": child_files_copied,
+                        "workspace_dir": str(child_workspace),
+                    }
+
+                    child_metadata_path = child_artifacts_dir / "_metadata.json"
+                    child_metadata_path.write_text(json.dumps(child_metadata, indent=2))
+
+                    member_summaries.append(
+                        {
+                            "child_id": child_id,
+                            "child_name": child_name,
+                            "files_collected": child_files_copied,
+                            "artifacts_dir": str(child_artifacts_dir),
+                        }
+                    )
+
+                except Exception as e:
+                    logger.error(f"Failed to collect artifacts from child {child_id}: {e}")
+                    collection_errors.append({"child_id": child_id, "error": str(e)})
+
+            # Generate team manifest JSON
+            team_manifest = {
+                "team_supervisor_id": team_supervisor_id,
+                "supervisor_name": supervisor.get("name"),
+                "team_artifacts_dir": str(team_artifacts_dir),
+                "created_at": datetime.now(UTC).isoformat(),
+                "members_count": len(children),
+                "total_files_collected": total_files_collected,
+                "member_summaries": member_summaries,
+                "collection_errors": collection_errors if collection_errors else None,
+            }
+
+            # Write manifest to JSON file
+            manifest_path = team_artifacts_dir / "_team_manifest.json"
+            manifest_path.write_text(json.dumps(team_manifest, indent=2))
+
+            logger.info(
+                f"Collected team artifacts from {len(children)} members: {total_files_collected} files",
+                extra={
+                    "team_supervisor_id": team_supervisor_id,
+                    "team_artifacts_dir": str(team_artifacts_dir),
+                    "members_count": len(children),
+                    "total_files": total_files_collected,
+                },
+            )
+
+            return {
+                "success": True,
+                "team_supervisor_id": team_supervisor_id,
+                "team_artifacts_dir": str(team_artifacts_dir),
+                "members_count": len(children),
+                "total_files_collected": total_files_collected,
+                "manifest_path": str(manifest_path),
+                "member_summaries": member_summaries,
+                "errors": collection_errors if collection_errors else None,
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Failed to collect team artifacts for supervisor {team_supervisor_id}: {e}",
+                extra={"team_supervisor_id": team_supervisor_id, "error": str(e)},
+                exc_info=True,
+            )
+            return {
+                "success": False,
+                "error": str(e),
+                "team_supervisor_id": team_supervisor_id,
+            }
 
     async def shutdown(self):
         """Shutdown the instance manager and clean up resources."""

@@ -61,6 +61,12 @@ class ClaudeOrchestratorServer:
         """
         self.config = config
 
+        # Initialize artifacts configuration
+        self.artifacts_dir = os.getenv("ARTIFACTS_DIR", "/tmp/madrox_logs/artifacts")
+        self.preserve_artifacts = os.getenv("PRESERVE_ARTIFACTS", "true").lower() == "true"
+        artifact_patterns_str = os.getenv("ARTIFACT_PATTERNS", "*.md,*.pdf,*.csv,*.json,FINAL_*")
+        self.artifact_patterns = [p.strip() for p in artifact_patterns_str.split(",")]
+
         # Initialize logging manager
         log_dir = os.getenv("MADROX_LOG_DIR", "/tmp/madrox_logs")
         log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -81,8 +87,14 @@ class ClaudeOrchestratorServer:
         # Test the reconfigured module-level logger
         server_logger.info("Module-level logger reconfigured successfully")
 
-        # Initialize instance manager with logging
-        self.instance_manager = InstanceManager(config.to_dict())
+        # Initialize instance manager with logging and artifacts config
+        instance_manager_config = config.to_dict()
+        instance_manager_config.update({
+            "artifacts_dir": self.artifacts_dir,
+            "preserve_artifacts": self.preserve_artifacts,
+            "artifact_patterns": self.artifact_patterns,
+        })
+        self.instance_manager = InstanceManager(instance_manager_config)
 
         # Track server start time for session-only audit logs (use local time to match audit log timestamps)
         self.server_start_time = datetime.now().isoformat()
@@ -707,6 +719,111 @@ class ClaudeOrchestratorServer:
                 root_instance_id: Optional root instance ID to filter hierarchy by specific network
             """
             return await self._get_network_hierarchy(root_instance_id=root_instance_id)
+
+        # ============================================================================
+        # Summary/Monitoring API Endpoints
+        # ============================================================================
+
+        @self.app.get("/api/monitoring/sessions")
+        async def list_summary_sessions():
+            """List all available summary sessions."""
+            from pathlib import Path
+
+            summaries_base = Path("/tmp/madrox_logs/summaries")
+            if not summaries_base.exists():
+                return {"sessions": []}
+
+            sessions = []
+            for session_dir in sorted(summaries_base.iterdir(), reverse=True):
+                if session_dir.is_dir() and session_dir.name.startswith("session_"):
+                    # Count summaries in this session
+                    instance_count = len([d for d in session_dir.iterdir() if d.is_dir()])
+                    summary_count = len(list(session_dir.rglob("summary_*.json")))
+
+                    sessions.append({
+                        "session_id": session_dir.name,
+                        "path": str(session_dir),
+                        "instance_count": instance_count,
+                        "summary_count": summary_count,
+                        "created_at": datetime.fromtimestamp(session_dir.stat().st_ctime).isoformat()
+                    })
+
+            # Get current session from MonitoringService
+            current_session = None
+            if hasattr(self.instance_manager, 'tmux_manager'):
+                monitoring_service = getattr(self.instance_manager.tmux_manager, 'monitoring_service', None)
+                if monitoring_service:
+                    current_session = monitoring_service.session_id
+
+            return {
+                "current_session": current_session,
+                "total_sessions": len(sessions),
+                "sessions": sessions
+            }
+
+        @self.app.get("/api/monitoring/sessions/{session_id}/summaries")
+        async def get_session_summaries(session_id: str):
+            """Get all summaries for a specific session."""
+            from pathlib import Path
+            import json
+
+            session_path = Path("/tmp/madrox_logs/summaries") / session_id
+            if not session_path.exists():
+                raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+            summaries = {}
+            for instance_dir in session_path.iterdir():
+                if instance_dir.is_dir():
+                    instance_id = instance_dir.name
+                    latest_file = instance_dir / "latest.json"
+
+                    if latest_file.exists():
+                        with open(latest_file, 'r') as f:
+                            summaries[instance_id] = json.load(f)
+
+            return {
+                "session_id": session_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "instance_count": len(summaries),
+                "summaries": summaries
+            }
+
+        @self.app.get("/api/monitoring/sessions/{session_id}/instances/{instance_id}")
+        async def get_instance_summary_history(session_id: str, instance_id: str):
+            """Get summary history for a specific instance in a session."""
+            from pathlib import Path
+            import json
+
+            instance_path = Path("/tmp/madrox_logs/summaries") / session_id / instance_id
+            if not instance_path.exists():
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Instance {instance_id} not found in session {session_id}"
+                )
+
+            summaries = []
+            for summary_file in sorted(instance_path.glob("summary_*.json")):
+                with open(summary_file, 'r') as f:
+                    summaries.append(json.load(f))
+
+            return {
+                "session_id": session_id,
+                "instance_id": instance_id,
+                "summary_count": len(summaries),
+                "summaries": summaries
+            }
+
+        @self.app.get("/api/monitoring/current")
+        async def get_current_session_summaries():
+            """Get summaries for the current active session."""
+            # Get current session from MonitoringService
+            if hasattr(self.instance_manager, 'tmux_manager'):
+                monitoring_service = getattr(self.instance_manager.tmux_manager, 'monitoring_service', None)
+                if monitoring_service:
+                    session_id = monitoring_service.session_id
+                    return await get_session_summaries(session_id)
+
+            raise HTTPException(status_code=503, detail="MonitoringService not available")
 
     async def _spawn_claude(
         self,

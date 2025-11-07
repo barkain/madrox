@@ -14,6 +14,8 @@ from typing import Any
 
 import libtmux
 
+from .llm_summarizer import LLMSummarizer
+from .monitoring_service import MonitoringService
 from .name_generator import get_instance_name
 from .simple_models import MessageEnvelope
 
@@ -63,12 +65,39 @@ class TmuxInstanceManager:
 
         self.server_port = int(os.getenv("ORCHESTRATOR_PORT", "8001"))
 
+        # Initialize monitoring service if OPENROUTER_API_KEY is available
+        self.monitoring_service = None
+        if os.getenv("OPENROUTER_API_KEY"):
+            try:
+                llm_summarizer = LLMSummarizer()
+                self.monitoring_service = MonitoringService(
+                    instance_manager=self,
+                    llm_summarizer=llm_summarizer,
+                    poll_interval=12
+                )
+
+                # Configure loggers for MonitoringService and LLMSummarizer
+                # These loggers use src.orchestrator.* namespace which needs explicit parent setup
+                for logger_name in ["src.orchestrator.monitoring_service", "src.orchestrator.llm_summarizer"]:
+                    module_logger = logging.getLogger(logger_name)
+                    module_logger.setLevel(logging.DEBUG)
+                    module_logger.propagate = True
+                    module_logger.handlers.clear()
+                    module_logger.parent = logging.getLogger("orchestrator")
+
+                logger.info("MonitoringService initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize MonitoringService: {e}", exc_info=True)
+        else:
+            logger.info("MonitoringService disabled (OPENROUTER_API_KEY not set)")
+
         # Manager health monitoring
         self._manager_health_task: asyncio.Task | None = None
         self._manager_health_check_interval = 30  # seconds
         self._manager_health_failures = 0
         self._max_health_failures = 3  # Alert after 3 consecutive failures
         self._health_monitoring_enabled = False
+        self._monitoring_service_started = False
 
         # NOTE: Don't start health monitoring here - no event loop yet!
         # Health monitoring will start lazily when first instance is spawned
@@ -445,6 +474,15 @@ class TmuxInstanceManager:
                 logger.info("Manager health monitoring started (lazy initialization)")
             except Exception as e:
                 logger.error(f"Failed to start health monitoring: {e}", exc_info=True)
+
+        # Start monitoring service if available
+        if self.monitoring_service and not self._monitoring_service_started:
+            try:
+                asyncio.create_task(self.monitoring_service.start())
+                self._monitoring_service_started = True
+                logger.info("MonitoringService background task started")
+            except Exception as e:
+                logger.error(f"Failed to start MonitoringService: {e}", exc_info=True)
 
         # Build system prompt based on role
         has_custom_prompt = bool(system_prompt)
@@ -1030,6 +1068,139 @@ class TmuxInstanceManager:
                 "timestamp": datetime.now(UTC).isoformat(),
             }
 
+    async def _preserve_artifacts(self, instance_id: str) -> dict[str, Any]:
+        """Preserve artifacts from an instance before cleanup.
+
+        Checks if preserve_artifacts config is enabled, creates artifacts directory
+        structure, copies matching files based on artifact_patterns, and generates
+        metadata JSON with instance info.
+
+        Args:
+            instance_id: Instance ID whose artifacts to preserve
+
+        Returns:
+            Dictionary with preservation summary (files_copied, metadata_path, etc.)
+        """
+        if instance_id not in self.instances:
+            logger.warning(f"Instance {instance_id} not found for artifact preservation")
+            return {"success": False, "error": "Instance not found"}
+
+        instance = self.instances[instance_id]
+
+        # Check if artifact preservation is enabled
+        preserve_enabled = self.config.get("preserve_artifacts", True)
+        if not preserve_enabled:
+            logger.debug(f"Artifact preservation disabled for instance {instance_id}")
+            return {"success": True, "preserved": False, "reason": "disabled"}
+
+        try:
+            workspace_dir = Path(instance["workspace_dir"])
+            if not workspace_dir.exists():
+                logger.warning(f"Workspace directory does not exist for instance {instance_id}")
+                return {"success": False, "error": "Workspace does not exist"}
+
+            # Create artifacts directory structure
+            artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
+            artifacts_base.mkdir(parents=True, exist_ok=True)
+
+            # Create instance artifacts directory
+            instance_artifacts_dir = artifacts_base / instance_id
+            instance_artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+            # Get artifact patterns from config (default to common file patterns)
+            artifact_patterns = self.config.get(
+                "artifact_patterns",
+                ["*.py", "*.md", "*.json", "*.txt", "*.log", "*.yaml", "*.yml", "*.toml"],
+            )
+
+            files_copied = 0
+            copy_errors = []
+
+            # Copy matching files from workspace to artifacts directory
+            import fnmatch
+            import shutil
+
+            for item in workspace_dir.rglob("*"):
+                if not item.is_file():
+                    continue
+
+                # Check if file matches any artifact pattern
+                filename = item.name
+                matches_pattern = any(fnmatch.fnmatch(filename, pattern) for pattern in artifact_patterns)
+
+                if matches_pattern:
+                    try:
+                        # Preserve relative directory structure
+                        relative_path = item.relative_to(workspace_dir)
+                        target_path = instance_artifacts_dir / relative_path
+
+                        # Create parent directories if needed
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+                        # Copy file
+                        shutil.copy2(item, target_path)
+                        files_copied += 1
+                    except Exception as e:
+                        copy_errors.append({"file": str(item), "error": str(e)})
+                        logger.warning(f"Failed to copy artifact {item}: {e}")
+
+            # Generate metadata JSON with instance info
+            metadata = {
+                "instance_id": instance_id,
+                "instance_name": instance.get("name"),
+                "instance_type": instance.get("instance_type"),
+                "role": instance.get("role"),
+                "model": instance.get("model"),
+                "created_at": instance.get("created_at"),
+                "terminated_at": datetime.now(UTC).isoformat(),
+                "workspace_dir": str(workspace_dir),
+                "artifacts_dir": str(instance_artifacts_dir),
+                "files_preserved": files_copied,
+                "parent_instance_id": instance.get("parent_instance_id"),
+                "workspace_state": {
+                    "total_tokens_used": instance.get("total_tokens_used", 0),
+                    "total_cost": instance.get("total_cost", 0.0),
+                    "request_count": instance.get("request_count", 0),
+                },
+            }
+
+            # Write metadata to JSON file
+            metadata_path = instance_artifacts_dir / "_metadata.json"
+            import json
+
+            metadata_path.write_text(json.dumps(metadata, indent=2))
+
+            logger.info(
+                f"Preserved {files_copied} artifacts for instance {instance_id}",
+                extra={
+                    "instance_id": instance_id,
+                    "artifacts_dir": str(instance_artifacts_dir),
+                    "files_preserved": files_copied,
+                },
+            )
+
+            return {
+                "success": True,
+                "preserved": True,
+                "instance_id": instance_id,
+                "artifacts_dir": str(instance_artifacts_dir),
+                "files_copied": files_copied,
+                "metadata_path": str(metadata_path),
+                "errors": copy_errors if copy_errors else None,
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Failed to preserve artifacts for instance {instance_id}: {e}",
+                extra={"instance_id": instance_id, "error": str(e)},
+                exc_info=True,
+            )
+            return {
+                "success": False,
+                "error": str(e),
+                "instance_id": instance_id,
+            }
+
     async def terminate_instance(self, instance_id: str, force: bool = False) -> bool:
         """Terminate a Claude instance and kill its tmux session.
 
@@ -1086,9 +1257,31 @@ class TmuxInstanceManager:
                     logger.warning(f"Failed to kill tmux session {session_name}: {e}")
                 del self.tmux_sessions[instance_id]
 
+            # Stop monitoring service if this is the last active instance
+            active_count = len([
+                i for i in self.instances.values()
+                if i["state"] not in ["terminated", "error"] and i["id"] != instance_id
+            ])
+            if active_count == 0 and self.monitoring_service and self.monitoring_service.is_running():
+                await self.monitoring_service.stop()
+                logger.info("MonitoringService stopped (no active instances)")
+
             # Update instance state
             instance["state"] = "terminated"
             instance["terminated_at"] = datetime.now(UTC).isoformat()
+
+            # Preserve artifacts before cleanup
+            try:
+                preservation_result = await self._preserve_artifacts(instance_id)
+                logger.info(
+                    f"Artifact preservation result for instance {instance_id}",
+                    extra={"instance_id": instance_id, "result": preservation_result},
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to preserve artifacts for instance {instance_id}: {e}",
+                    extra={"instance_id": instance_id, "error": str(e)},
+                )
 
             # Clean up workspace
             workspace_dir = Path(instance["workspace_dir"])
@@ -1182,6 +1375,37 @@ class TmuxInstanceManager:
                 "total_tokens_used": self.total_tokens_used,
                 "total_cost": self.total_cost,
             }
+
+    def get_all_instances(self) -> dict[str, dict[str, Any]]:
+        """
+        Get all instances (required by MonitoringService).
+
+        Returns:
+            Dict mapping instance_id to instance data
+        """
+        return {iid: inst.copy() for iid, inst in self.instances.items()}
+
+    async def get_instance_output(self, instance_id: str, limit: int = 1000) -> dict[str, Any]:
+        """
+        Get recent output for an instance (required by MonitoringService).
+
+        Args:
+            instance_id: Instance ID
+            limit: Maximum number of lines (default 1000)
+
+        Returns:
+            Dict with 'output' key containing recent output text
+        """
+        if instance_id not in self.instances:
+            return {"output": ""}
+
+        try:
+            # Use get_tmux_pane_content to retrieve recent output
+            output = await self.get_tmux_pane_content(instance_id, lines=limit)
+            return {"output": output}
+        except Exception as e:
+            logger.warning(f"Failed to get output for instance {instance_id}: {e}")
+            return {"output": ""}
 
     async def _initialize_tmux_session(self, instance_id: str):
         """Initialize a tmux session for the instance."""
@@ -1618,7 +1842,11 @@ class TmuxInstanceManager:
                 logger.info(f"Reply queued for {target_id} via shared queue")
             else:
                 # Use local queue for HTTP transport
-                if parent_id and parent_id in self.response_queues:
+                if parent_id:
+                    # Ensure parent's response queue exists
+                    if parent_id not in self.response_queues:
+                        self.response_queues[parent_id] = asyncio.Queue()
+                        logger.debug(f"Created response queue for parent {parent_id}")
                     await self.response_queues[parent_id].put(reply_payload)
                     logger.info(f"Reply queued for parent instance {parent_id}")
                 elif not parent_id:

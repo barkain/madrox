@@ -583,11 +583,225 @@ Complete reference for all configuration options:
 | `LOG_DIR` | `/tmp/madrox_logs` | Log storage directory |
 | `DATABASE_URL` | `sqlite:///madrox.db` | Database connection string |
 
-#### Optional - Multi-Model
+#### Optional - Monitoring & Multi-Model
 
 | Variable | Description |
 |----------|-------------|
+| `OPENROUTER_API_KEY` | OpenRouter API key for MonitoringService LLM summaries (enables intelligent instance activity summaries) |
 | `OPENAI_API_KEY` | OpenAI API key for Codex instances |
+
+### OpenRouter API Configuration (Optional)
+
+Madrox can generate intelligent, natural language summaries of instance activities using the OpenRouter API and Claude. This enables monitoring teams to understand what instances are doing without reading raw logs.
+
+#### Setup Steps
+
+**1. Create OpenRouter Account**
+
+Visit https://openrouter.ai and create a free account. No credit card required for initial API access.
+
+**2. Get API Key**
+
+- Log in to OpenRouter dashboard
+- Navigate to API Keys section
+- Create a new key or copy your default key
+- Format: `sk-or-v1-xxxxxxxxxxxxx`
+
+**3. Set Environment Variable**
+
+```bash
+# Local development
+export OPENROUTER_API_KEY="sk-or-v1-your-api-key-here"
+
+# Or add to .bashrc/.zshrc for persistence
+echo 'export OPENROUTER_API_KEY="sk-or-v1-your-api-key-here"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**4. Verify Configuration**
+
+```bash
+# Check environment variable is set
+echo $OPENROUTER_API_KEY
+
+# Start orchestrator - LLM summaries will be automatically enabled
+python run_orchestrator.py
+
+# Check logs for confirmation
+grep -i "openrouter\|llm" /tmp/madrox_logs/server.log
+```
+
+#### How It Works
+
+Without OpenRouter API key:
+- MonitoringService generates basic text summaries from logs
+- No LLM processing, summaries are template-based
+
+With OpenRouter API key:
+- Instances' logs and outputs are sent to Claude via OpenRouter
+- Claude analyzes activity and generates natural language summaries
+- Summaries include key accomplishments, progress estimates, next steps
+- Results are cached to minimize API calls
+- Team-wide aggregation provides leadership visibility
+
+#### Benefits
+
+✅ **Automatic Monitoring** - No manual intervention required
+✅ **Intelligent Insights** - Claude understands context and extracts meaning
+✅ **Progress Tracking** - Know what instances have accomplished and what's next
+✅ **Cost Optimization** - Caching and smart polling minimize API usage
+✅ **Zero Configuration** - Just set the API key, everything else is automatic
+
+#### Troubleshooting
+
+**"OPENROUTER_API_KEY not set" error**
+
+```bash
+# Verify key is set
+echo $OPENROUTER_API_KEY
+
+# If empty, set it again
+export OPENROUTER_API_KEY="sk-or-v1-your-key"
+
+# Restart orchestrator
+python run_orchestrator.py
+```
+
+**"OpenRouter API returned error" in logs**
+
+- Check API key format (should start with `sk-or-v1-`)
+- Verify API key is valid in OpenRouter dashboard
+- Check OpenRouter service status at https://status.openrouter.ai
+- Review rate limits and quota in OpenRouter dashboard
+
+**Summaries still showing as "generic"**
+
+- Ensure OPENROUTER_API_KEY is set before starting orchestrator
+- Check logs: `tail -f /tmp/madrox_logs/server.log | grep -i "llm\|openrouter"`
+- Expected log entry: `"LLMSummarizer initialized successfully"`
+
+#### Optional Parameters
+
+Once OPENROUTER_API_KEY is set, you can tune monitoring behavior:
+
+```bash
+# Model selection (default: anthropic/claude-haiku-4.5)
+# See "Model Selection Guide" below for recommendations
+export OPENROUTER_MODEL="google/gemini-2.0-flash-exp:free"  # Recommended: Free & fast
+
+# Summary polling interval (seconds, default: 12)
+export MONITORING_POLL_INTERVAL=12
+
+# Cache age threshold (seconds, default: 60)
+export MONITORING_CACHE_AGE=60
+```
+
+#### Model Selection Guide (2025)
+
+Choose the best model for your monitoring needs:
+
+**FREE MODELS (Recommended for high-volume monitoring):**
+```bash
+# Best free option - faster than Gemini 1.5, high quality
+export OPENROUTER_MODEL="google/gemini-2.0-flash-exp:free"
+
+# MIT licensed, good reasoning capabilities
+export OPENROUTER_MODEL="deepseek/deepseek-r1:free"
+
+# High concurrency support, cost efficient
+export OPENROUTER_MODEL="minimax/minimax-m2:free"
+```
+
+**CHEAP MODELS (Ultra-low cost, pay-per-use):**
+```bash
+# Ultra-low latency, minimal cost per request
+export OPENROUTER_MODEL="google/gemini-2.5-flash-lite"
+
+# Fast with advanced reasoning
+export OPENROUTER_MODEL="google/gemini-2.5-flash"
+```
+
+**QUALITY MODELS (Balanced cost/quality):**
+```bash
+# Default - 200K context, high quality (paid)
+export OPENROUTER_MODEL="anthropic/claude-haiku-4.5"
+
+# Advanced reasoning, higher cost (paid)
+export OPENROUTER_MODEL="anthropic/claude-sonnet-4.5"
+```
+
+**Recommendation:** Start with `google/gemini-2.0-flash-exp:free` - it's completely free and provides excellent quality for monitoring summaries.
+
+### MonitoringService Configuration
+
+MonitoringService is automatically integrated with TmuxInstanceManager and starts when the orchestrator launches. Configure it with these environment variables:
+
+**Basic Setup (Optional Monitoring)**
+
+```bash
+# MonitoringService runs by default without configuration
+# Generates generic summaries without LLM enhancement
+python run_orchestrator.py
+```
+
+**Enhanced Setup (LLM-Powered Summaries)**
+
+```bash
+# Get OpenRouter API key from https://openrouter.ai
+export OPENROUTER_API_KEY="sk-or-v1-xxxxx"
+
+# Start orchestrator - MonitoringService will use LLM for summaries
+python run_orchestrator.py
+```
+
+**Advanced Configuration**
+
+```bash
+# Set monitoring poll interval (seconds)
+export MONITORING_POLL_INTERVAL=12
+
+# Set storage path for summaries
+export MONITORING_STORAGE_PATH="/tmp/madrox_logs/summaries"
+
+# Summary cache age threshold (seconds)
+export MONITORING_CACHE_AGE=60
+```
+
+**Docker Configuration**
+
+Add to `.env` file:
+
+```bash
+# Required for LLM summaries
+OPENROUTER_API_KEY=sk-or-v1-xxxxx
+
+# Optional monitoring settings
+MONITORING_POLL_INTERVAL=12
+MONITORING_STORAGE_PATH=/tmp/madrox_logs/summaries
+```
+
+**Verify Monitoring is Active**
+
+```bash
+# Check if MonitoringService initialized
+tail -f /tmp/madrox_logs/server.log | grep -i "monitoring"
+
+# Expected output:
+# "Starting MonitoringService..."
+# "MonitoringService started (poll interval: 12s)"
+```
+
+**Access Monitoring Tools**
+
+Once the orchestrator is running with MonitoringService enabled:
+
+```python
+# Get summary for single instance
+summary = await get_agent_summary(instance_id="abc123")
+
+# Get summaries for all instances
+all_summaries = await get_all_agent_summaries()
+```
 
 ### Configuration Methods
 
@@ -597,6 +811,7 @@ Complete reference for all configuration options:
 export ORCHESTRATOR_PORT=8001
 export MAX_INSTANCES=20
 export LOG_LEVEL=DEBUG
+export OPENROUTER_API_KEY="sk-or-v1-xxxxx"  # For MonitoringService
 ```
 
 **Method 2 - .env File (Docker):**

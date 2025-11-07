@@ -10,10 +10,13 @@ Complete technical reference for Madrox MCP tools, HTTP endpoints, configuration
   - [Instance Management](#instance-management)
   - [Communication](#communication)
   - [Status & Monitoring](#status--monitoring)
+    - [get_agent_summary](#get_agent_summary)
+    - [get_all_agent_summaries](#get_all_agent_summaries)
   - [Coordination](#coordination)
   - [Bidirectional Messaging](#bidirectional-messaging)
 - [HTTP REST API](#http-rest-api)
   - [Network Hierarchy](#network-hierarchy)
+  - [Monitoring & Summaries](#monitoring--summaries)
   - [Log Streaming](#log-streaming)
 - [Configuration](#configuration)
   - [Server Configuration](#server-configuration)
@@ -46,10 +49,151 @@ Spawn a new Claude instance with specific role and configuration.
 | `system_prompt` | string | No | `null` | Custom system prompt (overrides role defaults) |
 | `model` | string | No | CLI default | Claude model to use (e.g., `claude-4-sonnet-20250514`) |
 | `bypass_isolation` | boolean | No | `false` | Allow full filesystem access (disables workspace isolation) |
-| `parent_instance_id` | string | No | `null` | Parent instance ID (for hierarchical networks) |
+| `parent_instance_id` | string | No | Auto-detected | Parent instance ID (for hierarchical networks) - see [Parent Instance ID Auto-Detection](#parent-instance-id-auto-detection) |
 | `mcp_servers` | object | No | `{}` | Additional MCP servers to configure (see [MCP Server Configuration](#mcp-server-configuration)) |
 
 **Note:** Madrox MCP server is now always enabled for all instances by default, providing access to spawning sub-instances and bidirectional communication tools.
+
+### Parent Instance ID Auto-Detection
+
+When spawning instances, the `parent_instance_id` parameter is **automatically determined** using a two-tier detection system:
+
+#### Tier 1: Explicit Parent ID (Highest Priority)
+If you provide `parent_instance_id` explicitly, it is always used:
+
+```python
+# Explicit parent - always respected
+instance_id = await spawn_claude(
+    name="child",
+    role="developer",
+    parent_instance_id="abc123"  # ✅ Will use this
+)
+```
+
+#### Tier 2: Auto-Detected Caller Instance
+If no `parent_instance_id` is provided, Madrox automatically detects which managed instance is making the spawn call:
+
+```python
+# Supervisor spawns child from within itself
+# Madrox auto-detects that supervisor (abc123) is making this call
+instance_id = await spawn_claude(
+    name="worker",
+    role="developer"
+    # parent_instance_id omitted
+    # ✅ Will auto-detect supervisor as parent
+)
+```
+
+#### Tier 3: Mandatory Enforcement
+If both tiers fail and the instance is not the main orchestrator:
+
+```python
+# FAILS if parent cannot be determined
+instance_id = await spawn_claude(
+    name="worker",
+    role="developer"
+)
+# ❌ ValueError if caller not detected and parent not provided
+# Exception message guides user to solution
+```
+
+**Exception Cases:**
+- ✅ **Main Orchestrator Only**: Instance named `"main-orchestrator"` is allowed `parent_instance_id=None`
+- ✅ **Explicit Parent**: Always respected even if caller detection could work
+- ❌ **External Client**: External API clients must provide explicit `parent_instance_id`
+
+#### Auto-Detection Strategies
+
+**Strategy 1: Busy State Detection (Highest Priority)**
+Detects instances currently executing (in "busy" state) by examining:
+- Instance state flag (`"busy"`)
+- Most recent activity timestamp
+- Request count > 0
+
+```python
+# When supervisor is actively executing (busy state):
+await spawn_claude(name="child", role="developer")
+# ✅ Supervisor detected as parent automatically
+```
+
+**Strategy 2: Activity-Based Detection (Fallback)**
+If no busy instances, detects most recently active instance with history:
+
+```python
+# When supervisor was recently active:
+await spawn_claude(name="child", role="developer")
+# ✅ Most recently active instance used as parent
+```
+
+#### Examples
+
+**Explicit Parent (Always Works):**
+```python
+coordinator = await spawn_claude(name="coordinator", role="architect")
+
+# Supervisor specifies explicit parent
+worker = await spawn_claude(
+    name="worker",
+    role="developer",
+    parent_instance_id=coordinator  # ✅ Explicit
+)
+```
+
+**Auto-Detected Parent (Works from Managed Instance):**
+```python
+# Supervisor spawns from within a message handler
+await send_to_instance(
+    coordinator_id,
+    """Spawn a worker instance:
+    spawn_claude(name="worker", role="developer")
+    # ✅ Coordinator auto-detected as parent
+    """
+)
+```
+
+**Forced Error (External Client):**
+```python
+# External API client spawning without parent
+instance = await spawn_claude(
+    name="worker",
+    role="developer"
+)
+# ❌ ValueError: Cannot spawn instance 'worker': parent_instance_id is required
+# but could not be determined...
+# Solutions:
+#   1. Provide parent_instance_id explicitly
+#   2. Spawn from within a managed instance (auto-detection will work)
+```
+
+#### When Auto-Detection Works
+
+Auto-detection works in these scenarios:
+
+| Scenario | Works? | Reason |
+|----------|--------|--------|
+| Child instance spawns from message handler | ✅ Yes | Caller detected via busy state |
+| Supervisor sends instruction to spawn | ✅ Yes | Auto-detected from activity |
+| External API client calls spawn_claude | ❌ No | No caller instance in system |
+| HTTP request from outside | ❌ No | Cannot correlate to instance |
+| Main orchestrator spawning | ✅ Yes | Special case: allowed None parent |
+
+#### When to Provide Explicit Parent
+
+Provide explicit `parent_instance_id` when:
+1. Spawning from external client (not within a managed instance)
+2. Wanting specific parent (not the calling instance)
+3. Creating standalone instances without hierarchy
+4. Implementing custom coordination patterns
+
+```python
+# External client: explicit parent required
+main_id = await spawn_claude(name="main-orchestrator", role="general")
+worker = await spawn_claude(
+    name="worker",
+    role="developer",
+    parent_instance_id=main_id  # ✅ Explicit
+)
+```
 
 **Returns:**
 
@@ -112,7 +256,16 @@ Spawn multiple Claude instances in parallel for improved performance.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `instances` | array | Yes | List of instance configurations (each with same parameters as `spawn_claude`) |
+| `instances` | array | Yes | List of instance configurations (each with same parameters as `spawn_claude`, including automatic `parent_instance_id` detection) |
+
+**Parent Instance ID Auto-Detection:**
+
+All instances in the batch are auto-detected with the same two-tier system as `spawn_claude`:
+- **Tier 1**: Explicit `parent_instance_id` in config is always used
+- **Tier 2**: If omitted, caller instance is auto-detected and applied to all
+- **Tier 3**: If detection fails and not main-orchestrator, raises exception
+
+This ensures all spawned instances in a batch have proper parent linkage automatically.
 
 **Returns:**
 
@@ -943,6 +1096,184 @@ Get list of child instances for a parent.
 
 ### Status & Monitoring
 
+#### get_agent_summary
+
+Retrieve an LLM-generated activity summary for a specific Claude instance.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `instance_id` | string | Yes | Target instance ID |
+
+**Returns:**
+
+```json
+{
+  "success": true,
+  "instance_id": "abc123-456def-789ghi",
+  "instance_name": "data-analyst",
+  "summary": {
+    "activity_overview": "Analyzed 3 datasets and generated 2 visualizations over 15 minutes",
+    "key_accomplishments": [
+      "Processed 50K records from sales database",
+      "Created correlation heatmap and trend analysis",
+      "Generated executive summary report"
+    ],
+    "context_and_insights": "Instance demonstrated strong analytical capabilities, completing all assigned tasks with minimal errors",
+    "next_steps": "Ready for additional analysis tasks or data processing assignments",
+    "completion_percentage": 85,
+    "tokens_used": 4250,
+    "execution_time_seconds": 892
+  },
+  "generated_at": "2025-11-06T14:32:45.123Z",
+  "cache_age_seconds": 0
+}
+```
+
+**Behavior:**
+
+- Generates LLM-powered activity summary for a single instance
+- Summarizes logs, outputs, and execution history
+- Uses OpenRouter API (requires `OPENROUTER_API_KEY`)
+- Returns cached summary if available and recent (< 60 seconds)
+- Falls back to generic summary if LLM unavailable
+
+**Use Cases:**
+
+- Get quick overview of instance progress
+- Monitor long-running tasks
+- Generate status reports
+- Aggregate summaries for teams of instances
+
+**Example:**
+
+```python
+# Get summary for a data analyst instance
+summary = await get_agent_summary(instance_id="analyst-1")
+
+# Check what it accomplished
+print(f"Completed: {summary['summary']['key_accomplishments']}")
+print(f"Next: {summary['summary']['next_steps']}")
+```
+
+**Error Responses:**
+
+```json
+{
+  "success": false,
+  "error": "Instance not found: invalid-id",
+  "message": "The requested instance does not exist"
+}
+```
+
+---
+
+#### get_all_agent_summaries
+
+Retrieve LLM-generated activity summaries for all active Claude instances.
+
+**Parameters:**
+
+None
+
+**Returns:**
+
+```json
+{
+  "success": true,
+  "total_instances": 3,
+  "summaries": [
+    {
+      "instance_id": "abc123",
+      "instance_name": "frontend-dev",
+      "summary": {
+        "activity_overview": "Built 4 React components with TypeScript",
+        "key_accomplishments": [
+          "Created responsive navigation component",
+          "Implemented user profile form with validation",
+          "Added dark mode toggle feature"
+        ],
+        "context_and_insights": "High-quality code with proper error handling and accessibility",
+        "next_steps": "Ready for testing and integration",
+        "completion_percentage": 90,
+        "tokens_used": 6500,
+        "execution_time_seconds": 1250
+      },
+      "generated_at": "2025-11-06T14:32:45.123Z"
+    },
+    {
+      "instance_id": "def456",
+      "instance_name": "backend-dev",
+      "summary": {
+        "activity_overview": "Implemented REST API endpoints for user management",
+        "key_accomplishments": [
+          "Created CRUD endpoints with proper validation",
+          "Added authentication middleware",
+          "Configured PostgreSQL connection pool"
+        ],
+        "context_and_insights": "API design follows REST conventions with comprehensive error handling",
+        "next_steps": "Ready for integration testing",
+        "completion_percentage": 75,
+        "tokens_used": 5200,
+        "execution_time_seconds": 950
+      },
+      "generated_at": "2025-11-06T14:32:40.456Z"
+    }
+  ],
+  "aggregated_insights": {
+    "total_tokens_used": 11700,
+    "total_execution_time_seconds": 2200,
+    "average_completion_percentage": 82.5,
+    "team_status": "All instances progressing well, on track for project completion"
+  },
+  "generated_at": "2025-11-06T14:32:45.789Z"
+}
+```
+
+**Behavior:**
+
+- Generates summaries for all active instances in parallel
+- Aggregates insights across the team
+- Uses OpenRouter API (requires `OPENROUTER_API_KEY`)
+- Returns cached summaries if available and recent (< 60 seconds per instance)
+- Gracefully handles instances where LLM summarization fails
+
+**Use Cases:**
+
+- Get team-wide status overview
+- Monitor progress across multiple workers
+- Generate comprehensive project reports
+- Check if all team members are productive
+
+**Example:**
+
+```python
+# Get summaries for all instances
+result = await get_all_agent_summaries()
+
+# Check team progress
+print(f"Team status: {result['aggregated_insights']['team_status']}")
+
+# List each instance's accomplishments
+for summary in result['summaries']:
+    print(f"\n{summary['instance_name']}:")
+    for accomplishment in summary['summary']['key_accomplishments']:
+        print(f"  - {accomplishment}")
+```
+
+**Error Responses:**
+
+```json
+{
+  "success": false,
+  "error": "No instances available",
+  "message": "No active instances to summarize"
+}
+```
+
+---
+
 #### get_instance_status
 
 Get status for a single instance or all instances.
@@ -1137,6 +1468,179 @@ Get complete network topology showing all instances and parent-child relationshi
 
 ```bash
 curl "http://localhost:8001/network/hierarchy" | jq
+```
+
+---
+
+### Monitoring & Summaries
+
+#### GET /api/monitoring/sessions
+
+List all available summary sessions with metadata.
+
+**Response:**
+
+```json
+{
+  "current_session": "session_20250107_080000",
+  "total_sessions": 3,
+  "sessions": [
+    {
+      "session_id": "session_20250107_100000",
+      "path": "/tmp/madrox_logs/summaries/session_20250107_100000",
+      "instance_count": 6,
+      "summary_count": 48,
+      "created_at": "2025-01-07T10:00:00.123456"
+    },
+    {
+      "session_id": "session_20250107_090000",
+      "path": "/tmp/madrox_logs/summaries/session_20250107_090000",
+      "instance_count": 4,
+      "summary_count": 32,
+      "created_at": "2025-01-07T09:00:00.123456"
+    }
+  ]
+}
+```
+
+**Fields:**
+
+- `current_session`: Session ID of currently running MonitoringService
+- `total_sessions`: Total number of preserved sessions
+- `sessions`: Array of session objects with instance/summary counts
+
+**Example:**
+
+```bash
+curl "http://localhost:8001/api/monitoring/sessions" | jq
+```
+
+---
+
+#### GET /api/monitoring/sessions/{session_id}/summaries
+
+Get all latest summaries for a specific session.
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | Yes | Session identifier (e.g., `session_20250107_080000`) |
+
+**Response:**
+
+```json
+{
+  "session_id": "session_20250107_080000",
+  "timestamp": "2025-01-07T08:15:30.123456Z",
+  "instance_count": 6,
+  "summaries": {
+    "abc123-instance-id": {
+      "instance_id": "abc123-instance-id",
+      "timestamp": "2025-01-07T08:15:00.000000+00:00",
+      "status": "running",
+      "summary": "This Claude instance is coordinating a software engineering team...",
+      "metadata": {
+        "output_length": 9495,
+        "error_count": 0,
+        "generation_time_ms": 2734,
+        "poll_interval": 12
+      }
+    }
+  }
+}
+```
+
+**Fields:**
+
+- `summaries`: Object keyed by instance_id containing latest summary for each instance
+- `summary`: Natural language summary of instance activity (generated by LLM)
+- `metadata`: Generation metrics and configuration
+
+**Example:**
+
+```bash
+curl "http://localhost:8001/api/monitoring/sessions/session_20250107_080000/summaries" | jq
+```
+
+---
+
+#### GET /api/monitoring/sessions/{session_id}/instances/{instance_id}
+
+Get full summary history for a specific instance in a session.
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | Yes | Session identifier |
+| `instance_id` | string | Yes | Instance identifier |
+
+**Response:**
+
+```json
+{
+  "session_id": "session_20250107_080000",
+  "instance_id": "abc123-instance-id",
+  "summary_count": 15,
+  "summaries": [
+    {
+      "instance_id": "abc123-instance-id",
+      "timestamp": "2025-01-07T08:00:00.000000+00:00",
+      "status": "running",
+      "summary": "Instance started and initializing team workflow...",
+      "metadata": {...}
+    },
+    {
+      "instance_id": "abc123-instance-id",
+      "timestamp": "2025-01-07T08:00:12.000000+00:00",
+      "status": "running",
+      "summary": "Spawning research team members...",
+      "metadata": {...}
+    }
+  ]
+}
+```
+
+**Fields:**
+
+- `summaries`: Array of all summaries chronologically ordered
+- `summary_count`: Total number of summaries for this instance
+
+**Use Cases:**
+
+- Tracking instance activity progression over time
+- Debugging instance behavior
+- Analyzing task execution patterns
+
+**Example:**
+
+```bash
+curl "http://localhost:8001/api/monitoring/sessions/session_20250107_080000/instances/abc123" | jq
+```
+
+---
+
+#### GET /api/monitoring/current
+
+Get summaries for the currently active session (convenience endpoint).
+
+**Response:**
+
+Same format as `/api/monitoring/sessions/{session_id}/summaries` but automatically uses the current active session.
+
+**Example:**
+
+```bash
+curl "http://localhost:8001/api/monitoring/current" | jq
+```
+
+**Error Response (503):**
+
+```json
+{
+  "detail": "MonitoringService not available"
+}
 ```
 
 ---
