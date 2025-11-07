@@ -993,6 +993,8 @@ Begin execution now. Spawn your team and start the workflow."""
             List of child instance details (excludes terminated instances by default)
         """
         children = []
+
+        # First, check active instances in memory
         for instance_id, instance in self.instances.items():
             is_child = instance.get("parent_instance_id") == parent_id
             include = is_child and (include_terminated or instance.get("state") != "terminated")
@@ -1006,6 +1008,40 @@ Begin execution now. Spawn your team and start the workflow."""
                         "instance_type": instance.get("instance_type"),
                     }
                 )
+
+        # If include_terminated, also check preserved artifacts for terminated instances
+        if include_terminated:
+            artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
+            if artifacts_base.exists():
+                import json
+                for artifact_dir in artifacts_base.iterdir():
+                    if not artifact_dir.is_dir():
+                        continue
+
+                    instance_id = artifact_dir.name
+                    # Skip if already in children list from active instances
+                    if any(c["id"] == instance_id for c in children):
+                        continue
+
+                    metadata_path = artifact_dir / "_metadata.json"
+                    if metadata_path.exists():
+                        try:
+                            with open(metadata_path) as f:
+                                metadata = json.load(f)
+
+                            if metadata.get("parent_instance_id") == parent_id:
+                                children.append(
+                                    {
+                                        "id": instance_id,
+                                        "name": metadata.get("instance_name", "unknown"),
+                                        "role": metadata.get("role", "unknown"),
+                                        "state": "terminated",
+                                        "instance_type": metadata.get("instance_type", "claude"),
+                                    }
+                                )
+                        except Exception as e:
+                            logger.warning(f"Failed to load metadata for {instance_id}: {e}")
+
         return children
 
     @mcp.tool
@@ -1876,10 +1912,26 @@ Begin execution now. Spawn your team and start the workflow."""
             Dictionary with collection summary including artifacts_dir, manifest_path,
             members_count, total_files_collected, etc.
         """
-        if team_supervisor_id not in self.instances:
-            raise ValueError(f"Team supervisor instance {team_supervisor_id} not found")
+        # Check if supervisor exists in preserved artifacts (for terminated instances)
+        artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
+        supervisor_artifacts_dir = artifacts_base / team_supervisor_id
 
-        supervisor = self.instances[team_supervisor_id]
+        # Get supervisor info from either instances dict or preserved artifacts
+        if team_supervisor_id in self.instances:
+            supervisor = self.instances[team_supervisor_id]
+        elif supervisor_artifacts_dir.exists():
+            # Load metadata from preserved artifacts for terminated supervisor
+            metadata_path = supervisor_artifacts_dir / "_metadata.json"
+            if metadata_path.exists():
+                import json
+                with open(metadata_path) as f:
+                    supervisor = json.load(f)
+            else:
+                supervisor = {"id": team_supervisor_id, "name": "unknown"}
+        else:
+            raise ValueError(
+                f"Team supervisor instance {team_supervisor_id} not found in active instances or preserved artifacts"
+            )
 
         try:
             # Get all children of the supervisor (include terminated for artifact collection)
