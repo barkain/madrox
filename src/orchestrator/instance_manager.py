@@ -769,12 +769,14 @@ class InstanceManager:
         )
 
         # Spawn supervisor WITH instruction as initial_prompt (bypasses paste detection)
+        # Team supervisors are ALWAYS root-level instances (parent_instance_id must be None)
+        # Explicitly set to None to prevent inheriting parent context from caller
         supervisor_id = await self.spawn_instance(
             name=f"{template_name}-lead",
             role=role,
             wait_for_ready=True,
             initial_prompt=instruction,
-            parent_instance_id=parent_instance_id,
+            parent_instance_id=None,  # Team supervisors are always root-level
         )
 
         # No need to send_message - instruction already received via CLI argument
