@@ -1529,6 +1529,28 @@ Use get_instance_tree() to see the full network hierarchy."""
                             except Exception as e:
                                 result = {"error": {"code": -32603, "message": str(e)}}
 
+                    elif tool_name == "collect_team_artifacts":
+                        team_supervisor_id = tool_args.get("team_supervisor_id")
+                        if not team_supervisor_id:
+                            result = {"error": {"code": -32602, "message": "Missing required parameter: team_supervisor_id"}}
+                        else:
+                            try:
+                                # Call the collect_team_artifacts method directly
+                                collection_result = await self.manager.collect_team_artifacts(team_supervisor_id)
+
+                                # Format result as MCP response
+                                result = {
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": json.dumps(collection_result, indent=2),
+                                        }
+                                    ]
+                                }
+                            except Exception as e:
+                                logger.error(f"Error collecting team artifacts: {e}", exc_info=True)
+                                result = {"error": {"code": -32603, "message": str(e)}}
+
                     else:
                         result = {
                             "error": {"code": -32601, "message": f"Unknown tool: {tool_name}"}
