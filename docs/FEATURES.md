@@ -58,15 +58,17 @@ MCP Tools (get_agent_summary, get_all_agent_summaries)
 **Process Flow:**
 
 1. **Background Service**: MonitoringService starts with TmuxInstanceManager
-2. **Polling**: Periodically polls instance logs and outputs (default: 12 seconds)
-3. **LLM Summarization**: Sends logs to Claude via OpenRouter API
-   - Claude analyzes instance activity
+2. **Session Creation**: Auto-creates timestamped session directory (`session_YYYYMMDD_HHMMSS`)
+3. **Polling**: Periodically polls instance logs and outputs (default: 12 seconds)
+4. **LLM Summarization**: Sends logs to Claude/Gemini via OpenRouter API
+   - LLM analyzes instance activity
    - Extracts key accomplishments
-   - Estimates progress and completion
-   - Identifies next steps
-4. **Storage**: Persists summaries to `/tmp/madrox_logs/summaries/` with timestamps
-5. **Caching**: Caches recent summaries (default: 60 seconds) to reduce API calls
-6. **MCP Tools**: Exposes tools for retrieving summaries programmatically
+   - Generates concise natural language summary
+5. **Storage**: Persists summaries to `/tmp/madrox_logs/summaries/{session_id}/{instance_id}/`
+   - Individual summary files with timestamps
+   - Symlink to latest summary for quick access
+6. **API Access**: Exposes summaries via HTTP REST endpoints
+7. **MCP Tools**: Legacy tools (get_agent_summary, get_all_agent_summaries)
 
 #### LLMSummarizer Component
 
@@ -174,6 +176,130 @@ for i in range(10):
 - **Optional**: `OPENROUTER_API_KEY` environment variable for enhanced summaries
 - Without this key, MonitoringService provides generic summaries
 - No additional dependencies beyond base Madrox installation
+
+### Session-Based Persistence
+
+MonitoringService automatically persists summaries in session-specific directories, preventing data loss across server restarts and enabling historical analysis.
+
+#### Session Management
+
+**Automatic Session Creation**
+
+Each time the orchestrator starts, a new session directory is automatically created:
+
+```
+/tmp/madrox_logs/summaries/
+├── session_20250107_080000/    # Server start: Jan 7, 08:00
+├── session_20250107_090000/    # Server restart: Jan 7, 09:00
+└── session_20250107_100000/    # Server restart: Jan 7, 10:00
+```
+
+**Session Directory Structure**
+
+```
+session_20250107_080000/
+├── abc123-instance-id/
+│   ├── summary_2025-11-07T06:00:00.json
+│   ├── summary_2025-11-07T06:00:12.json
+│   ├── summary_2025-11-07T06:00:24.json
+│   └── latest.json → summary_2025-11-07T06:00:24.json (symlink)
+├── def456-instance-id/
+│   └── ...
+└── ghi789-instance-id/
+    └── ...
+```
+
+**Benefits**
+
+- ✅ **No Data Loss**: Summaries preserved across server restarts
+- ✅ **Historical Analysis**: Compare agent behavior across sessions
+- ✅ **Session Isolation**: Each run maintains separate summary history
+- ✅ **Automatic Cleanup**: Old sessions can be manually removed
+- ✅ **UI Integration**: Sessions exposed via REST API for dashboards
+
+#### REST API Access
+
+**List All Sessions**
+
+```bash
+curl http://localhost:8001/api/monitoring/sessions | jq
+```
+
+Response:
+```json
+{
+  "current_session": "session_20250107_100000",
+  "total_sessions": 3,
+  "sessions": [
+    {
+      "session_id": "session_20250107_100000",
+      "instance_count": 6,
+      "summary_count": 48,
+      "created_at": "2025-01-07T10:00:00.123456"
+    }
+  ]
+}
+```
+
+**Get Current Session Summaries**
+
+```bash
+curl http://localhost:8001/api/monitoring/current | jq
+```
+
+**Get Specific Session**
+
+```bash
+curl http://localhost:8001/api/monitoring/sessions/session_20250107_080000/summaries | jq
+```
+
+**Get Instance History**
+
+```bash
+curl http://localhost:8001/api/monitoring/sessions/session_20250107_080000/instances/abc123 | jq
+```
+
+#### Use Cases
+
+**1. Historical Comparison**
+```python
+# Compare how an instance performed across different sessions
+session1_summary = get_session_summary("session_20250107_080000", "instance_abc")
+session2_summary = get_session_summary("session_20250107_090000", "instance_abc")
+
+# Analyze performance differences
+```
+
+**2. Debugging**
+```python
+# Review full activity history for a problematic instance
+history = get_instance_history("session_20250107_080000", "failed_instance_id")
+
+# Review all summaries chronologically
+for summary in history['summaries']:
+    print(f"{summary['timestamp']}: {summary['summary']}")
+```
+
+**3. Team Analysis**
+```python
+# Analyze entire team's progress during a specific session
+session_summaries = get_session_summaries("session_20250107_080000")
+
+# Aggregate team metrics
+total_instances = len(session_summaries['summaries'])
+completed = sum(1 for s in session_summaries['summaries'].values() if 'completed' in s['summary'].lower())
+```
+
+#### Configuration
+
+Session persistence is automatic with these defaults:
+
+- **Base Path**: `/tmp/madrox_logs/summaries/`
+- **Session Format**: `session_YYYYMMDD_HHMMSS`
+- **Per-Instance Storage**: `{session_id}/{instance_id}/summary_*.json`
+- **Symlink**: `latest.json` always points to most recent summary
+
+No configuration needed - sessions are created automatically on orchestrator startup.
 
 ---
 
