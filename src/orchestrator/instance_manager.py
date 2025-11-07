@@ -982,21 +982,21 @@ Begin execution now. Spawn your team and start the workflow."""
         # Return current status after max wait
         return self.jobs[job_id]
 
-    def _get_children_internal(self, parent_id: str) -> list[dict[str, Any]]:
+    def _get_children_internal(self, parent_id: str, include_terminated: bool = False) -> list[dict[str, Any]]:
         """Internal method to get all child instances of a parent.
 
         Args:
             parent_id: Parent instance ID
+            include_terminated: If True, include terminated instances in results
 
         Returns:
-            List of child instance details (excludes terminated instances)
+            List of child instance details (excludes terminated instances by default)
         """
         children = []
         for instance_id, instance in self.instances.items():
-            if (
-                instance.get("parent_instance_id") == parent_id
-                and instance.get("state") != "terminated"
-            ):
+            is_child = instance.get("parent_instance_id") == parent_id
+            include = is_child and (include_terminated or instance.get("state") != "terminated")
+            if include:
                 children.append(
                     {
                         "id": instance_id,
@@ -1883,8 +1883,8 @@ Begin execution now. Spawn your team and start the workflow."""
         supervisor = self.instances[team_supervisor_id]
 
         try:
-            # Get all children of the supervisor
-            children = self._get_children_internal(team_supervisor_id)
+            # Get all children of the supervisor (include terminated for artifact collection)
+            children = self._get_children_internal(team_supervisor_id, include_terminated=True)
 
             if not children:
                 logger.warning(f"Team supervisor {team_supervisor_id} has no child instances")
@@ -1917,16 +1917,49 @@ Begin execution now. Spawn your team and start the workflow."""
                 child_name = child.get("name", "unknown")
 
                 try:
-                    # Get child's workspace artifacts
-                    child_instance = self.instances[child_id]
-                    child_workspace = Path(child_instance.get("workspace_dir", ""))
+                    child_state = child.get("state")
 
-                    if not child_workspace.exists():
-                        logger.warning(f"Child workspace does not exist for {child_id}")
-                        collection_errors.append(
-                            {"child_id": child_id, "error": "Workspace does not exist"}
+                    # Determine source directory for artifacts with priority logic
+                    artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
+
+                    # Check if artifacts were preserved (for terminated instances)
+                    preserved_artifacts_dir = artifacts_base / child_id
+
+                    # Get child's current workspace (for running instances)
+                    child_instance = self.instances.get(child_id)
+                    child_workspace = Path(child_instance.get("workspace_dir", "")) if child_instance else None
+
+                    # Determine source directory priority:
+                    # 1. Preserved artifacts (if exists) - for terminated instances
+                    # 2. Workspace (if exists) - for running instances
+                    source_dir = None
+                    source_type = None
+
+                    if preserved_artifacts_dir.exists():
+                        source_dir = preserved_artifacts_dir
+                        source_type = "preserved"
+                    elif child_workspace and child_workspace.exists():
+                        source_dir = child_workspace
+                        source_type = "workspace"
+                    else:
+                        logger.warning(
+                            f"No artifacts found for child {child_id} (state: {child_state})",
+                            extra={
+                                "child_id": child_id,
+                                "checked_preserved": str(preserved_artifacts_dir),
+                                "checked_workspace": str(child_workspace) if child_workspace else None,
+                            }
                         )
+                        collection_errors.append({
+                            "child_id": child_id,
+                            "error": f"No artifacts found (state: {child_state})"
+                        })
                         continue
+
+                    logger.debug(
+                        f"Collecting artifacts for {child_id} from {source_type}",
+                        extra={"child_id": child_id, "source": str(source_dir), "type": source_type}
+                    )
 
                     # Create child's artifacts subdirectory
                     child_artifacts_dir = team_artifacts_dir / child_id
@@ -1938,12 +1971,16 @@ Begin execution now. Spawn your team and start the workflow."""
                         ["*.py", "*.md", "*.json", "*.txt", "*.log", "*.yaml", "*.yml", "*.toml"],
                     )
 
-                    # Copy matching files from child workspace
+                    # Copy matching files from source directory
                     child_files_copied = 0
                     import fnmatch
 
-                    for item in child_workspace.rglob("*"):
+                    for item in source_dir.rglob("*"):
                         if not item.is_file():
+                            continue
+
+                        # Skip metadata files from preserved artifacts
+                        if item.name == "_metadata.json" and source_type == "preserved":
                             continue
 
                         filename = item.name
@@ -1953,7 +1990,7 @@ Begin execution now. Spawn your team and start the workflow."""
 
                         if matches_pattern:
                             try:
-                                relative_path = item.relative_to(child_workspace)
+                                relative_path = item.relative_to(source_dir)
                                 target_path = child_artifacts_dir / relative_path
                                 target_path.parent.mkdir(parents=True, exist_ok=True)
                                 shutil.copy2(item, target_path)
@@ -1969,12 +2006,12 @@ Begin execution now. Spawn your team and start the workflow."""
                     child_metadata = {
                         "child_id": child_id,
                         "child_name": child_name,
+                        "state": child_state,
                         "instance_type": child.get("instance_type"),
                         "role": child.get("role"),
-                        "model": child.get("model"),
-                        "created_at": child.get("created_at"),
                         "files_collected": child_files_copied,
-                        "workspace_dir": str(child_workspace),
+                        "source_type": source_type,
+                        "source_dir": str(source_dir),
                     }
 
                     child_metadata_path = child_artifacts_dir / "_metadata.json"
@@ -1984,8 +2021,10 @@ Begin execution now. Spawn your team and start the workflow."""
                         {
                             "child_id": child_id,
                             "child_name": child_name,
+                            "state": child_state,
                             "files_collected": child_files_copied,
                             "artifacts_dir": str(child_artifacts_dir),
+                            "source_type": source_type,
                         }
                     )
 
