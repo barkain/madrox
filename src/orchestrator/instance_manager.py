@@ -622,13 +622,8 @@ class InstanceManager:
         # Log final parent assignment
         if parent_id:
             logger.info(f"Instance '{name}' will have parent: {parent_id}")
-        elif is_main_instance:
-            logger.info(f"Instance '{name}' is main orchestrator (no parent)")
-        elif is_team_supervisor:
-            logger.info(f"Instance '{name}' is team supervisor (root-level, no parent)")
         else:
-            # Should never reach here due to exception above
-            raise RuntimeError(f"Invalid state: instance '{name}' has no parent but is not main orchestrator or team supervisor")
+            logger.info(f"Instance '{name}' is root-level (no parent)")
 
         # All Claude instances are handled by TmuxInstanceManager
         instance_id = await self.tmux_manager.spawn_instance(
