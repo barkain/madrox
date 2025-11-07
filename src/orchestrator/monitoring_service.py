@@ -50,14 +50,19 @@ class MonitoringService:
             instance_manager: Reference to the InstanceManager
             llm_summarizer: Reference to the LLMSummarizer
             poll_interval: Polling interval in seconds (default: 12)
-            storage_path: Base path for storing summaries
+            storage_path: Base path for storing summaries (session subdirectory auto-created)
             max_tokens: Maximum tokens for LLM summary generation (default: 100)
         """
         self.instance_manager = instance_manager
         self.llm_summarizer = llm_summarizer
         self.poll_interval = poll_interval
-        self.storage_path = Path(storage_path)
         self.max_tokens = max_tokens
+
+        # Create session-specific subdirectory: /tmp/madrox_logs/summaries/session_YYYYMMDD_HHMMSS/
+        from datetime import datetime, timezone
+        session_id = datetime.now(timezone.utc).strftime("session_%Y%m%d_%H%M%S")
+        self.storage_path = Path(storage_path) / session_id
+        self.session_id = session_id
 
         self._task: Optional[asyncio.Task] = None
         self._running = False
@@ -85,16 +90,17 @@ class MonitoringService:
         if self._running:
             raise RuntimeError("MonitoringService is already running")
 
-        self._logger.info("Starting MonitoringService...")
+        self._logger.info(f"Starting MonitoringService (session: {self.session_id})...")
 
-        # Create storage directory
+        # Create session storage directory
         self.storage_path.mkdir(parents=True, exist_ok=True)
+        self._logger.info(f"Session summaries path: {self.storage_path}")
 
         # Start background task
         self._running = True
         self._task = asyncio.create_task(self._monitoring_loop())
 
-        self._logger.info(f"MonitoringService started (poll interval: {self.poll_interval}s)")
+        self._logger.info(f"MonitoringService started (poll interval: {self.poll_interval}s, session: {self.session_id})")
 
     async def stop(self, timeout: float = 5.0) -> None:
         """
