@@ -685,8 +685,9 @@ python run_orchestrator.py
 Once OPENROUTER_API_KEY is set, you can tune monitoring behavior:
 
 ```bash
-# Model selection (default: claude-3.5-sonnet)
-export OPENROUTER_MODEL="claude-3.5-sonnet"
+# Model selection (default: anthropic/claude-haiku-4.5)
+# See "Model Selection Guide" below for recommendations
+export OPENROUTER_MODEL="google/gemini-2.0-flash-exp:free"  # Recommended: Free & fast
 
 # Summary polling interval (seconds, default: 12)
 export MONITORING_POLL_INTERVAL=12
@@ -694,6 +695,42 @@ export MONITORING_POLL_INTERVAL=12
 # Cache age threshold (seconds, default: 60)
 export MONITORING_CACHE_AGE=60
 ```
+
+#### Model Selection Guide (2025)
+
+Choose the best model for your monitoring needs:
+
+**FREE MODELS (Recommended for high-volume monitoring):**
+```bash
+# Best free option - faster than Gemini 1.5, high quality
+export OPENROUTER_MODEL="google/gemini-2.0-flash-exp:free"
+
+# MIT licensed, good reasoning capabilities
+export OPENROUTER_MODEL="deepseek/deepseek-r1:free"
+
+# High concurrency support, cost efficient
+export OPENROUTER_MODEL="minimax/minimax-m2:free"
+```
+
+**CHEAP MODELS (Ultra-low cost, pay-per-use):**
+```bash
+# Ultra-low latency, minimal cost per request
+export OPENROUTER_MODEL="google/gemini-2.5-flash-lite"
+
+# Fast with advanced reasoning
+export OPENROUTER_MODEL="google/gemini-2.5-flash"
+```
+
+**QUALITY MODELS (Balanced cost/quality):**
+```bash
+# Default - 200K context, high quality (paid)
+export OPENROUTER_MODEL="anthropic/claude-haiku-4.5"
+
+# Advanced reasoning, higher cost (paid)
+export OPENROUTER_MODEL="anthropic/claude-sonnet-4.5"
+```
+
+**Recommendation:** Start with `google/gemini-2.0-flash-exp:free` - it's completely free and provides excellent quality for monitoring summaries.
 
 ### MonitoringService Configuration
 

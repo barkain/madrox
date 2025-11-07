@@ -43,9 +43,25 @@ class LLMSummarizer:
     OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
     # Default configuration
-    DEFAULT_MODEL = "anthropic/claude-haiku-4.5"
+    DEFAULT_MODEL = "google/gemini-2.0-flash-exp:free"
     DEFAULT_TIMEOUT = 30  # seconds
     DEFAULT_MAX_TOKENS = 100  # Reduced for more concise summaries
+
+    # Recommended models for different use cases (2025)
+    RECOMMENDED_MODELS = {
+        # FREE OPTIONS (no cost)
+        "free_fast": "google/gemini-2.0-flash-exp:free",      # Best free option, faster than Gemini 1.5
+        "free_balanced": "deepseek/deepseek-r1:free",         # MIT licensed, good reasoning
+        "free_concurrent": "minimax/minimax-m2:free",         # High concurrency, cost efficient
+
+        # CHEAP OPTIONS (ultra-low cost)
+        "ultra_fast": "google/gemini-2.5-flash-lite",         # Ultra-low latency, minimal cost
+        "fast": "google/gemini-2.5-flash",                    # Fast, advanced reasoning
+
+        # QUALITY OPTIONS (balanced cost/quality)
+        "balanced": "anthropic/claude-haiku-4.5",             # Default, 200K context, good quality
+        "reasoning": "anthropic/claude-sonnet-4.5",           # Advanced reasoning, higher cost
+    }
 
     def __init__(
         self,
@@ -58,8 +74,37 @@ class LLMSummarizer:
 
         Args:
             api_key: OpenRouter API key. If None, reads from OPENROUTER_API_KEY env var.
-            model: Model identifier for OpenRouter (default: anthropic/claude-3-haiku)
+            model: Model identifier for OpenRouter. Options:
+
+                FREE MODELS (Recommended for high-volume monitoring):
+                - "google/gemini-2.0-flash-exp:free" - Best free option, faster than Gemini 1.5
+                - "deepseek/deepseek-r1:free" - MIT licensed, good reasoning capabilities
+                - "minimax/minimax-m2:free" - High concurrency, cost efficient
+
+                CHEAP MODELS (Ultra-low cost):
+                - "google/gemini-2.5-flash-lite" - Ultra-low latency, minimal cost
+                - "google/gemini-2.5-flash" - Fast with advanced reasoning
+
+                QUALITY MODELS (Balanced cost/quality):
+                - "anthropic/claude-haiku-4.5" - Default, 200K context, high quality
+                - "anthropic/claude-sonnet-4.5" - Advanced reasoning, higher cost
+
+                See RECOMMENDED_MODELS class attribute for full list.
+
             timeout: Request timeout in seconds (default: 30)
+
+        Example:
+            >>> # Use free Gemini model
+            >>> summarizer = LLMSummarizer(
+            ...     api_key="sk-or-v1-...",
+            ...     model="google/gemini-2.0-flash-exp:free"
+            ... )
+
+            >>> # Use class constant
+            >>> summarizer = LLMSummarizer(
+            ...     api_key="sk-or-v1-...",
+            ...     model=LLMSummarizer.RECOMMENDED_MODELS["free_fast"]
+            ... )
 
         Note:
             If api_key is not provided and OPENROUTER_API_KEY env var is not set,
