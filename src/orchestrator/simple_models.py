@@ -247,7 +247,7 @@ class OrchestratorConfig:
         log_level: str = "INFO",
         enable_metrics: bool = True,
         metrics_port: int = 9090,
-        artifacts_dir: str = "/tmp/madrox_artifacts",
+        artifacts_dir: str = "/tmp/madrox_logs/artifacts",
         preserve_artifacts: bool = True,
     ):
         self.server_host = server_host

@@ -1022,7 +1022,7 @@ Begin execution now. Spawn your team and start the workflow."""
 
         # If include_terminated, also check preserved artifacts for terminated instances
         if include_terminated:
-            artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
+            artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_logs/artifacts"))
             if artifacts_base.exists():
                 import json
                 for artifact_dir in artifacts_base.iterdir():
@@ -1924,7 +1924,7 @@ Begin execution now. Spawn your team and start the workflow."""
             members_count, total_files_collected, etc.
         """
         # Check if supervisor exists in preserved artifacts (for terminated instances)
-        artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
+        artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_logs/artifacts"))
         supervisor_artifacts_dir = artifacts_base / team_supervisor_id
 
         # Get supervisor info from either instances dict or preserved artifacts
@@ -1959,7 +1959,7 @@ Begin execution now. Spawn your team and start the workflow."""
                 }
 
             # Create team artifacts directory structure
-            artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
+            artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_logs/artifacts"))
             artifacts_base.mkdir(parents=True, exist_ok=True)
 
             # Create team-specific directory (use supervisor ID)
@@ -1982,7 +1982,7 @@ Begin execution now. Spawn your team and start the workflow."""
                     child_state = child.get("state")
 
                     # Determine source directory for artifacts with priority logic
-                    artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
+                    artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_logs/artifacts"))
 
                     # Check if artifacts were preserved (for terminated instances)
                     preserved_artifacts_dir = artifacts_base / child_id

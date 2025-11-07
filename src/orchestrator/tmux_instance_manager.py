@@ -1100,7 +1100,7 @@ class TmuxInstanceManager:
                 return {"success": False, "error": "Workspace does not exist"}
 
             # Create artifacts directory structure
-            artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
+            artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_logs/artifacts"))
             artifacts_base.mkdir(parents=True, exist_ok=True)
 
             # Create instance artifacts directory

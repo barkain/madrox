@@ -61,10 +61,17 @@ class ClaudeOrchestratorServer:
         """
         self.config = config
 
-        # Initialize artifacts configuration
-        self.artifacts_dir = os.getenv("ARTIFACTS_DIR", "/tmp/madrox_logs/artifacts")
+        # Initialize artifacts configuration (base directory, session subdirectory added later)
+        self.artifacts_base_dir = os.getenv("ARTIFACTS_DIR", "/tmp/madrox_logs/artifacts")
         self.preserve_artifacts = os.getenv("PRESERVE_ARTIFACTS", "true").lower() == "true"
-        artifact_patterns_str = os.getenv("ARTIFACT_PATTERNS", "*.md,*.pdf,*.csv,*.json,FINAL_*")
+        # Default: collect common source code, docs, config, and data files
+        # Excludes: compiled binaries, dependencies, caches, OS files
+        artifact_patterns_str = os.getenv(
+            "ARTIFACT_PATTERNS",
+            "*.py,*.rs,*.js,*.ts,*.tsx,*.jsx,*.java,*.cpp,*.c,*.h,*.go,*.rb,*.php,*.swift,*.kt,"
+            "*.md,*.txt,*.pdf,*.csv,*.json,*.yaml,*.yml,*.toml,*.xml,*.html,*.css,*.sql,*.sh,"
+            "Cargo.toml,Cargo.lock,package.json,requirements.txt,Dockerfile,Makefile,README,LICENSE"
+        )
         self.artifact_patterns = [p.strip() for p in artifact_patterns_str.split(",")]
 
         # Initialize logging manager
@@ -87,12 +94,16 @@ class ClaudeOrchestratorServer:
         # Test the reconfigured module-level logger
         server_logger.info("Module-level logger reconfigured successfully")
 
+        # Generate session ID for artifact organization (before instance manager init)
+        self.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
         # Initialize instance manager with logging and artifacts config
         instance_manager_config = config.to_dict()
         instance_manager_config.update({
-            "artifacts_dir": self.artifacts_dir,
+            "artifacts_dir": os.path.join(self.artifacts_base_dir, self.session_id),
             "preserve_artifacts": self.preserve_artifacts,
             "artifact_patterns": self.artifact_patterns,
+            "session_id": self.session_id,
         })
         self.instance_manager = InstanceManager(instance_manager_config)
 
