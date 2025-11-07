@@ -522,28 +522,52 @@ class InstanceManager:
         if instance_id not in self.instances:
             raise ValueError(f"Instance {instance_id} not found")
 
-        # Get the response queue for this instance
-        if instance_id not in self.tmux_manager.response_queues:
-            return []
-
-        queue = self.tmux_manager.response_queues[instance_id]
         replies = []
 
-        # If wait_timeout > 0, wait for at least one message
-        if wait_timeout > 0:
-            try:
-                first_reply = await asyncio.wait_for(queue.get(), timeout=wait_timeout)
-                replies.append(first_reply)
-            except TimeoutError:
+        # Check if using shared_state (for STDIO/IPC transport)
+        if self.tmux_manager.shared_state:
+            # Use shared queue - try to get first message with optional timeout
+            if wait_timeout > 0:
+                try:
+                    first_reply = await self.tmux_manager._get_from_shared_queue(
+                        instance_id, timeout=wait_timeout
+                    )
+                    replies.append(first_reply)
+                except TimeoutError:
+                    return []
+
+            # Drain remaining messages (non-blocking, timeout=0)
+            while True:
+                try:
+                    reply = await self.tmux_manager._get_from_shared_queue(
+                        instance_id, timeout=0
+                    )
+                    replies.append(reply)
+                except (TimeoutError, Exception):
+                    # No more messages or empty queue
+                    break
+        else:
+            # Use local asyncio queue (HTTP transport)
+            if instance_id not in self.tmux_manager.response_queues:
                 return []
 
-        # Drain remaining queued messages (non-blocking)
-        while not queue.empty():
-            try:
-                reply = queue.get_nowait()
-                replies.append(reply)
-            except asyncio.QueueEmpty:
-                break
+            queue = self.tmux_manager.response_queues[instance_id]
+
+            # If wait_timeout > 0, wait for at least one message
+            if wait_timeout > 0:
+                try:
+                    first_reply = await asyncio.wait_for(queue.get(), timeout=wait_timeout)
+                    replies.append(first_reply)
+                except TimeoutError:
+                    return []
+
+            # Drain remaining queued messages (non-blocking)
+            while not queue.empty():
+                try:
+                    reply = queue.get_nowait()
+                    replies.append(reply)
+                except asyncio.QueueEmpty:
+                    break
 
         return replies
 
