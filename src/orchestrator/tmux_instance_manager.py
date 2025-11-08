@@ -1283,16 +1283,8 @@ class TmuxInstanceManager:
                     extra={"instance_id": instance_id, "error": str(e)},
                 )
 
-            # Clean up workspace
-            workspace_dir = Path(instance["workspace_dir"])
-            if workspace_dir.exists():
-                try:
-                    import shutil
-
-                    shutil.rmtree(workspace_dir)
-                    logger.debug(f"Cleaned up workspace for instance {instance_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up workspace for {instance_id}: {e}")
+            # Workspace cleanup removed - workspace IS the artifacts directory
+            # Artifacts are preserved in place, no need to delete workspace
 
             # Remove message history
             if instance_id in self.message_history:

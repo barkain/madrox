@@ -97,10 +97,14 @@ class ClaudeOrchestratorServer:
         # Generate session ID for artifact organization (before instance manager init)
         self.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+        # Use session artifacts directory as workspace - instances work directly in final location
+        session_workspace_dir = os.path.join(self.artifacts_base_dir, self.session_id)
+
         # Initialize instance manager with logging and artifacts config
         instance_manager_config = config.to_dict()
         instance_manager_config.update({
-            "artifacts_dir": os.path.join(self.artifacts_base_dir, self.session_id),
+            "workspace_base_dir": session_workspace_dir,  # Instances work in artifacts dir
+            "artifacts_dir": session_workspace_dir,       # Same location
             "preserve_artifacts": self.preserve_artifacts,
             "artifact_patterns": self.artifact_patterns,
             "session_id": self.session_id,
