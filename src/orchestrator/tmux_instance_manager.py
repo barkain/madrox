@@ -71,14 +71,15 @@ class TmuxInstanceManager:
             try:
                 llm_summarizer = LLMSummarizer()
                 self.monitoring_service = MonitoringService(
-                    instance_manager=self,
-                    llm_summarizer=llm_summarizer,
-                    poll_interval=12
+                    instance_manager=self, llm_summarizer=llm_summarizer, poll_interval=12
                 )
 
                 # Configure loggers for MonitoringService and LLMSummarizer
                 # These loggers use src.orchestrator.* namespace which needs explicit parent setup
-                for logger_name in ["src.orchestrator.monitoring_service", "src.orchestrator.llm_summarizer"]:
+                for logger_name in [
+                    "src.orchestrator.monitoring_service",
+                    "src.orchestrator.llm_summarizer",
+                ]:
                     module_logger = logging.getLogger(logger_name)
                     module_logger.setLevel(logging.DEBUG)
                     module_logger.propagate = True
@@ -248,7 +249,9 @@ class TmuxInstanceManager:
                     f"Configured Codex instance with STDIO madrox: {sys.executable} {orchestrator_script}"
                 )
             else:
-                # Claude supports HTTP transport
+                # Claude supports HTTP transport - use it for cross-process visibility
+                # HTTP transport ensures all spawn requests go through parent HTTP server
+                # This provides centralized instance tracking without Manager IPC complexity
                 mcp_servers["madrox"] = {
                     "transport": "http",
                     "url": f"http://localhost:{self.server_port}/mcp",
@@ -534,6 +537,23 @@ class TmuxInstanceManager:
         if self.shared_state:
             # Use shared queue for STDIO transport
             self.shared_state.create_response_queue(instance_id)
+
+            # Register instance in shared metadata for cross-process visibility
+            # This allows parent HTTP server to see instances spawned by STDIO children
+            created_at_str = instance["created_at"]
+            if hasattr(created_at_str, 'isoformat'):
+                created_at_str = created_at_str.isoformat()
+
+            self.shared_state.instance_metadata[instance_id] = {
+                "id": instance_id,
+                "name": instance_name,
+                "state": "initializing",
+                "role": role,
+                "instance_type": instance_type,
+                "model": model,
+                "parent_instance_id": kwargs.get("parent_instance_id"),
+                "created_at": created_at_str,
+            }
         else:
             # Fall back to local queue for HTTP transport
             self.response_queues[instance_id] = asyncio.Queue()
@@ -1125,11 +1145,18 @@ class TmuxInstanceManager:
                 del self.tmux_sessions[instance_id]
 
             # Stop monitoring service if this is the last active instance
-            active_count = len([
-                i for i in self.instances.values()
-                if i["state"] not in ["terminated", "error"] and i["id"] != instance_id
-            ])
-            if active_count == 0 and self.monitoring_service and self.monitoring_service.is_running():
+            active_count = len(
+                [
+                    i
+                    for i in self.instances.values()
+                    if i["state"] not in ["terminated", "error"] and i["id"] != instance_id
+                ]
+            )
+            if (
+                active_count == 0
+                and self.monitoring_service
+                and self.monitoring_service.is_running()
+            ):
                 await self.monitoring_service.stop()
                 logger.info("MonitoringService stopped (no active instances)")
 
@@ -1271,7 +1298,36 @@ class TmuxInstanceManager:
         except Exception:
             pass
 
-        # Create new session
+        # Prepare environment variables for the tmux session
+        # CRITICAL: Pass Manager IPC credentials to the session itself, not just MCP subprocess
+        # This allows the child process's SharedStateManager to connect to parent's Manager daemon
+        session_env = {}
+        if self.shared_state:
+            import base64
+
+            manager_address = self.shared_state.manager_address
+
+            if isinstance(manager_address, tuple):
+                # TCP address: (host, port)
+                manager_host, manager_port = manager_address
+                session_env["MADROX_MANAGER_HOST"] = str(manager_host)
+                session_env["MADROX_MANAGER_PORT"] = str(manager_port)
+                logger.debug(
+                    f"Setting Manager IPC credentials in tmux session env (TCP): {manager_host}:{manager_port}"
+                )
+            else:
+                # Unix socket path
+                session_env["MADROX_MANAGER_SOCKET"] = str(manager_address)
+                logger.debug(
+                    f"Setting Manager IPC credentials in tmux session env (Unix socket): {manager_address}"
+                )
+
+            # Encode authkey as base64
+            session_env["MADROX_MANAGER_AUTHKEY"] = base64.b64encode(
+                self.shared_state.manager_authkey
+            ).decode("ascii")
+
+        # Create new session with environment variables
         try:
             session = self.tmux_server.new_session(
                 session_name=session_name,
@@ -1279,6 +1335,7 @@ class TmuxInstanceManager:
                 start_directory=workspace_dir,
                 x=160,
                 y=50,
+                environment=session_env if session_env else None,
             )
         except Exception as e:
             logger.error(f"Failed to create tmux session: {e}")
@@ -1290,6 +1347,26 @@ class TmuxInstanceManager:
         # Get the pane
         window = session.windows[0]
         pane = window.panes[0]
+
+        # Set environment variables in the tmux session so child processes inherit them
+        # CRITICAL: Use setenv -t session to make variables available to shell and subprocesses
+        if session_env:
+            for key, value in session_env.items():
+                try:
+                    session.set_environment(key, value)
+                    logger.debug(f"Set environment variable in session: {key}")
+                except Exception as e:
+                    logger.warning(f"Failed to set environment variable {key}: {e}")
+
+        # Export environment variables in the shell before running CLI
+        # CRITICAL: Tmux session env vars are not automatically exported to shell
+        # We must explicitly export them so Python subprocess can read via os.getenv()
+        if session_env:
+            for key, value in session_env.items():
+                # Escape single quotes in value for shell safety
+                escaped_value = value.replace("'", "'\\''")
+                pane.send_keys(f"export {key}='{escaped_value}'", enter=True)
+            logger.debug(f"Exported {len(session_env)} environment variables to shell")
 
         # Configure MCP servers before spawning CLI
         self._configure_mcp_servers(pane, instance)
@@ -1344,7 +1421,7 @@ class TmuxInstanceManager:
                 cmd_parts.append(f"'{escaped_prompt}'")
                 logger.info(
                     f"Added initial prompt to CLI command ({len(initial_prompt)} chars, "
-                    f"{len(initial_prompt)/1024:.2f}KB)"
+                    f"{len(initial_prompt) / 1024:.2f}KB)"
                 )
 
         # Start CLI
@@ -1637,7 +1714,7 @@ class TmuxInstanceManager:
         logger.info(
             f"Sent message via send_keys: {len(message)} chars, {total_lines} lines, "
             f"{message_size_kb:.2f}KB, {keystroke_count} keystrokes, "
-            f"{delay_per_keystroke*1000:.1f}ms/keystroke, {total_time:.2f}s total"
+            f"{delay_per_keystroke * 1000:.1f}ms/keystroke, {total_time:.2f}s total"
         )
 
     async def handle_reply_to_caller(

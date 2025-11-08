@@ -390,10 +390,23 @@ class InstanceManager:
         Returns:
             Instance status data
         """
+        # Merge local instances with instances from shared_state (STDIO children)
+        all_instances = dict(self.instances)
+
+        # Add instances from shared_state.instance_metadata (cross-process visibility)
+        if hasattr(self, 'shared_state_manager') and self.shared_state_manager:
+            try:
+                for iid, metadata in self.shared_state_manager.instance_metadata.items():
+                    if iid not in all_instances:
+                        # Instance from STDIO child process - use shared metadata
+                        all_instances[iid] = dict(metadata)
+            except Exception as e:
+                logger.warning(f"Failed to read shared instance metadata: {e}")
+
         if instance_id:
-            if instance_id not in self.instances:
+            if instance_id not in all_instances:
                 raise ValueError(f"Instance {instance_id} not found")
-            return self.instances[instance_id].copy()
+            return all_instances[instance_id].copy()
         else:
             # When returning all instances, optionally return just summary to avoid large payloads
             if summary_only:
@@ -406,25 +419,25 @@ class InstanceManager:
                             "state": inst["state"],
                             "role": inst["role"],
                         }
-                        for iid, inst in self.instances.items()
+                        for iid, inst in all_instances.items()
                     },
-                    "total_instances": len(self.instances),
+                    "total_instances": len(all_instances),
                     "active_instances": len(
                         [
                             i
-                            for i in self.instances.values()
+                            for i in all_instances.values()
                             if i["state"] in ["running", "idle", "busy"]
                         ]
                     ),
                 }
             else:
                 return {
-                    "instances": {iid: inst.copy() for iid, inst in self.instances.items()},
-                    "total_instances": len(self.instances),
+                    "instances": {iid: inst.copy() for iid, inst in all_instances.items()},
+                    "total_instances": len(all_instances),
                     "active_instances": len(
                         [
                             i
-                            for i in self.instances.values()
+                            for i in all_instances.values()
                             if i["state"] in ["running", "idle", "busy"]
                         ]
                     ),

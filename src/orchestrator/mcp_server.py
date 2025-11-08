@@ -1,7 +1,6 @@
-"""MCP Protocol implementation for Claude Orchestrator - Unified elegant design."""
+"""MCP Protocol implementation for Claude Orchestrator - Dynamic tool binding."""
 
 import logging
-from typing import Any
 
 from fastmcp import FastMCP
 
@@ -14,9 +13,9 @@ logger = logging.getLogger(__name__)
 class OrchestrationMCPServer:
     """MCP Server for Claude Orchestration.
 
-    For STDIO mode, we create a separate FastMCP instance and manually register
-    wrapper functions that bind to the manager instance. This avoids the issue
-    of FastMCP not knowing which InstanceManager instance to use for method calls.
+    For STDIO mode, we create wrapper functions that properly bind to the InstanceManager
+    instance. This ensures all tool calls are routed to the correct manager methods with
+    proper self binding.
     """
 
     def __init__(self, config: OrchestratorConfig):
@@ -33,33 +32,39 @@ class OrchestrationMCPServer:
         # Create a NEW FastMCP instance for STDIO mode (don't use module-level one)
         self.mcp = FastMCP("claude-orchestrator-stdio")
 
-        # Register bound wrapper functions for all tools
+        # Dynamically register all tools from manager with proper binding
         self._register_bound_tools()
 
-        logger.info("OrchestrationMCPServer initialized with bound tool wrappers for STDIO")
+        logger.info(
+            f"OrchestrationMCPServer initialized with {len(self.mcp._tool_manager._tools)} bound tools"
+        )
 
     def _register_bound_tools(self):
-        """Register wrapper functions that bind to self.manager instance."""
+        """Dynamically register all tools from InstanceManager with proper self binding.
 
-        # For each tool in the manager's mcp, create a bound wrapper
-        # Note: We can't use the module-level mcp tools because they have unbound methods
-        # Instead, we manually register functions that call the manager instance methods
+        Binds unbound instance methods to self.manager, then registers the bound methods.
+        Bound methods have 'self' already resolved, so they register cleanly with FastMCP.
+        """
+        # Get all tools from the manager's mcp instance
+        source_tools = self.manager.mcp._tool_manager._tools
 
-        @self.mcp.tool()
-        async def reply_to_caller(
-            instance_id: str,
-            reply_message: str,
-            correlation_id: str | None = None,
-        ) -> dict[str, Any]:
-            """Reply back to the instance/coordinator that sent you a message."""
-            return await self.manager.handle_reply_to_caller(
-                instance_id=instance_id,
-                reply_message=reply_message,
-                correlation_id=correlation_id,
-            )
+        registered_count = 0
+        for tool_name, tool_func in source_tools.items():
+            # Get the original function from the FunctionTool
+            original_func = tool_func.fn
 
-        # Add more tool wrappers as needed...
-        # For now, just registering reply_to_caller to test the fix
+            # Bind the unbound method to self.manager using descriptor protocol
+            # This removes 'self' from the signature by pre-binding it
+            bound_method = original_func.__get__(self.manager, type(self.manager))
+
+            # Register the bound method (no exclude_args needed - 'self' already bound)
+            self.mcp.tool()(bound_method)
+
+            registered_count += 1
+
+        logger.info(
+            f"Registered {registered_count} bound tools (self parameter pre-bound)"
+        )
 
     async def run(self):
         """Get the FastMCP server instance for running."""

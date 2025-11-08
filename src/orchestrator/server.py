@@ -111,6 +111,9 @@ class ClaudeOrchestratorServer:
         })
         self.instance_manager = InstanceManager(instance_manager_config)
 
+        # Clean up orphaned tmux sessions from previous server runs
+        self._cleanup_orphaned_tmux_sessions()
+
         # Track server start time for session-only audit logs (use local time to match audit log timestamps)
         self.server_start_time = datetime.now().isoformat()
 
@@ -184,8 +187,10 @@ class ClaudeOrchestratorServer:
 
             try:
                 # Send initial state with instances (exclude terminated)
+                # Use _get_instance_status_internal to include tmux-discovered instances
+                status_data = self.instance_manager._get_instance_status_internal()
                 instances_data = []
-                for instance_id, instance in self.instance_manager.instances.items():
+                for instance_id, instance in status_data.get("instances", {}).items():
                     # Skip terminated instances
                     if instance.get("state") == "terminated":
                         continue
@@ -268,8 +273,10 @@ class ClaudeOrchestratorServer:
                         pass
 
                     # Send current instance state (exclude terminated)
+                    # Use _get_instance_status_internal to include tmux-discovered instances
+                    status_data = self.instance_manager._get_instance_status_internal()
                     instances_data = []
-                    for instance_id, instance in self.instance_manager.instances.items():
+                    for instance_id, instance in status_data.get("instances", {}).items():
                         # Skip terminated instances
                         if instance.get("state") == "terminated":
                             continue
@@ -1326,6 +1333,39 @@ class ClaudeOrchestratorServer:
             except Exception as e:
                 logger.error(f"Error in health check loop: {e}")
                 await asyncio.sleep(10)  # Retry in 10 seconds on error
+
+    def _cleanup_orphaned_tmux_sessions(self):
+        """Clean up tmux sessions from previous server runs.
+
+        Kills all madrox-* tmux sessions to ensure UI shows only current session instances.
+        """
+        import subprocess
+
+        try:
+            # Get all madrox tmux sessions
+            result = subprocess.run(
+                ["tmux", "list-sessions", "-F", "#{session_name}"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+
+            if result.returncode == 0:
+                session_count = 0
+                for line in result.stdout.strip().split('\n'):
+                    if line.startswith('madrox-'):
+                        # Kill the session
+                        subprocess.run(
+                            ["tmux", "kill-session", "-t", line],
+                            capture_output=True,
+                            check=False
+                        )
+                        session_count += 1
+
+                if session_count > 0:
+                    logger.info(f"Cleaned up {session_count} orphaned tmux sessions from previous runs")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup orphaned tmux sessions: {e}")
 
 
 async def main():
