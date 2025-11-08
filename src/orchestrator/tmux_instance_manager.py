@@ -1068,139 +1068,6 @@ class TmuxInstanceManager:
                 "timestamp": datetime.now(UTC).isoformat(),
             }
 
-    async def _preserve_artifacts(self, instance_id: str) -> dict[str, Any]:
-        """Preserve artifacts from an instance before cleanup.
-
-        Checks if preserve_artifacts config is enabled, creates artifacts directory
-        structure, copies matching files based on artifact_patterns, and generates
-        metadata JSON with instance info.
-
-        Args:
-            instance_id: Instance ID whose artifacts to preserve
-
-        Returns:
-            Dictionary with preservation summary (files_copied, metadata_path, etc.)
-        """
-        if instance_id not in self.instances:
-            logger.warning(f"Instance {instance_id} not found for artifact preservation")
-            return {"success": False, "error": "Instance not found"}
-
-        instance = self.instances[instance_id]
-
-        # Check if artifact preservation is enabled
-        preserve_enabled = self.config.get("preserve_artifacts", True)
-        if not preserve_enabled:
-            logger.debug(f"Artifact preservation disabled for instance {instance_id}")
-            return {"success": True, "preserved": False, "reason": "disabled"}
-
-        try:
-            workspace_dir = Path(instance["workspace_dir"])
-            if not workspace_dir.exists():
-                logger.warning(f"Workspace directory does not exist for instance {instance_id}")
-                return {"success": False, "error": "Workspace does not exist"}
-
-            # Create artifacts directory structure
-            artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_artifacts"))
-            artifacts_base.mkdir(parents=True, exist_ok=True)
-
-            # Create instance artifacts directory
-            instance_artifacts_dir = artifacts_base / instance_id
-            instance_artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-            # Get artifact patterns from config (default to common file patterns)
-            artifact_patterns = self.config.get(
-                "artifact_patterns",
-                ["*.py", "*.md", "*.json", "*.txt", "*.log", "*.yaml", "*.yml", "*.toml"],
-            )
-
-            files_copied = 0
-            copy_errors = []
-
-            # Copy matching files from workspace to artifacts directory
-            import fnmatch
-            import shutil
-
-            for item in workspace_dir.rglob("*"):
-                if not item.is_file():
-                    continue
-
-                # Check if file matches any artifact pattern
-                filename = item.name
-                matches_pattern = any(fnmatch.fnmatch(filename, pattern) for pattern in artifact_patterns)
-
-                if matches_pattern:
-                    try:
-                        # Preserve relative directory structure
-                        relative_path = item.relative_to(workspace_dir)
-                        target_path = instance_artifacts_dir / relative_path
-
-                        # Create parent directories if needed
-                        target_path.parent.mkdir(parents=True, exist_ok=True)
-
-                        # Copy file
-                        shutil.copy2(item, target_path)
-                        files_copied += 1
-                    except Exception as e:
-                        copy_errors.append({"file": str(item), "error": str(e)})
-                        logger.warning(f"Failed to copy artifact {item}: {e}")
-
-            # Generate metadata JSON with instance info
-            metadata = {
-                "instance_id": instance_id,
-                "instance_name": instance.get("name"),
-                "instance_type": instance.get("instance_type"),
-                "role": instance.get("role"),
-                "model": instance.get("model"),
-                "created_at": instance.get("created_at"),
-                "terminated_at": datetime.now(UTC).isoformat(),
-                "workspace_dir": str(workspace_dir),
-                "artifacts_dir": str(instance_artifacts_dir),
-                "files_preserved": files_copied,
-                "parent_instance_id": instance.get("parent_instance_id"),
-                "workspace_state": {
-                    "total_tokens_used": instance.get("total_tokens_used", 0),
-                    "total_cost": instance.get("total_cost", 0.0),
-                    "request_count": instance.get("request_count", 0),
-                },
-            }
-
-            # Write metadata to JSON file
-            metadata_path = instance_artifacts_dir / "_metadata.json"
-            import json
-
-            metadata_path.write_text(json.dumps(metadata, indent=2))
-
-            logger.info(
-                f"Preserved {files_copied} artifacts for instance {instance_id}",
-                extra={
-                    "instance_id": instance_id,
-                    "artifacts_dir": str(instance_artifacts_dir),
-                    "files_preserved": files_copied,
-                },
-            )
-
-            return {
-                "success": True,
-                "preserved": True,
-                "instance_id": instance_id,
-                "artifacts_dir": str(instance_artifacts_dir),
-                "files_copied": files_copied,
-                "metadata_path": str(metadata_path),
-                "errors": copy_errors if copy_errors else None,
-            }
-
-        except Exception as e:
-            logger.error(
-                f"Failed to preserve artifacts for instance {instance_id}: {e}",
-                extra={"instance_id": instance_id, "error": str(e)},
-                exc_info=True,
-            )
-            return {
-                "success": False,
-                "error": str(e),
-                "instance_id": instance_id,
-            }
-
     async def terminate_instance(self, instance_id: str, force: bool = False) -> bool:
         """Terminate a Claude instance and kill its tmux session.
 
@@ -1270,29 +1137,8 @@ class TmuxInstanceManager:
             instance["state"] = "terminated"
             instance["terminated_at"] = datetime.now(UTC).isoformat()
 
-            # Preserve artifacts before cleanup
-            try:
-                preservation_result = await self._preserve_artifacts(instance_id)
-                logger.info(
-                    f"Artifact preservation result for instance {instance_id}",
-                    extra={"instance_id": instance_id, "result": preservation_result},
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to preserve artifacts for instance {instance_id}: {e}",
-                    extra={"instance_id": instance_id, "error": str(e)},
-                )
-
-            # Clean up workspace
-            workspace_dir = Path(instance["workspace_dir"])
-            if workspace_dir.exists():
-                try:
-                    import shutil
-
-                    shutil.rmtree(workspace_dir)
-                    logger.debug(f"Cleaned up workspace for instance {instance_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up workspace for {instance_id}: {e}")
+            # No artifact preservation needed - workspace IS the artifacts directory
+            # All files remain in place, no copying or cleanup required
 
             # Remove message history
             if instance_id in self.message_history:
@@ -1576,36 +1422,45 @@ class TmuxInstanceManager:
                 )
                 instance_id_info += parent_info
 
-            # Add instructions for spawning children with parent tracking
-            spawn_info = (
-                f"\nWhen spawning child instances, pass your instance_id as parent_instance_id.\n"
-                f"This enables bidirectional communication between parent and child.\n\n"
-                f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
-                f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
-                f"  [MSG:correlation-id] message content here\n\n"
-                f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
-                f"  reply_to_caller(\n"
-                f"    instance_id='{instance['id']}',\n"
-                f"    reply_message='your response here',\n"
-                f"    correlation_id='correlation-id-from-message'\n"
-                f"  )\n\n"
-                f"CRITICAL: When calling reply_to_caller, ALWAYS use YOUR OWN instance_id.\n"
-                f"- Your instance_id: '{instance['id']}'\n"
-                f"- Do NOT call get_main_instance_id() - that tool is deprecated\n"
-                f"- Do NOT use correlation_id as the instance_id parameter\n"
-                f"- Do NOT use any other instance's ID\n\n"
-                f"Correct usage:\n"
-                f"  reply_to_caller(\n"
-                f"    instance_id='{instance['id']}',  # YOUR ID, not main/parent/coordinator\n"
-                f"    reply_message='your response',\n"
-                f"    correlation_id='correlation-id-from-message'\n"
-                f"  )\n\n"
-                f"Benefits of using reply_to_caller:\n"
-                f"- Instant delivery (no polling delay)\n"
-                f"- Proper request-response correlation\n"
-                f"- More efficient than text output\n"
-            )
-            instance_id_info += spawn_info
+                # Add instructions for spawning children with parent tracking
+                spawn_info = (
+                    f"\nWhen spawning child instances, pass your instance_id as parent_instance_id.\n"
+                    f"This enables bidirectional communication between parent and child.\n\n"
+                    f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
+                    f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
+                    f"  [MSG:correlation-id] message content here\n\n"
+                    f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
+                    f"  reply_to_caller(\n"
+                    f"    instance_id='{instance['id']}',\n"
+                    f"    reply_message='your response here',\n"
+                    f"    correlation_id='correlation-id-from-message'\n"
+                    f"  )\n\n"
+                    f"CRITICAL: When calling reply_to_caller, ALWAYS use YOUR OWN instance_id.\n"
+                    f"- Your instance_id: '{instance['id']}'\n"
+                    f"- Do NOT call get_main_instance_id() - that tool is deprecated\n"
+                    f"- Do NOT use correlation_id as the instance_id parameter\n"
+                    f"- Do NOT use any other instance's ID\n\n"
+                    f"Correct usage:\n"
+                    f"  reply_to_caller(\n"
+                    f"    instance_id='{instance['id']}',  # YOUR ID, not main/parent/coordinator\n"
+                    f"    reply_message='your response',\n"
+                    f"    correlation_id='correlation-id-from-message'\n"
+                    f"  )\n\n"
+                    f"Benefits of using reply_to_caller:\n"
+                    f"- Instant delivery (no polling delay)\n"
+                    f"- Proper request-response correlation\n"
+                    f"- More efficient than text output\n"
+                )
+                instance_id_info += spawn_info
+            else:
+                # Root instance (no parent) - different instructions
+                root_info = (
+                    f"\nYou are a ROOT INSTANCE (no parent). When you complete your work:\n"
+                    f"- Write results to files in your workspace: {workspace_path}\n"
+                    f"- External clients will check your output using get_instance_output or get_tmux_pane_content\n"
+                    f"- Do NOT use reply_to_caller (you have no parent to reply to)\n"
+                )
+                instance_id_info += root_info
 
             # Send instance_id information first
             initialization_message = f"SYSTEM INFORMATION:\n{instance_id_info}\n"
@@ -1651,35 +1506,44 @@ class TmuxInstanceManager:
                     )
                     instance_id_info += parent_info
 
-                # Add instructions for spawning children with parent tracking
-                spawn_info = (
-                    f"\nWhen spawning child instances, pass your instance_id as parent_instance_id:\n"
-                    f"  spawn_claude(name='child', role='general', parent_instance_id='{instance['id']}')\n"
-                    f"This enables bidirectional communication between parent and child.\n\n"
-                    f"PERFORMANCE TIP: When spawning children, use timeout_seconds=10 for single instance spawns,\n"
-                    f"and timeout_seconds=20 for multiple instances (spawn_multiple_instances with 2+ children).\n\n"
-                    f"HIERARCHICAL MESSAGE PASSING PATTERN:\n"
-                    f"- Children send messages to you (their parent) using: send_to_instance(parent_instance_id='{instance['id']}', message='...')\n"
-                    f"- You coordinate and decide how to route messages between children\n"
-                    f"- Use get_children(parent_id='{instance['id']}') to see all your children\n"
-                    f"- Use broadcast_to_children(parent_id='{instance['id']}', message='...') to message all children\n"
-                    f"- You control what information (IDs, tasks) flows up to your parent or down to your children\n\n"
-                    f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
-                    f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
-                    f"  [MSG:correlation-id] message content here\n\n"
-                    f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
-                    f"  reply_to_caller(\n"
-                    f"    instance_id='{instance['id']}',\n"
-                    f"    reply_message='your response here',\n"
-                    f"    correlation_id='correlation-id-from-message'\n"
-                    f"  )\n\n"
-                    f"Benefits of using reply_to_caller:\n"
-                    f"- Instant delivery (no polling delay)\n"
-                    f"- Proper request-response correlation\n"
-                    f"- More efficient than text output\n\n"
-                    f"If you don't use reply_to_caller, the system will fall back to polling your output (slower but works)."
-                )
-                instance_id_info += spawn_info
+                    # Add instructions for spawning children with parent tracking
+                    spawn_info = (
+                        f"\nWhen spawning child instances, pass your instance_id as parent_instance_id:\n"
+                        f"  spawn_claude(name='child', role='general', parent_instance_id='{instance['id']}')\n"
+                        f"This enables bidirectional communication between parent and child.\n\n"
+                        f"PERFORMANCE TIP: When spawning children, use timeout_seconds=10 for single instance spawns,\n"
+                        f"and timeout_seconds=20 for multiple instances (spawn_multiple_instances with 2+ children).\n\n"
+                        f"HIERARCHICAL MESSAGE PASSING PATTERN:\n"
+                        f"- Children send messages to you (their parent) using: send_to_instance(parent_instance_id='{instance['id']}', message='...')\n"
+                        f"- You coordinate and decide how to route messages between children\n"
+                        f"- Use get_children(parent_id='{instance['id']}') to see all your children\n"
+                        f"- Use broadcast_to_children(parent_id='{instance['id']}', message='...') to message all children\n"
+                        f"- You control what information (IDs, tasks) flows up to your parent or down to your children\n\n"
+                        f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
+                        f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
+                        f"  [MSG:correlation-id] message content here\n\n"
+                        f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
+                        f"  reply_to_caller(\n"
+                        f"    instance_id='{instance['id']}',\n"
+                        f"    reply_message='your response here',\n"
+                        f"    correlation_id='correlation-id-from-message'\n"
+                        f"  )\n\n"
+                        f"Benefits of using reply_to_caller:\n"
+                        f"- Instant delivery (no polling delay)\n"
+                        f"- Proper request-response correlation\n"
+                        f"- More efficient than text output\n\n"
+                        f"If you don't use reply_to_caller, the system will fall back to polling your output (slower but works)."
+                    )
+                    instance_id_info += spawn_info
+                else:
+                    # Root instance (no parent) - different instructions
+                    root_info = (
+                        f"\nYou are a ROOT INSTANCE (no parent). When you complete your work:\n"
+                        f"- Write results to files in your workspace: {workspace_path}\n"
+                        f"- External clients will check your output using get_instance_output or get_tmux_pane_content\n"
+                        f"- Do NOT use reply_to_caller (you have no parent to reply to)\n"
+                    )
+                    instance_id_info += root_info
 
                 if instance.get("bypass_isolation", False):
                     workspace_info = (
@@ -1696,21 +1560,24 @@ class TmuxInstanceManager:
                         f"{instance_id_info}"
                     )
 
-                # ALWAYS append bidirectional messaging instructions (even for custom prompts)
-                bidirectional_instructions = (
-                    f"\n\n{'─' * 80}\n"
-                    f"BIDIRECTIONAL MESSAGING PROTOCOL (REQUIRED):\n"
-                    f"When you receive messages formatted as [MSG:correlation-id] content,\n"
-                    f"you MUST respond using the reply_to_caller tool:\n\n"
-                    f"  reply_to_caller(\n"
-                    f"    instance_id='{instance['id']}',\n"
-                    f"    reply_message='your response here',\n"
-                    f"    correlation_id='correlation-id-from-message'\n"
-                    f"  )\n\n"
-                    f"IMPORTANT: Always use reply_to_caller for every response to messages.\n"
-                    f"This enables instant bidirectional communication and proper correlation.\n"
-                    f"{'─' * 80}\n"
-                )
+                # Append bidirectional messaging instructions ONLY if instance has a parent
+                if instance.get("parent_instance_id"):
+                    bidirectional_instructions = (
+                        f"\n\n{'─' * 80}\n"
+                        f"BIDIRECTIONAL MESSAGING PROTOCOL (REQUIRED):\n"
+                        f"When you receive messages formatted as [MSG:correlation-id] content,\n"
+                        f"you MUST respond using the reply_to_caller tool:\n\n"
+                        f"  reply_to_caller(\n"
+                        f"    instance_id='{instance['id']}',\n"
+                        f"    reply_message='your response here',\n"
+                        f"    correlation_id='correlation-id-from-message'\n"
+                        f"  )\n\n"
+                        f"IMPORTANT: Always use reply_to_caller for every response to messages.\n"
+                        f"This enables instant bidirectional communication and proper correlation.\n"
+                        f"{'─' * 80}\n"
+                    )
+                else:
+                    bidirectional_instructions = ""
 
                 full_prompt = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}{bidirectional_instructions}"
 

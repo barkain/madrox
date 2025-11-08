@@ -90,6 +90,8 @@ def main():
             workspace_base_dir=os.getenv("WORKSPACE_DIR", "/tmp/claude_orchestrator"),
             log_dir=os.getenv("LOG_DIR", "/tmp/madrox_logs"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
+            artifacts_dir=os.getenv("ARTIFACTS_DIR", "/tmp/madrox_logs/artifacts"),
+            preserve_artifacts=os.getenv("PRESERVE_ARTIFACTS", "true").lower() == "true",
         )
 
         # Detect transport mode (environment variable checked inside detect_transport_mode)

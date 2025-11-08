@@ -647,10 +647,10 @@ class TestMCPToolExposure:
         assert mock_mcp is not None
 
     @patch("fastmcp.FastMCP")
-    def test_collect_team_artifacts_tool_exists(self, mock_mcp):
-        """Test that collect_team_artifacts is exposed as MCP tool."""
-        # This would be implemented when backend exposes the tool
-        # For now, just verify the test structure
+    def test_collect_team_artifacts_tool_removed(self, mock_mcp):
+        """Test that collect_team_artifacts was removed (future: Git worktrees)."""
+        # Function removed - consolidation will be handled by Git worktree merging
+        # No longer need file copying logic
         assert mock_mcp is not None
 
     def test_tool_parameter_validation(self):
@@ -687,9 +687,9 @@ class TestSuccessCriteria:
         # This is tested through artifact preservation test cases above
         assert True
 
-    def test_collect_team_artifacts_method_implemented(self):
-        """Verify collect_team_artifacts method implementation."""
-        # This is tested through team artifact collection test cases above
+    def test_collect_team_artifacts_method_removed(self):
+        """Verify collect_team_artifacts method was removed (Git worktrees future)."""
+        # Function removed - team artifact consolidation will use Git worktree merging
         assert True
 
     def test_mcp_tool_exposed(self):

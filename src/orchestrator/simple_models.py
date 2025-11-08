@@ -247,6 +247,8 @@ class OrchestratorConfig:
         log_level: str = "INFO",
         enable_metrics: bool = True,
         metrics_port: int = 9090,
+        artifacts_dir: str = "/tmp/madrox_logs/artifacts",
+        preserve_artifacts: bool = True,
     ):
         self.server_host = server_host
         self.server_port = server_port
@@ -263,6 +265,8 @@ class OrchestratorConfig:
         self.log_level = log_level
         self.enable_metrics = enable_metrics
         self.metrics_port = metrics_port
+        self.artifacts_dir = artifacts_dir
+        self.preserve_artifacts = preserve_artifacts
 
     def to_dict(self) -> dict[str, Any]:
         """Return a plain dict representation suitable for consumers.
@@ -284,4 +288,6 @@ class OrchestratorConfig:
             "log_level": self.log_level,
             "enable_metrics": self.enable_metrics,
             "metrics_port": self.metrics_port,
+            "artifacts_dir": self.artifacts_dir,
+            "preserve_artifacts": self.preserve_artifacts,
         }

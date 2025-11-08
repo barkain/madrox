@@ -74,11 +74,10 @@ All team members must be spawned with `parent_instance_id` set to the Research L
 ### Phase 1: Research Planning (10-15 minutes)
 
 **Supervisor Actions**:
-1. Spawn Research Lead
-2. Research Lead spawns 4 specialists with `parent_instance_id`
-3. Define research questions and objectives
-4. Identify key topics and keywords
-5. Assign research domains to Research Specialist
+1. YOU are the Research Lead - spawn 4 specialists directly with `parent_instance_id` set to YOUR instance_id
+2. Define research questions and objectives
+3. Identify key topics and keywords
+4. Assign research domains to each Research Specialist
 
 **Communication Pattern**:
 - Use `broadcast_to_children` to share research objectives
