@@ -1,12 +1,83 @@
-# Madrox Supervision Examples
+# Madrox Examples
 
-This directory contains comprehensive examples demonstrating how to integrate and use the Madrox Supervision system.
+This directory contains examples demonstrating how to use the Madrox multi-agent orchestration system.
 
 ## Available Examples
 
-### 1. Supervision Integration (`supervision_integration_example.py`)
+### 1. Basic Usage Examples
 
-Comprehensive examples covering all supervision integration patterns:
+#### Simple HTTP API (`demo_simple.py`)
+Basic example using direct HTTP requests to spawn instances and send messages.
+
+**Best for:** Learning the HTTP API, understanding basic orchestration
+
+**Run it:**
+```bash
+# Start the server first
+uv run python run_orchestrator.py
+
+# In another terminal
+uv run python examples/demo_simple.py
+```
+
+#### MCP Client with Parent-Child Spawning (`demo_weather_chat.py`)
+Demonstrates using the MCP client to spawn a Claude parent that creates a Codex child instance.
+
+**Best for:** Understanding MCP protocol, hierarchical orchestration
+
+**Run it:**
+```bash
+uv run python examples/demo_weather_chat.py
+```
+
+### 2. MCP Server Integration
+
+#### MCP Configuration Examples (`spawn_with_mcp_configs.py`)
+Shows various ways to spawn instances with custom MCP server configurations.
+
+**Best for:** Learning how to add MCP servers (Playwright, custom servers, etc.)
+
+**Run it:**
+```bash
+uv run python examples/spawn_with_mcp_configs.py
+```
+
+#### JSON MCP Configuration (`spawn_with_json_mcp_servers.py`)
+Alternative approach using JSON strings for MCP server configuration.
+
+**Best for:** Programmatic MCP server configuration
+
+**Run it:**
+```bash
+uv run python examples/spawn_with_json_mcp_servers.py
+```
+
+### 3. Playwright Integration
+
+#### Playwright Spawn Test (`playwright_spawn.py`)
+Quick test to verify Playwright MCP integration works correctly.
+
+**Best for:** Testing Playwright setup, browser automation verification
+
+**Run it:**
+```bash
+uv run python examples/playwright_spawn.py
+```
+
+#### Web Scraping Example (`playwright_web_scraper.py`)
+Spawns a Claude instance with Playwright for web scraping tasks.
+
+**Best for:** Browser automation, web scraping use cases
+
+**Run it:**
+```bash
+uv run python examples/playwright_web_scraper.py
+```
+
+### 4. Supervision System
+
+#### Comprehensive Supervision Patterns (`supervision_integration_example.py`)
+Complete examples covering all supervision integration patterns:
 
 - **Basic Supervision**: Autonomous monitoring of a Madrox network
 - **Supervised Network**: Creating a complete supervised development team
@@ -14,28 +85,11 @@ Comprehensive examples covering all supervision integration patterns:
 - **Manual Control**: Full lifecycle control over supervision
 - **Custom Configurations**: Different configurations for various scenarios
 
+**Best for:** Understanding the supervision system, implementing automated monitoring
+
 **Run it:**
 ```bash
 uv run python examples/supervision_integration_example.py
-```
-
-### 2. Playwright Integration (`playwright_spawn.py`, `playwright_web_scraper.py`)
-
-Examples of spawning instances with Playwright MCP server for browser automation.
-
-**Run it:**
-```bash
-uv run python examples/playwright_spawn.py
-uv run python examples/playwright_web_scraper.py
-```
-
-### 3. MCP Server Configuration (`spawn_with_mcp_configs.py`)
-
-Demonstrates spawning instances with custom MCP server configurations.
-
-**Run it:**
-```bash
-uv run python examples/spawn_with_mcp_configs.py
 ```
 
 ## Quick Start
@@ -43,246 +97,90 @@ uv run python examples/spawn_with_mcp_configs.py
 ### Prerequisites
 
 ```bash
-# Install the package with all dependencies
+# Install dependencies
 uv sync --all-groups
 
-# Activate virtual environment
-source .venv/bin/activate
+# Start the Madrox server
+uv run python run_orchestrator.py
 ```
 
 ### Running Examples
 
-#### Run All Supervision Examples
+Each example can be run independently:
 
 ```bash
+# Basic HTTP example
+uv run python examples/demo_simple.py
+
+# MCP client example
+uv run python examples/demo_weather_chat.py
+
+# Supervision patterns
 uv run python examples/supervision_integration_example.py
 ```
 
-This will demonstrate:
-1. Basic autonomous supervision
-2. Supervised team creation
-3. Embedded supervision mode
-4. Manual supervision control
-5. Custom configuration patterns
+## Example Workflow
 
-#### Run Individual Patterns
+1. **Start with `demo_simple.py`** to understand basic concepts
+2. **Try `demo_weather_chat.py`** to see MCP protocol in action
+3. **Explore `spawn_with_mcp_configs.py`** to learn about MCP server integration
+4. **Review `supervision_integration_example.py`** for advanced monitoring
 
-You can modify `supervision_integration_example.py` to run specific examples:
+## Configuration
 
-```python
-# In main(), comment out examples you don't want to run
-async def main():
-    # await example_basic_supervision()
-    # await example_supervised_network()
-    await example_embedded_supervision()  # Only run this one
-    # await example_manual_control()
-    # await example_custom_configuration()
+### Environment Variables
+
+```bash
+# Server configuration
+export ORCHESTRATOR_PORT=8001
+export MAX_INSTANCES=10
+
+# Optional: API key if not using OAuth
+export ANTHROPIC_API_KEY="sk-ant-your-key-here"
 ```
 
-## Example Patterns
+### Custom MCP Servers
 
-### Pattern 1: Basic Autonomous Supervision
-
-```python
-from supervision.integration import spawn_supervisor
-from supervision.supervisor import SupervisionConfig
-from orchestrator.instance_manager import InstanceManager
-
-# Setup
-manager = InstanceManager(config)
-
-# Spawn supervisor
-supervisor_id, supervisor = await spawn_supervisor(
-    instance_manager=manager,
-    config=SupervisionConfig(
-        stuck_threshold_seconds=180,
-        evaluation_interval_seconds=20
-    )
-)
-
-# Supervisor now monitors autonomously
-```
-
-### Pattern 2: Supervised Team
-
-```python
-from supervision.integration import spawn_supervised_network
-
-# Create complete supervised team
-network = await spawn_supervised_network(
-    instance_manager=manager,
-    participant_configs=[
-        {"name": "dev1", "role": "frontend_developer"},
-        {"name": "dev2", "role": "backend_developer"},
-        {"name": "tester", "role": "testing_specialist"},
-    ]
-)
-
-supervisor_id = network["supervisor_id"]
-participant_ids = network["participant_ids"]
-```
-
-### Pattern 3: Embedded Supervision
-
-```python
-from supervision.integration import attach_supervisor
-
-# Attach without spawning instance
-supervisor = await attach_supervisor(
-    instance_manager=manager,
-    config=SupervisionConfig(enable_auto_intervention=False)
-)
-
-# Manual start/stop control
-await supervisor.start()
-# ... your logic ...
-await supervisor.stop()
-```
-
-### Pattern 4: Manual Control
-
-```python
-from supervision.supervisor import SupervisorAgent, SupervisionConfig
-
-# Create agent manually
-supervisor = SupervisorAgent(
-    instance_manager=manager,
-    config=SupervisionConfig()
-)
-
-# Full control
-await supervisor.start()
-
-# Check issues
-issues = await supervisor.get_detected_issues()
-
-# Get interventions
-interventions = supervisor.get_interventions()
-
-await supervisor.stop()
-```
-
-## Configuration Examples
-
-### Development Configuration
-
-Fast feedback for development:
-
-```python
-SupervisionConfig(
-    stuck_threshold_seconds=60,      # 1 minute
-    evaluation_interval_seconds=5,   # Check every 5 seconds
-    max_concurrent_helpers=5
-)
-```
-
-### Production Configuration
-
-Conservative settings for production:
-
-```python
-SupervisionConfig(
-    stuck_threshold_seconds=600,     # 10 minutes
-    evaluation_interval_seconds=60,  # Check every minute
-    max_concurrent_helpers=3
-)
-```
-
-### Monitoring-Only Configuration
-
-Observation without automatic intervention:
-
-```python
-SupervisionConfig(
-    enable_auto_intervention=False,
-    enable_progress_tracking=True,
-    enable_pattern_analysis=True
-)
-```
-
-### High-Throughput Configuration
-
-For busy networks with many instances:
-
-```python
-SupervisionConfig(
-    evaluation_interval_seconds=15,
-    max_concurrent_helpers=10,
-    helper_timeout_seconds=300
-)
-```
-
-## Logging
-
-All examples use structured logging. To adjust log levels:
-
-```python
-import logging
-
-# Set supervision logging level
-logging.getLogger("supervision").setLevel(logging.DEBUG)
-
-# Set orchestrator logging level
-logging.getLogger("orchestrator").setLevel(logging.INFO)
-
-# Set root logging level
-logging.basicConfig(level=logging.INFO)
-```
+To add custom MCP servers to spawned instances, see the MCP configuration examples.
 
 ## Troubleshooting
 
-### ImportError: No module named 'supervision'
+### Server Not Running
 
 ```bash
-# Ensure package is installed
-uv sync
+# Ensure server is started
+uv run python run_orchestrator.py
 
-# Verify installation
-uv pip list | grep claude-orchestrator-mcp
+# Check server health
+curl http://localhost:8001/health
 ```
 
-### Supervisor Not Detecting Issues
+### Import Errors
 
-- Check `evaluation_interval_seconds`: May be too long
-- Verify `stuck_threshold_seconds`: May be too high
-- Ensure instances are actually stuck/stalled
+```bash
+# Ensure dependencies are installed
+uv sync --all-groups
 
-### Too Many Interventions
+# Verify installation
+uv pip list | grep claude
+```
 
-- Increase `stuck_threshold_seconds`
-- Reduce `max_concurrent_helpers`
-- Set `enable_auto_intervention=False` for manual control
+### Connection Errors
 
-### Resource Issues
-
-- Reduce `max_concurrent_helpers`
-- Increase `evaluation_interval_seconds`
-- Use `attach_supervisor()` instead of `spawn_supervisor()` to avoid extra instance
+- Verify server is running on correct port (default: 8001)
+- Check firewall settings
+- Ensure no other service is using port 8001
 
 ## Next Steps
 
-1. **Read the Integration Guide**: See [INTEGRATION_GUIDE.md](../INTEGRATION_GUIDE.md) for detailed documentation
-
-2. **Check Dependency Setup**: See [DEPENDENCY_SETUP.md](../DEPENDENCY_SETUP.md) for installation instructions
-
-3. **Explore the API**: Check the source code in `src/supervision/` for advanced usage
-
-4. **Run Tests**: Execute `pytest tests/` to see supervision in action
-
-5. **Build Your Integration**: Use these examples as a starting point for your own implementation
+1. **Read the Setup Guide**: See [docs/SETUP.md](../docs/SETUP.md) for installation
+2. **Check API Reference**: See [docs/API_REFERENCE.md](../docs/API_REFERENCE.md) for complete API
+3. **Explore Tests**: Run `pytest tests/` to see more usage patterns
+4. **Build Your Integration**: Use these examples as templates
 
 ## Additional Resources
 
-- **Main Documentation**: `../README.md`
-- **Integration Guide**: `../INTEGRATION_GUIDE.md`
-- **Dependency Setup**: `../DEPENDENCY_SETUP.md`
-- **API Reference**: See integration guide for complete API surface
-
-## Support
-
-For issues or questions:
-
-- Check the integration guide
-- Review example code
-- Examine test cases in `tests/`
-- Review source code in `src/supervision/`
+- **Main Documentation**: [README.md](../README.md)
+- **Architecture Guide**: [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)
+- **API Reference**: [docs/API_REFERENCE.md](../docs/API_REFERENCE.md)
+- **Troubleshooting**: [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
