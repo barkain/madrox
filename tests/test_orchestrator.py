@@ -1,19 +1,14 @@
 """Comprehensive test suite for Claude Orchestrator."""
 
 import asyncio
-
-# Add src to Python path for testing
-import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest  # type: ignore
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from src.orchestrator.instance_manager import InstanceManager
-from src.orchestrator.simple_models import (
+from orchestrator.instance_manager import InstanceManager
+from orchestrator.simple_models import (
     InstanceRole,
     InstanceState,
     OrchestratorConfig,
