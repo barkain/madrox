@@ -31,7 +31,7 @@ class EventBus:
         sub_id = bus.subscribe("task.started", handler)
         bus.publish(Event(
             event_type="task.started",
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             source="test",
             data={"task_id": "123"}
         ))
@@ -127,7 +127,7 @@ class EventBus:
         Example:
             bus.publish(Event(
                 event_type="task.started",
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 source="tracker",
                 data={"task_id": "abc-123"}
             ))
@@ -180,7 +180,7 @@ class EventBus:
         Example:
             bus.publish_async(Event(
                 event_type="milestone.reached",
-                timestamp=datetime.now(),
+                timestamp=datetime.now(UTC),
                 source="tracker",
                 data={"milestone": "Phase 1 complete"}
             ))

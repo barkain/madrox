@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from orchestrator.compat import UTC
 from supervision.events.bus import EventBus
 from supervision.events.models import Event
 from supervision.tracking.models import ProgressSnapshot, Task, TaskStatus
@@ -68,7 +69,7 @@ class ProgressTracker:
             task_id = tracker.add_task("Write unit tests", assigned_to="dev-123")
         """
         task_id = uuid.uuid4()
-        now = datetime.now()
+        now = datetime.now(UTC)
 
         task = Task(
             id=task_id,
@@ -125,7 +126,7 @@ class ProgressTracker:
 
             old_status = task.status
             task.status = status
-            task.updated_at = datetime.now()
+            task.updated_at = datetime.now(UTC)
             task.blocker = blocker
 
         logger.info(
@@ -217,7 +218,7 @@ class ProgressTracker:
         completion_percentage = (completed / total_tasks * 100.0) if total_tasks > 0 else 0.0
 
         snapshot = ProgressSnapshot(
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             total_tasks=total_tasks,
             completed=completed,
             in_progress=in_progress,
@@ -286,7 +287,7 @@ class ProgressTracker:
 
         event = Event(
             event_type=event_type,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             source="progress_tracker",
             data=data,
         )

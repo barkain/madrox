@@ -10,12 +10,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.supervision.integration.manager_integration import (
+from supervision.integration.manager_integration import (
     attach_supervisor,
     spawn_supervised_network,
     spawn_supervisor,
 )
-from src.supervision.supervisor.agent import (
+from supervision.supervisor.agent import (
     DetectedIssue,
     IssueSeverity,
     SupervisionConfig,
@@ -327,7 +327,7 @@ async def test_spawn_supervised_network(mock_instance_manager):
 async def test_supervisor_evaluation_loop(mock_instance_manager):
     """Test supervisor evaluation loop runs periodically."""
     config = SupervisionConfig(
-        evaluation_interval_seconds=0.1,  # Very fast for testing
+        evaluation_interval_seconds=1,  # Fast for testing
     )
 
     supervisor = SupervisorAgent(
@@ -339,8 +339,8 @@ async def test_supervisor_evaluation_loop(mock_instance_manager):
     await supervisor.start()
     assert supervisor.running is True
 
-    # Let it run for a few cycles
-    await asyncio.sleep(0.5)
+    # Let it run for a few cycles (need >2 seconds for 2 cycles with 1s interval)
+    await asyncio.sleep(2.5)
 
     # Verify get_instance_status was called multiple times
     assert mock_instance_manager.get_instance_status.call_count >= 2

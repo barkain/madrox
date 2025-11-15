@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from src.supervision.analysis.analyzer import TranscriptAnalyzer
-from src.supervision.analysis.models import AnalysisStatus, Message
+from supervision.analysis.analyzer import TranscriptAnalyzer
+from supervision.analysis.models import AnalysisStatus, Message
 
 
 class TestTranscriptAnalyzer:

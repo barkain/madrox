@@ -7,10 +7,12 @@ from datetime import datetime
 
 import pytest
 
-from src.supervision.events.bus import EventBus
-from src.supervision.events.models import Event
-from src.supervision.tracking.models import ProgressSnapshot, TaskStatus
-from src.supervision.tracking.tracker import ProgressTracker
+from orchestrator.compat import UTC
+
+from supervision.events.bus import EventBus
+from supervision.events.models import Event
+from supervision.tracking.models import ProgressSnapshot, TaskStatus
+from supervision.tracking.tracker import ProgressTracker
 
 
 class TestProgressTrackerBasicCRUD:
@@ -589,9 +591,9 @@ class TestProgressTrackerEdgeCases:
     def test_task_created_at_and_updated_at_set(self) -> None:
         """Test that created_at and updated_at are properly set."""
         tracker = ProgressTracker()
-        before = datetime.now()
+        before = datetime.now(UTC)
         task_id = tracker.add_task("Test task")
-        after = datetime.now()
+        after = datetime.now(UTC)
 
         task = tracker.get_task(task_id)
         assert task is not None
