@@ -4,13 +4,20 @@
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Change to the Madrox directory
-cd "$SCRIPT_DIR"
+# Navigate to the repository root (two levels up from scripts/bin/)
+REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
+cd "$REPO_ROOT"
 
-# Default port if not specified
+# Default configuration
 PORT="${ORCHESTRATOR_PORT:-8001}"
+MAX_INSTANCES="${MAX_INSTANCES:-10}"
+TRANSPORT="${MADROX_TRANSPORT:-http}"
 
-echo "Starting Madrox HTTP server on port $PORT..."
+echo "Starting Madrox HTTP server..."
+echo "  Port: $PORT"
+echo "  Max instances: $MAX_INSTANCES"
+echo "  Transport: $TRANSPORT"
+echo ""
 echo "Press Ctrl+C to stop the server"
 echo ""
 
