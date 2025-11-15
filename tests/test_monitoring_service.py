@@ -321,7 +321,7 @@ async def test_mcp_get_agent_summary(monitoring_service, temp_storage):
     import sys
     sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
 
-    from orchestrator.mcp_adapter import get_agent_summary, register_monitoring_tools
+    from src.orchestrator.mcp_adapter import get_agent_summary, register_monitoring_tools
 
     # Register the service
     register_monitoring_tools(monitoring_service)
@@ -352,7 +352,7 @@ async def test_mcp_get_all_agent_summaries(monitoring_service, temp_storage):
     import sys
     sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
 
-    from orchestrator.mcp_adapter import get_all_agent_summaries, register_monitoring_tools
+    from src.orchestrator.mcp_adapter import get_all_agent_summaries, register_monitoring_tools
 
     # Register the service
     register_monitoring_tools(monitoring_service)
@@ -376,7 +376,7 @@ async def test_mcp_status_filter(monitoring_service, temp_storage):
     import sys
     sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
 
-    from orchestrator.mcp_adapter import get_all_agent_summaries, register_monitoring_tools
+    from src.orchestrator.mcp_adapter import get_all_agent_summaries, register_monitoring_tools
 
     register_monitoring_tools(monitoring_service)
 
@@ -398,7 +398,7 @@ async def test_mcp_error_service_not_running():
     import sys
     sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
 
-    from orchestrator.mcp_adapter import get_agent_summary, register_monitoring_tools
+    from src.orchestrator.mcp_adapter import get_agent_summary, register_monitoring_tools
 
     # Don't start the service
     mock_service = Mock()
@@ -421,7 +421,7 @@ async def test_full_integration(temp_storage, mock_instance_manager, mock_llm_su
     import sys
     sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
 
-    from orchestrator.mcp_adapter import (
+    from src.orchestrator.mcp_adapter import (
         get_agent_summary,
         get_all_agent_summaries,
         register_monitoring_tools,

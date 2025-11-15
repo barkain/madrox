@@ -5,8 +5,8 @@ import threading
 import time
 from pathlib import Path
 
-from orchestrator.monitoring.models import LogPosition
-from orchestrator.monitoring.position_tracker import PositionTracker
+from src.orchestrator.monitoring.models import LogPosition
+from src.orchestrator.monitoring.position_tracker import PositionTracker
 
 
 class TestPositionTrackerBasicCRUD:

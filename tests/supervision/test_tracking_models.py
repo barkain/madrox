@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from supervision.tracking.models import ProgressSnapshot, Task, TaskStatus
+from src.supervision.tracking.models import ProgressSnapshot, Task, TaskStatus
 
 
 class TestTaskStatus:

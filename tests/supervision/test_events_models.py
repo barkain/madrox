@@ -3,7 +3,7 @@
 import unittest
 from datetime import datetime
 
-from supervision.events.models import SUPERVISION_EVENT_TYPES, Event, EventHandler
+from src.supervision.events.models import SUPERVISION_EVENT_TYPES, Event, EventHandler
 
 
 class TestEvent(unittest.TestCase):

@@ -27,7 +27,7 @@ from supervision.supervisor.agent import (
 
 # Import real TmuxInstanceManager from Madrox
 sys.path.insert(0, "/path/to/user/dev/madrox/src")
-from orchestrator.tmux_instance_manager import TmuxInstanceManager
+from src.orchestrator.tmux_instance_manager import TmuxInstanceManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")

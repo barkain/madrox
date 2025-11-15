@@ -10,12 +10,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from supervision.integration.manager_integration import (
+from src.supervision.integration.manager_integration import (
     attach_supervisor,
     spawn_supervised_network,
     spawn_supervisor,
 )
-from supervision.supervisor.agent import (
+from src.supervision.supervisor.agent import (
     DetectedIssue,
     IssueSeverity,
     SupervisionConfig,

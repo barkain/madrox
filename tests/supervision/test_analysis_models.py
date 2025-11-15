@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from supervision.analysis.models import AnalysisResult, AnalysisStatus, Message
+from src.supervision.analysis.models import AnalysisResult, AnalysisStatus, Message
 
 
 class TestAnalysisStatus:

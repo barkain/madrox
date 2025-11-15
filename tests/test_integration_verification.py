@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from orchestrator.instance_manager import InstanceManager
+from src.orchestrator.instance_manager import InstanceManager
 from supervision.integration import (
     attach_supervisor,
     spawn_supervised_network,

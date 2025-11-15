@@ -2,7 +2,7 @@
 
 import pytest
 
-from orchestrator.monitoring.models import AgentSummary, LogPosition, OnTrackStatus
+from src.orchestrator.monitoring.models import AgentSummary, LogPosition, OnTrackStatus
 
 
 class TestOnTrackStatus:

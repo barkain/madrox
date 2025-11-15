@@ -7,10 +7,10 @@ from datetime import datetime
 
 import pytest
 
-from supervision.events.bus import EventBus
-from supervision.events.models import Event
-from supervision.tracking.models import ProgressSnapshot, TaskStatus
-from supervision.tracking.tracker import ProgressTracker
+from src.supervision.events.bus import EventBus
+from src.supervision.events.models import Event
+from src.supervision.tracking.models import ProgressSnapshot, TaskStatus
+from src.supervision.tracking.tracker import ProgressTracker
 
 
 class TestProgressTrackerBasicCRUD:

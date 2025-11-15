@@ -8,8 +8,8 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from orchestrator.mcp_server import OrchestrationMCPServer
-from orchestrator.simple_models import OrchestratorConfig
+from src.orchestrator.mcp_server import OrchestrationMCPServer
+from src.orchestrator.simple_models import OrchestratorConfig
 
 
 async def test_tool_registration():

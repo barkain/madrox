@@ -5,8 +5,8 @@ import time
 import unittest
 from datetime import datetime
 
-from supervision.events.bus import EventBus
-from supervision.events.models import Event
+from src.supervision.events.bus import EventBus
+from src.supervision.events.models import Event
 
 
 class TestEventBusBasics(unittest.TestCase):

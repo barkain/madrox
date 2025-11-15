@@ -5,12 +5,12 @@ from datetime import datetime
 
 import pytest
 
-from supervision.analysis.analyzer import TranscriptAnalyzer
-from supervision.analysis.models import Message
-from supervision.coordination import CoordinationResult, SupervisionCoordinator
-from supervision.events.bus import EventBus
-from supervision.events.models import Event
-from supervision.tracking.tracker import ProgressTracker
+from src.supervision.analysis.analyzer import TranscriptAnalyzer
+from src.supervision.analysis.models import Message
+from src.supervision.coordination import CoordinationResult, SupervisionCoordinator
+from src.supervision.events.bus import EventBus
+from src.supervision.events.models import Event
+from src.supervision.tracking.tracker import ProgressTracker
 
 
 class TestEndToEndWorkflow:
