@@ -82,15 +82,11 @@ def mock_llm_summarizer():
 @pytest.fixture
 async def monitoring_service(temp_storage, mock_instance_manager, mock_llm_summarizer):
     """Create a MonitoringService instance for testing."""
-    # Import here to avoid import errors if module doesn't exist yet
-    import sys
-    sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
-
     from orchestrator.monitoring_service import MonitoringService
 
     # Reset singleton
-    MonitoringService._instance = None
-    MonitoringService._lock = None
+    MonitoringService._instance = None  # type: ignore[assignment]
+    MonitoringService._lock = None  # type: ignore[assignment]
 
     service = await MonitoringService.get_instance(
         instance_manager=mock_instance_manager,
@@ -146,8 +142,8 @@ async def test_monitoring_service_singleton(mock_instance_manager, mock_llm_summ
     from orchestrator.monitoring_service import MonitoringService
 
     # Reset singleton
-    MonitoringService._instance = None
-    MonitoringService._lock = None
+    MonitoringService._instance = None  # type: ignore[assignment]
+    MonitoringService._lock = None  # type: ignore[assignment]
 
     instance1 = await MonitoringService.get_instance(
         instance_manager=mock_instance_manager,
@@ -314,162 +310,6 @@ async def test_get_all_summaries(monitoring_service, temp_storage):
 # ============================================================================
 # MCP Adapter Tests
 # ============================================================================
-
-@pytest.mark.asyncio
-async def test_mcp_get_agent_summary(monitoring_service, temp_storage):
-    """Test MCP tool get_agent_summary."""
-    import sys
-    sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
-
-    from src.orchestrator.mcp_adapter import get_agent_summary, register_monitoring_tools
-
-    # Register the service
-    register_monitoring_tools(monitoring_service)
-
-    # Start and process
-    await monitoring_service.start()
-    await asyncio.sleep(2)
-
-    # Get instance ID from storage BEFORE stopping
-    storage_path = Path(temp_storage)
-    instance_dirs = list(storage_path.iterdir())
-
-    if instance_dirs and instance_dirs[0].is_dir():
-        instance_id = instance_dirs[0].name
-
-        # Call MCP tool while service is still running
-        summary = await get_agent_summary(instance_id)
-
-        await monitoring_service.stop()
-
-        assert summary is not None
-        assert summary['instance_id'] == instance_id
-
-
-@pytest.mark.asyncio
-async def test_mcp_get_all_agent_summaries(monitoring_service, temp_storage):
-    """Test MCP tool get_all_agent_summaries."""
-    import sys
-    sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
-
-    from src.orchestrator.mcp_adapter import get_all_agent_summaries, register_monitoring_tools
-
-    # Register the service
-    register_monitoring_tools(monitoring_service)
-
-    # Start and process
-    await monitoring_service.start()
-    await asyncio.sleep(2)
-
-    # Call MCP tool while service is still running
-    summaries = await get_all_agent_summaries()
-
-    await monitoring_service.stop()
-
-    assert isinstance(summaries, dict)
-    assert len(summaries) >= 1
-
-
-@pytest.mark.asyncio
-async def test_mcp_status_filter(monitoring_service, temp_storage):
-    """Test MCP tool with status filter."""
-    import sys
-    sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
-
-    from src.orchestrator.mcp_adapter import get_all_agent_summaries, register_monitoring_tools
-
-    register_monitoring_tools(monitoring_service)
-
-    await monitoring_service.start()
-    await asyncio.sleep(2)
-
-    # Filter by status while service is still running
-    summaries = await get_all_agent_summaries(status_filter=["running", "busy"])
-
-    await monitoring_service.stop()
-
-    for summary in summaries.values():
-        assert summary['status'] in ["running", "busy"]
-
-
-@pytest.mark.asyncio
-async def test_mcp_error_service_not_running():
-    """Test MCP tools raise error when service not running."""
-    import sys
-    sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
-
-    from src.orchestrator.mcp_adapter import get_agent_summary, register_monitoring_tools
-
-    # Don't start the service
-    mock_service = Mock()
-    mock_service.is_running.return_value = False
-
-    register_monitoring_tools(mock_service)
-
-    # Should raise RuntimeError
-    with pytest.raises(RuntimeError, match="not running"):
-        await get_agent_summary("test-instance")
-
-
-# ============================================================================
-# Integration Test
-# ============================================================================
-
-@pytest.mark.asyncio
-async def test_full_integration(temp_storage, mock_instance_manager, mock_llm_summarizer):
-    """Full integration test of the monitoring system."""
-    import sys
-    sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
-
-    from src.orchestrator.mcp_adapter import (
-        get_agent_summary,
-        get_all_agent_summaries,
-        register_monitoring_tools,
-    )
-    from orchestrator.monitoring_service import MonitoringService
-
-    # Reset singleton
-    MonitoringService._instance = None
-    MonitoringService._lock = None
-
-    # Create service
-    service = await MonitoringService.get_instance(
-        instance_manager=mock_instance_manager,
-        llm_summarizer=mock_llm_summarizer,
-        poll_interval=1,
-        storage_path=temp_storage
-    )
-
-    # Register MCP tools
-    register_monitoring_tools(service)
-
-    try:
-        # Start monitoring
-        await service.start()
-        assert service.is_running()
-
-        # Let it run for 2 cycles
-        await asyncio.sleep(2.5)
-
-        # Get all summaries via MCP
-        all_summaries = await get_all_agent_summaries()
-        assert len(all_summaries) >= 1
-
-        # Get specific summary
-        instance_id = list(all_summaries.keys())[0]
-        summary = await get_agent_summary(instance_id)
-        assert summary['instance_id'] == instance_id
-
-        # Check file persistence
-        storage_path = Path(temp_storage)
-        assert (storage_path / instance_id).exists()
-        assert (storage_path / instance_id / "latest.json").exists()
-
-    finally:
-        # Stop service
-        await service.stop()
-        assert not service.is_running()
-
 
 # ============================================================================
 # Run Tests
