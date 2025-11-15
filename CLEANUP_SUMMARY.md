@@ -12,8 +12,8 @@ Prepare the Madrox repository for open source release by removing build artifact
 
 ### Repository Size Reduction
 - **Before:** 869M
-- **After:** 27M
-- **Reduction:** 842M (97% decrease)
+- **After:** 26M
+- **Reduction:** 843M (97% decrease)
 
 ### Commits Made
 
@@ -33,6 +33,18 @@ Prepare the Madrox repository for open source release by removing build artifact
    - 1 file changed, 608 insertions(+)
    - Moved test failure analysis to docs/archive/ for historical reference
 
+4. **009d43f** - `docs: Add comprehensive cleanup summary`
+   - 1 file changed, 127 insertions(+)
+   - Created this cleanup summary document
+
+5. **c8524ec** - `refactor: Reorganize repository structure for OSS release`
+   - 8 files changed, 4 insertions(+)
+   - Moved architecture docs to docs/architecture/
+   - Moved STDIO_TRANSPORT.md to docs/
+   - Archived BUG_FIXES.md
+   - Relocated launcher scripts to scripts/bin/
+   - Updated .gitignore for additional patterns
+
 ## Security Fixes
 
 ### Critical Issues Resolved
@@ -45,21 +57,27 @@ Prepare the Madrox repository for open source release by removing build artifact
 
 ### Directories Created
 - `examples/` - Moved demo_simple.py, demo_weather_chat.py
-- `scripts/tests/` - Consolidated run_tests.sh, test_auto_detection.sh, test_concurrent_transports.sh
-- `docs/archive/` - Historical documents (TEST_FAILURE_ANALYSIS.md, ARTIFACT_COLLECTION_DESIGN.md, etc.)
+- `scripts/tests/` - Consolidated test scripts (run_tests.sh, test_auto_detection.sh, test_concurrent_transports.sh)
+- `scripts/bin/` - Launcher scripts (madrox-mcp, madrox-server, run_orchestrator_stdio.py)
+- `docs/archive/` - Historical documents (TEST_FAILURE_ANALYSIS.md, ARTIFACT_COLLECTION_DESIGN.md, BUG_FIXES.md)
+- `docs/architecture/` - Architecture decision records and design docs
 
 ### Files Deleted
 - `.env` (security: contained OAuth token)
 - `src/orchestrator/models.py.deprecated` (obsolete)
 - `frontend/node_modules/` (488M build artifacts)
 - `frontend/.next/` (210M → 4KB)
-- `.venv/` (147M virtual environment)
+- `.venv/` (147M virtual environment, deleted multiple times)
 - `test_venv/` (130M test artifacts)
 - All `__pycache__/` directories
-- `.pytest_cache`, `.ruff_cache`
+- `.pytest_cache/` (pytest cache)
+- `.ruff_cache/` (ruff linter cache)
+- `.idea/` (JetBrains IDE files)
+- `.claude/` (Claude Code state)
+- `.playwright-mcp/` (Playwright test state)
 - `.DS_Store` files
-- `.idea/` directory
 - `tmux-client-*.log` files
+- `test_results_after_fix.log` (170KB test output)
 
 ### Files Modified (Documentation Sanitization)
 - docs/ARTIFACTS_METADATA.md
@@ -93,7 +111,7 @@ This cleanup was executed using the Madrox multi-agent orchestration system:
 ```bash
 # Repository size
 $ du -sh .
-27M	.
+26M	.
 
 # Git status
 $ git status
@@ -101,7 +119,9 @@ On branch repo-cleanup-for-oss-release
 nothing to commit, working tree clean
 
 # Commit history
-$ git log --oneline -3
+$ git log --oneline -5
+c8524ec refactor: Reorganize repository structure for OSS release
+009d43f docs: Add comprehensive cleanup summary
 a5b84ce docs: Archive TEST_FAILURE_ANALYSIS.md
 3846042 fix: Update test imports to use correct src.orchestrator paths
 5e5891c chore: Clean repository for OSS release
