@@ -8,7 +8,7 @@ Madrox is a Model Context Protocol (MCP) server that enables hierarchical orches
 
 **What you'll learn:**
 - System prerequisites and requirements
-- Installation methods (Quick Start, Docker, Manual)
+- Installation methods (Quick Start, Manual)
 - MCP client configuration (Claude Desktop, Claude Code, Codex CLI)
 - Initial configuration and verification
 - Troubleshooting common issues
@@ -25,21 +25,11 @@ Madrox is a Model Context Protocol (MCP) server that enables hierarchical orches
 - 2GB+ available RAM (4GB+ recommended)
 - Internet connection for API calls
 
-**Optional (for Docker deployment):**
-- Docker Engine 20.10+ or Docker Desktop
-- Docker Compose 2.0+
-- 10GB+ available disk space
-
 ### API Keys
 
-**For Docker Deployment:**
-- **Anthropic API Key** - **Required** for containerized deployment
-  - Get one at [console.anthropic.com](https://console.anthropic.com)
-  - OAuth-based authentication (browser login) does not work in containers
-
-**For Local Installation:**
-- **Anthropic API Key** - Optional if you have Claude Desktop/CLI subscription
-  - OAuth authentication works with local installations
+**Anthropic API Key:**
+- Optional if you have Claude Desktop/CLI subscription (OAuth authentication works)
+- Required if you don't have a subscription - get one at [console.anthropic.com](https://console.anthropic.com)
 
 **Optional:**
 - **OpenAI API Key** - For Codex instances (multi-model support)
@@ -62,11 +52,10 @@ Madrox is a Model Context Protocol (MCP) server that enables hierarchical orches
 
 Choose the installation method that best fits your needs:
 
-| Method | Best For | Setup Time | Isolation | Auth Requirements |
-|--------|----------|------------|-----------|-------------------|
-| **Quick Start** | Development, testing | 5 minutes | Medium | OAuth or API key |
-| **Docker** | Production, deployment | 10 minutes | High | **API key only** |
-| **Manual** | Custom setups, debugging | 15 minutes | Low | OAuth or API key |
+| Method | Best For | Setup Time | Auth Requirements |
+|--------|----------|------------|-------------------|
+| **Quick Start** | Development, testing | 5 minutes | OAuth or API key |
+| **Manual** | Custom setups, debugging | 15 minutes | OAuth or API key |
 
 ---
 
@@ -137,129 +126,6 @@ curl http://localhost:8001/health
 # Expected output:
 # {"status":"healthy","instances_active":0,"instances_total":0}
 ```
-
-**Next:** [Connect MCP Client](#mcp-client-configuration)
-
----
-
-## Docker Installation
-
-Production-ready containerized deployment with persistent storage and health monitoring.
-
-> **⚠️ Important Authentication Requirement:**
-> Docker deployment **requires an Anthropic API key**. OAuth-based Claude CLI authentication (browser login) does not work in containers. If you only have a Claude subscription without an API key, use the [Quick Start](#quick-start) or [Manual Installation](#manual-installation) methods instead.
-
-### 1. Prerequisites Check
-
-Verify Docker is installed:
-
-```bash
-docker --version
-docker compose version
-```
-
-Expected versions: Docker 20.10+ and Docker Compose 2.0+
-
-### 2. Clone Repository
-
-```bash
-git clone <repository-url>
-cd madrox-containerization
-```
-
-### 3. Configure Environment
-
-Create `.env` file from example:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your settings:
-
-```bash
-# Required: Your Anthropic API key
-ANTHROPIC_API_KEY=sk-ant-your-key-here
-
-# Optional: Adjust defaults
-ORCHESTRATOR_PORT=8001
-LOG_LEVEL=INFO
-MAX_INSTANCES=10
-MAX_TOKENS_PER_INSTANCE=100000
-MAX_TOTAL_COST=100.0
-INSTANCE_TIMEOUT_MINUTES=60
-```
-
-### 4. Build and Start Services
-
-```bash
-# Build and start in detached mode
-docker compose up -d --build
-
-# View logs
-docker compose logs -f madrox
-```
-
-### 5. Verify Health
-
-```bash
-# Check container status
-docker ps | grep madrox
-
-# Test health endpoint
-curl http://localhost:8001/health
-
-# List available tools
-curl http://localhost:8001/tools
-```
-
-### 6. Data Persistence
-
-Three volumes preserve data across restarts:
-
-| Volume | Path | Purpose |
-|--------|------|---------|
-| `madrox-data` | `/data` | SQLite database |
-| `madrox-logs` | `/logs` | Audit and instance logs |
-| `madrox-workspaces` | `/tmp/claude_orchestrator` | Instance working directories |
-
-View volumes:
-
-```bash
-docker volume ls | grep madrox
-```
-
-### Docker Management
-
-**Stop services:**
-```bash
-docker compose down
-```
-
-**Restart services:**
-```bash
-docker compose restart
-```
-
-**View logs:**
-```bash
-docker compose logs -f
-```
-
-**Access container shell:**
-```bash
-docker exec -it madrox-server bash
-```
-
-**Backup data:**
-```bash
-docker run --rm \
-  -v madrox-data:/data \
-  -v $(pwd)/backups:/backup \
-  alpine tar czf /backup/madrox-data-$(date +%Y%m%d).tar.gz -C /data .
-```
-
-**See [docker/README.md](../docker/README.md) for comprehensive Docker documentation.**
 
 **Next:** [Connect MCP Client](#mcp-client-configuration)
 
