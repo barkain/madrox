@@ -35,7 +35,7 @@ The Madrox MCP server was generating incorrect configuration files for stdio-bas
 
 ### 1. Fixed `_configure_mcp_servers` in `tmux_instance_manager.py`
 
-**File**: `/Users/nadavbarkai/dev/madrox/src/orchestrator/tmux_instance_manager.py`
+**File**: `/path/to/user/dev/madrox/src/orchestrator/tmux_instance_manager.py`
 
 #### Change 1: Auto-detect transport type (lines 85-89)
 ```python
@@ -67,7 +67,7 @@ mcp_config["mcpServers"][server_name] = {
 
 ### 2. Created Reusable MCP Configurations
 
-**Directory**: `/Users/nadavbarkai/dev/madrox/resources/mcp_configs/`
+**Directory**: `/path/to/user/dev/madrox/resources/mcp_configs/`
 
 Created JSON configuration files for common MCP servers:
 
@@ -94,7 +94,7 @@ Each config file has this structure:
 
 ### 3. Created MCP Config Loader Utility
 
-**File**: `/Users/nadavbarkai/dev/madrox/src/orchestrator/mcp_loader.py`
+**File**: `/path/to/user/dev/madrox/src/orchestrator/mcp_loader.py`
 
 New utility for loading and managing MCP configurations:
 

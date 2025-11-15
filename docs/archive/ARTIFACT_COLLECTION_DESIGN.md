@@ -15,7 +15,7 @@ The artifact collection system currently fails because:
 
 ### 1. Configuration Flow
 
-**File: `/Users/nadavbarkai/dev/madrox/src/orchestrator/simple_models.py`**
+**File: `/path/to/user/dev/madrox/src/orchestrator/simple_models.py`**
 
 Lines 250-251: OrchestratorConfig defines artifact fields:
 ```python
@@ -23,7 +23,7 @@ artifacts_dir: str = "/tmp/madrox_artifacts",
 preserve_artifacts: bool = True,
 ```
 
-**File: `/Users/nadavbarkai/dev/madrox/run_orchestrator.py`**
+**File: `/path/to/user/dev/madrox/run_orchestrator.py`**
 
 Lines 85-93: Config is loaded from environment variables, but **artifacts_dir and preserve_artifacts are missing**:
 ```python
@@ -41,7 +41,7 @@ config = OrchestratorConfig(
 
 ### 2. Artifact Preservation Flow (WORKING CORRECTLY)
 
-**File: `/Users/nadavbarkai/dev/madrox/src/orchestrator/tmux_instance_manager.py`**
+**File: `/path/to/user/dev/madrox/src/orchestrator/tmux_instance_manager.py`**
 
 **Method: `terminate_instance` (lines 1204-1303)**
 1. Line 1275: Calls `_preserve_artifacts(instance_id)` BEFORE cleanup
@@ -62,7 +62,7 @@ config = OrchestratorConfig(
 
 ### 3. Artifact Collection Flow (BROKEN)
 
-**File: `/Users/nadavbarkai/dev/madrox/src/orchestrator/instance_manager.py`**
+**File: `/path/to/user/dev/madrox/src/orchestrator/instance_manager.py`**
 
 **Method: `collect_team_artifacts` (lines 1866-2043)**
 
@@ -98,7 +98,7 @@ if not child_workspace.exists():  # <-- FAILS: workspace was deleted
 
 ### Phase 1: Environment Variable Configuration
 
-**File: `/Users/nadavbarkai/dev/madrox/run_orchestrator.py`**
+**File: `/path/to/user/dev/madrox/run_orchestrator.py`**
 
 **Line 85-93:** Update `OrchestratorConfig` initialization to include artifact settings:
 
@@ -123,7 +123,7 @@ config = OrchestratorConfig(
 
 ### Phase 2: Support Terminated Children Retrieval
 
-**File: `/Users/nadavbarkai/dev/madrox/src/orchestrator/instance_manager.py`**
+**File: `/path/to/user/dev/madrox/src/orchestrator/instance_manager.py`**
 
 **Method: `_get_children_internal` (line 985-1009)**
 
@@ -169,7 +169,7 @@ def _get_children_internal(
 
 ### Phase 3: Fix Artifact Collection Logic
 
-**File: `/Users/nadavbarkai/dev/madrox/src/orchestrator/instance_manager.py`**
+**File: `/path/to/user/dev/madrox/src/orchestrator/instance_manager.py`**
 
 **Method: `collect_team_artifacts` (lines 1866-2043)**
 

@@ -520,8 +520,8 @@ from supervision.coordination import (
 
 ## Support and Documentation
 
-- **Source Code**: `/Users/nadavbarkai/dev/madrox-supervision/`
-- **Tests**: `/Users/nadavbarkai/dev/madrox-supervision/tests/`
+- **Source Code**: `/path/to/user/dev/madrox-supervision/`
+- **Tests**: `/path/to/user/dev/madrox-supervision/tests/`
 - **Examples**: See usage patterns above
 
 ## Changelog

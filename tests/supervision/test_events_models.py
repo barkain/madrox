@@ -46,7 +46,7 @@ class TestEvent(unittest.TestCase):
             data={},
         )
 
-        with self.assertRaises(Exception):  # dataclass.FrozenInstanceError
+        with self.assertRaises((AttributeError, TypeError)):  # Frozen dataclass raises AttributeError
             event.event_type = "task.completed"  # type: ignore
 
     def test_event_with_complex_data(self) -> None:

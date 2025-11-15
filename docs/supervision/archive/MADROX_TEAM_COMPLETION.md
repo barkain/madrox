@@ -81,7 +81,7 @@ uv run pytest tests/supervision/test_supervisor_integration.py -v
 ### Deliverables Created
 
 #### 1. INTEGRATION_GUIDE.md (1,100+ lines)
-**Path**: `/Users/nadavbarkai/dev/madrox-supervision/INTEGRATION_GUIDE.md`
+**Path**: `/path/to/user/dev/madrox-supervision/INTEGRATION_GUIDE.md`
 
 **Contents**:
 - Complete integration architecture
@@ -102,7 +102,7 @@ uv run pytest tests/supervision/test_supervisor_integration.py -v
 - Best Practices
 
 #### 2. DEPENDENCY_SETUP.md (400+ lines)
-**Path**: `/Users/nadavbarkai/dev/madrox-supervision/DEPENDENCY_SETUP.md`
+**Path**: `/path/to/user/dev/madrox-supervision/DEPENDENCY_SETUP.md`
 
 **Contents**:
 - Installation methods (editable, git, PyPI)
@@ -124,7 +124,7 @@ uv add madrox-supervision
 ```
 
 #### 3. API_REFERENCE.md (650+ lines)
-**Path**: `/Users/nadavbarkai/dev/madrox-supervision/API_REFERENCE.md`
+**Path**: `/path/to/user/dev/madrox-supervision/API_REFERENCE.md`
 
 **Complete API Documentation**:
 - **Functions**: `spawn_supervisor()`, `attach_supervisor()`, `spawn_supervised_network()`
@@ -135,7 +135,7 @@ uv add madrox-supervision
 - **Usage Patterns**: Code snippets for each API
 
 #### 4. INTEGRATION_SUMMARY.md (500+ lines)
-**Path**: `/Users/nadavbarkai/dev/madrox-supervision/INTEGRATION_SUMMARY.md`
+**Path**: `/path/to/user/dev/madrox-supervision/INTEGRATION_SUMMARY.md`
 
 **Contents**:
 - Executive summary
@@ -146,7 +146,7 @@ uv add madrox-supervision
 - Production deployment checklist
 
 #### 5. examples/supervision_integration_example.py (350+ lines)
-**Path**: `/Users/nadavbarkai/dev/madrox-supervision/examples/supervision_integration_example.py`
+**Path**: `/path/to/user/dev/madrox-supervision/examples/supervision_integration_example.py`
 
 **5 Complete Examples**:
 1. **Basic Supervision** - Attach supervisor to existing network
@@ -176,7 +176,7 @@ async def main():
 ```
 
 #### 6. examples/README.md
-**Path**: `/Users/nadavbarkai/dev/madrox-supervision/examples/README.md`
+**Path**: `/path/to/user/dev/madrox-supervision/examples/README.md`
 
 **Contents**:
 - How to run examples
@@ -185,7 +185,7 @@ async def main():
 - Example output descriptions
 
 #### 7. tests/test_integration_verification.py (400+ lines)
-**Path**: `/Users/nadavbarkai/dev/madrox-supervision/tests/test_integration_verification.py`
+**Path**: `/path/to/user/dev/madrox-supervision/tests/test_integration_verification.py`
 
 **16 Integration Tests**:
 - API contract validation
@@ -225,7 +225,7 @@ __all__ = [
 ### Live Integration Testing
 
 #### Test Script Created
-**Path**: `/Users/nadavbarkai/dev/madrox-supervision/tests/test_supervisor_live.py`
+**Path**: `/path/to/user/dev/madrox-supervision/tests/test_supervisor_live.py`
 
 **Test Suite**:
 1. **Spawn Real Instances** - Create 3 tmux sessions via TmuxInstanceManager
@@ -235,8 +235,8 @@ __all__ = [
 
 **Execution**:
 ```bash
-cd /Users/nadavbarkai/dev/madrox-supervision
-export PYTHONPATH=src:/Users/nadavbarkai/dev/madrox/src
+cd /path/to/user/dev/madrox-supervision
+export PYTHONPATH=src:/path/to/user/dev/madrox/src
 uv run python tests/test_supervisor_live.py
 ```
 
@@ -288,7 +288,7 @@ analysis = self.analyzer.analyze(messages)  # Correct method name
 - ✅ Ready for production deployment
 
 ### Documentation Created
-**Path**: `/Users/nadavbarkai/dev/madrox-supervision/LIVE_TEST_RESULTS.md` (277 lines)
+**Path**: `/path/to/user/dev/madrox-supervision/LIVE_TEST_RESULTS.md` (277 lines)
 
 **Contents**:
 - Comprehensive test results
@@ -445,7 +445,7 @@ from supervision.supervisor import (
 ### 1. Install Supervision Package
 ```bash
 # In main Madrox directory
-uv add --editable /Users/nadavbarkai/dev/madrox-supervision
+uv add --editable /path/to/user/dev/madrox-supervision
 ```
 
 ### 2. Basic Usage
@@ -505,9 +505,9 @@ SupervisionConfig(
 ## Files Modified/Created Summary
 
 ### Modified (3 files)
-1. `/Users/nadavbarkai/dev/madrox-supervision/pyproject.toml` - Package config
-2. `/Users/nadavbarkai/dev/madrox-supervision/src/supervision/supervisor/agent.py` - Bug fixes
-3. `/Users/nadavbarkai/dev/madrox-supervision/src/supervision/integration/__init__.py` - API export
+1. `/path/to/user/dev/madrox-supervision/pyproject.toml` - Package config
+2. `/path/to/user/dev/madrox-supervision/src/supervision/supervisor/agent.py` - Bug fixes
+3. `/path/to/user/dev/madrox-supervision/src/supervision/integration/__init__.py` - API export
 
 ### Created (11 files)
 1. `INTEGRATION_GUIDE.md`

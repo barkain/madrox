@@ -61,7 +61,7 @@ class LogStreamHandler(logging.Handler):
 
                 # Add action from event_type if present
                 if hasattr(record, "event_type"):
-                    log_entry["action"] = getattr(record, "event_type")
+                    log_entry["action"] = record.event_type
 
                 # Collect metadata from extra fields
                 metadata: dict[str, Any] = {}

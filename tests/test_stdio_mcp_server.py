@@ -4,8 +4,6 @@ Tests the OrchestrationMCPServer to ensure all 27 tools are properly
 registered and accessible via the STDIO transport.
 """
 
-import asyncio
-from pathlib import Path
 
 import pytest
 

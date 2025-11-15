@@ -335,7 +335,7 @@ Complete specification of team execution metadata.
     "madrox_version": "1.2.0",
     "python_version": "3.11.5",
     "os": "darwin",
-    "hostname": "nadavbarkai-mbp"
+    "hostname": "user-machine"
   },
   "errors": []
 }
@@ -651,7 +651,7 @@ coordinator (root)
 
 ## Artifacts Location
 
-- **Path**: `/Users/nadavbarkai/dev/madrox/artifacts/2025-11-06_14-32-45-research-team-001`
+- **Path**: `/path/to/user/dev/madrox/artifacts/2025-11-06_14-32-45-research-team-001`
 - **Size**: 1.2 GB
 - **Instance Count**: 4
 - **Workspace Files**: 47

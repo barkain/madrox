@@ -13,7 +13,7 @@ See: docs/PARENT_INSTANCE_ID_AUTO_INJECTION_PLAN.md
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

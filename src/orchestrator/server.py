@@ -40,7 +40,7 @@ except ImportError:
 
 
 from .instance_manager import InstanceManager
-from .logging_manager import LoggingManager, get_log_stream_handler, get_audit_log_stream_handler
+from .logging_manager import LoggingManager, get_audit_log_stream_handler, get_log_stream_handler
 from .mcp_adapter import MCPAdapter
 from .simple_models import (
     InstanceRole,
@@ -357,7 +357,7 @@ class ClaudeOrchestratorServer:
                 logger.error(f"WebSocket error: {e}")
                 try:
                     await websocket.close()
-                except:
+                except Exception:
                     pass
 
         def transform_audit_log(audit_entry: dict[str, Any]) -> dict[str, Any]:
@@ -428,7 +428,7 @@ class ClaudeOrchestratorServer:
                     # Send ping to keep connection alive
                     try:
                         await websocket.send_json({"type": "ping"})
-                    except:
+                    except Exception:
                         break
 
                     await asyncio.sleep(2)  # Check every 2 seconds
@@ -439,7 +439,7 @@ class ClaudeOrchestratorServer:
                 logger.error(f"WebSocket error in /ws/logs: {e}")
                 try:
                     await websocket.close()
-                except:
+                except Exception:
                     pass
             finally:
                 log_handler.remove_client(websocket)
@@ -786,8 +786,8 @@ class ClaudeOrchestratorServer:
         @self.app.get("/api/monitoring/sessions/{session_id}/summaries")
         async def get_session_summaries(session_id: str):
             """Get all summaries for a specific session."""
-            from pathlib import Path
             import json
+            from pathlib import Path
 
             session_path = Path("/tmp/madrox_logs/summaries") / session_id
             if not session_path.exists():
@@ -800,7 +800,7 @@ class ClaudeOrchestratorServer:
                     latest_file = instance_dir / "latest.json"
 
                     if latest_file.exists():
-                        with open(latest_file, 'r') as f:
+                        with open(latest_file) as f:
                             summaries[instance_id] = json.load(f)
 
             return {
@@ -813,8 +813,8 @@ class ClaudeOrchestratorServer:
         @self.app.get("/api/monitoring/sessions/{session_id}/instances/{instance_id}")
         async def get_instance_summary_history(session_id: str, instance_id: str):
             """Get summary history for a specific instance in a session."""
-            from pathlib import Path
             import json
+            from pathlib import Path
 
             instance_path = Path("/tmp/madrox_logs/summaries") / session_id / instance_id
             if not instance_path.exists():
@@ -825,7 +825,7 @@ class ClaudeOrchestratorServer:
 
             summaries = []
             for summary_file in sorted(instance_path.glob("summary_*.json")):
-                with open(summary_file, 'r') as f:
+                with open(summary_file) as f:
                     summaries.append(json.load(f))
 
             return {
@@ -1285,7 +1285,7 @@ class ClaudeOrchestratorServer:
 
         # Build parent-child relationships and identify roots
         root_instances = []
-        for instance_id, instance_info in instance_map.items():
+        for _instance_id, instance_info in instance_map.items():
             parent_id = instance_info["parent_id"]
             if parent_id and parent_id in instance_map:
                 # Add to parent's children

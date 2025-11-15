@@ -1,4 +1,14 @@
-"""Models for Claude Orchestrator."""
+"""Models for Claude Orchestrator.
+
+DEPRECATED: This file is no longer used in the codebase.
+- Replaced by: src/orchestrator/simple_models.py
+- Reason: SQLAlchemy ORM definitions not needed; project uses dict-based models
+- Deprecated on: 2025-11-14
+- Can be deleted after verification period
+
+This file contains 71 F821 ruff errors (undefined SQLAlchemy imports).
+All functionality has been migrated to simple_models.py.
+"""
 
 import uuid
 from datetime import datetime

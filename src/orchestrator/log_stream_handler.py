@@ -6,7 +6,6 @@ and audit logs with proper categorization.
 """
 
 import asyncio
-import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -74,7 +73,7 @@ class LogStreamHandler(logging.Handler):
             if self._websocket_clients and message_data:
                 self._broadcast_message(message_data)
 
-        except Exception as e:
+        except Exception:
             # Don't let handler errors break the logging system
             self.handleError(record)
 

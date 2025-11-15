@@ -6,12 +6,12 @@ Phase 3: Background Monitoring Service - Testing
 
 import asyncio
 import json
-import pytest
-from pathlib import Path
-from datetime import datetime
-from unittest.mock import AsyncMock, Mock, MagicMock, patch
-import tempfile
 import shutil
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
 
 
 # Mock the monitoring_service module for testing
@@ -208,7 +208,7 @@ async def test_summary_file_format(monitoring_service, temp_storage):
         if instance_dir.is_dir():
             summary_files = list(instance_dir.glob("summary_*.json"))
             if summary_files:
-                with open(summary_files[0], 'r') as f:
+                with open(summary_files[0]) as f:
                     data = json.load(f)
 
                 # Check required fields
@@ -238,7 +238,7 @@ async def test_error_backoff(monitoring_service):
     instance_id = "test-instance-error"
 
     # Simulate errors
-    for i in range(3):
+    for _ in range(3):
         monitoring_service._record_error(instance_id)
 
     # Should be in backoff period
@@ -421,12 +421,12 @@ async def test_full_integration(temp_storage, mock_instance_manager, mock_llm_su
     import sys
     sys.path.insert(0, '/tmp/claude_orchestrator/3d87bec8-6946-4e57-b250-4f7485c93169/src')
 
-    from orchestrator.monitoring_service import MonitoringService
     from orchestrator.mcp_adapter import (
         get_agent_summary,
         get_all_agent_summaries,
-        register_monitoring_tools
+        register_monitoring_tools,
     )
+    from orchestrator.monitoring_service import MonitoringService
 
     # Reset singleton
     MonitoringService._instance = None

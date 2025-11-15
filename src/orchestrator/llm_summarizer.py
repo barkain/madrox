@@ -7,11 +7,8 @@ Implements robust error handling and never raises exceptions.
 Phase 2: LLM Integration for Activity Summarization
 """
 
-import asyncio
-import json
 import logging
 import os
-from typing import Any, Dict, Optional
 
 try:
     import aiohttp
@@ -65,7 +62,7 @@ class LLMSummarizer:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         model: str = DEFAULT_MODEL,
         timeout: int = DEFAULT_TIMEOUT
     ):
@@ -187,7 +184,7 @@ class LLMSummarizer:
             )
             return summary
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self.logger.warning(f"Timeout generating summary for instance {instance_id}")
             return f"Instance {instance_id}: Summary generation timed out"
 

@@ -12,13 +12,11 @@ Tests cover:
 Phase 2: LLM Summarizer - Testing
 """
 
-import asyncio
 import os
-import pytest
-from unittest.mock import AsyncMock, Mock, MagicMock, patch, call
-import aiohttp
-from aiohttp import ClientTimeout, ClientError
+from unittest.mock import AsyncMock, patch
 
+import aiohttp
+import pytest
 
 # Import the LLMSummarizer (will be available when implementation is complete)
 try:
@@ -295,7 +293,7 @@ async def test_api_timeout_returns_fallback(summarizer_with_api_key, sample_acti
     # Mock timeout
     with patch('aiohttp.ClientSession') as mock_session_class:
         mock_session = AsyncMock()
-        mock_session.post.side_effect = asyncio.TimeoutError("API request timeout")
+        mock_session.post.side_effect = TimeoutError("API request timeout")
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         result = await summarizer.summarize_activity(
@@ -717,7 +715,7 @@ async def test_all_error_paths_return_strings(summarizer_with_api_key):
 
     error_scenarios = [
         aiohttp.ClientError("Network error"),
-        asyncio.TimeoutError("Timeout"),
+        TimeoutError("Timeout"),
         Exception("Unexpected error"),
     ]
 

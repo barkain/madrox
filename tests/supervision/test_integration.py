@@ -470,7 +470,7 @@ class TestComplexScenarios:
             ),
         ]
 
-        result1 = coordinator.analyze_and_track(wave1_messages)
+        _result1 = coordinator.analyze_and_track(wave1_messages)
         snapshot1 = coordinator.get_network_health()
 
         # Wave 2: Blockers discovered
@@ -482,7 +482,7 @@ class TestComplexScenarios:
             ),
         ]
 
-        result2 = coordinator.analyze_and_track(wave2_messages)
+        _result2 = coordinator.analyze_and_track(wave2_messages)
         snapshot2 = coordinator.get_network_health()
 
         # Wave 3: Completion
@@ -495,7 +495,7 @@ class TestComplexScenarios:
         ]
 
         result3 = coordinator.analyze_and_track(wave3_messages)
-        snapshot3 = coordinator.get_network_health()
+        _snapshot3 = coordinator.get_network_health()
 
         # Verify progression
         assert snapshot1.total_tasks > 0

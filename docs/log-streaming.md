@@ -381,11 +381,11 @@ def _setup_audit_logger(self):
 
 ## File Locations
 
-- **Handler Implementation**: `/Users/nadavbarkai/dev/madrox/src/orchestrator/logging_manager.py`
-- **Server Integration**: `/Users/nadavbarkai/dev/madrox/src/orchestrator/server.py`
-- **Documentation**: `/Users/nadavbarkai/dev/madrox/docs/log-streaming.md`
-- **Frontend Integration**: `/Users/nadavbarkai/dev/madrox/frontend/hooks/use-log-websocket.ts`
-- **Frontend Types**: `/Users/nadavbarkai/dev/madrox/frontend/types/index.ts`
+- **Handler Implementation**: `/path/to/user/dev/madrox/src/orchestrator/logging_manager.py`
+- **Server Integration**: `/path/to/user/dev/madrox/src/orchestrator/server.py`
+- **Documentation**: `/path/to/user/dev/madrox/docs/log-streaming.md`
+- **Frontend Integration**: `/path/to/user/dev/madrox/frontend/hooks/use-log-websocket.ts`
+- **Frontend Types**: `/path/to/user/dev/madrox/frontend/types/index.ts`
 
 ## Frontend Integration
 

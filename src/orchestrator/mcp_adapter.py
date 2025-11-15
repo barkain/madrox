@@ -44,7 +44,7 @@ class MCPAdapter:
         tools_dict = await self.manager.mcp.get_tools()
 
         tools_list = []
-        for tool_name, tool_obj in tools_dict.items():
+        for _tool_name, tool_obj in tools_dict.items():
             # Convert FastMCP tool to MCP protocol format
             mcp_tool = tool_obj.to_mcp_tool()
 

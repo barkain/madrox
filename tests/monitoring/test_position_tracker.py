@@ -5,8 +5,6 @@ import threading
 import time
 from pathlib import Path
 
-import pytest
-
 from orchestrator.monitoring.models import LogPosition
 from orchestrator.monitoring.position_tracker import PositionTracker
 
@@ -224,7 +222,7 @@ class TestPositionTrackerPersistence:
         nonexistent_dir = tmp_path / "does_not_exist"
         assert not nonexistent_dir.exists()
 
-        tracker = PositionTracker(state_dir=str(nonexistent_dir))
+        _tracker = PositionTracker(state_dir=str(nonexistent_dir))
         assert nonexistent_dir.exists()
         assert nonexistent_dir.is_dir()
 

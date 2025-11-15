@@ -132,7 +132,7 @@ Separate state for system and audit logs:
 ### 1. Development Server
 
 ```bash
-cd /Users/nadavbarkai/dev/madrox/frontend
+cd /path/to/user/dev/madrox/frontend
 npm run dev
 ```
 

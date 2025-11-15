@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 try:
@@ -220,7 +220,7 @@ Do not include any text before or after the JSON object."""
             except json.JSONDecodeError as e:
                 logger.warning(f"Invalid JSON from Claude (attempt {attempt + 1}): {e}")
                 if attempt == MAX_RETRIES - 1:
-                    raise Exception(f"Failed to get valid JSON after {MAX_RETRIES} attempts")
+                    raise Exception(f"Failed to get valid JSON after {MAX_RETRIES} attempts") from None
 
             except Exception as e:
                 error_type = type(e).__name__
@@ -232,7 +232,7 @@ Do not include any text before or after the JSON object."""
                     logger.info(f"Rate limited, backing off {backoff}s")
 
                 if attempt == MAX_RETRIES - 1:
-                    raise Exception(f"Failed after {MAX_RETRIES} retries: {e}")
+                    raise Exception(f"Failed after {MAX_RETRIES} retries: {e}") from e
 
             # Exponential backoff
             await asyncio.sleep(backoff)
@@ -289,7 +289,7 @@ Do not include any text before or after the JSON object."""
         summary = AgentSummary(
             instance_id=instance_id,
             instance_name=agent_context.get("instance_name", instance_id),
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             current_activity=current_activity,
             on_track_status=on_track_status,
             confidence_score=confidence_score,

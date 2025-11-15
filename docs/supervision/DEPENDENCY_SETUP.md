@@ -32,11 +32,11 @@ To use the supervision package in another project during development:
 cd /path/to/your/project
 
 # Add as editable dependency
-uv add --editable /Users/nadavbarkai/dev/madrox-supervision
+uv add --editable /path/to/user/dev/madrox-supervision
 
 # Or add to pyproject.toml manually:
 # [project.dependencies]
-# claude-orchestrator-mcp = {path = "/Users/nadavbarkai/dev/madrox-supervision", editable = true}
+# claude-orchestrator-mcp = {path = "/path/to/user/dev/madrox-supervision", editable = true}
 ```
 
 Then in your code:

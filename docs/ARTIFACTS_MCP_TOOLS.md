@@ -79,7 +79,7 @@ async def collect_team_artifacts(team_session_id: str) -> dict[str, Any]:
 {
   "status": "success",
   "team_session_id": "research-team-001",
-  "artifacts_path": "/Users/nadavbarkai/dev/madrox/artifacts/2025-11-06_14-32-45-research-team-001",
+  "artifacts_path": "/path/to/user/dev/madrox/artifacts/2025-11-06_14-32-45-research-team-001",
   "instances_count": 4,
   "instances": [
     {
@@ -154,7 +154,7 @@ Echo of the input `team_session_id` parameter. Useful for matching requests to r
 **On Success**: Absolute filesystem path to the artifacts directory
 
 ```
-/Users/nadavbarkai/dev/madrox/artifacts/2025-11-06_14-32-45-research-team-001
+/path/to/user/dev/madrox/artifacts/2025-11-06_14-32-45-research-team-001
 ```
 
 **On Error**: `null`

@@ -1,9 +1,7 @@
 """Tests for the log streaming infrastructure."""
 
 import asyncio
-import json
 import logging
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

@@ -4,8 +4,8 @@
 2025-10-08
 
 ## Test Environment
-- **Supervisor Code**: `/Users/nadavbarkai/dev/madrox-supervision/`
-- **Madrox Code**: `/Users/nadavbarkai/dev/madrox/`
+- **Supervisor Code**: `/path/to/user/dev/madrox-supervision/`
+- **Madrox Code**: `/path/to/user/dev/madrox/`
 - **Test Script**: `tests/test_supervisor_live.py`
 - **Python Version**: 3.11+
 - **Test Type**: Live integration with real TmuxInstanceManager
@@ -268,8 +268,8 @@ For full intervention testing with message passing and monitoring, a production 
 ## Test Script Usage
 
 ```bash
-cd /Users/nadavbarkai/dev/madrox-supervision
-export PYTHONPATH=src:/Users/nadavbarkai/dev/madrox/src
+cd /path/to/user/dev/madrox-supervision
+export PYTHONPATH=src:/path/to/user/dev/madrox/src
 uv run python tests/test_supervisor_live.py
 ```
 

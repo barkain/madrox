@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Navigate to repository root (two levels up from scripts/tests/)
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$REPO_ROOT"
+
 echo "=== Testing Transport Auto-Detection ==="
 echo
 

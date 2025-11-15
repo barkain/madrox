@@ -1,12 +1,8 @@
 """Tests for IncrementalLogReader."""
 
-import hashlib
 from pathlib import Path
 
-import pytest
-
 from orchestrator.monitoring.log_reader import IncrementalLogReader
-from orchestrator.monitoring.models import LogPosition
 from orchestrator.monitoring.position_tracker import PositionTracker
 
 

@@ -26,7 +26,7 @@ from supervision.supervisor.agent import (
 )
 
 # Import real TmuxInstanceManager from Madrox
-sys.path.insert(0, "/Users/nadavbarkai/dev/madrox/src")
+sys.path.insert(0, "/path/to/user/dev/madrox/src")
 from orchestrator.tmux_instance_manager import TmuxInstanceManager
 
 # Configure logging

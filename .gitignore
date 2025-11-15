@@ -49,7 +49,7 @@ htmlcov/
 .env.*.local
 
 # Local configuration
-claude_mcp_config.json
+.claude_mcp_config.json
 
 # Logs
 *.log
@@ -69,3 +69,4 @@ debug_network_run.log
 debug_summary_initial.md
 network_monitor_history.json
 debug_network.log
+.claude/

@@ -12,9 +12,9 @@ import json
 import logging
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, timezone
-from typing import Dict, Optional, List, Any
+from typing import Any, Optional
 
 try:
     import aiofiles
@@ -59,18 +59,18 @@ class MonitoringService:
         self.max_tokens = max_tokens
 
         # Create session-specific subdirectory: /tmp/madrox_logs/summaries/session_YYYYMMDD_HHMMSS/
-        from datetime import datetime, timezone
-        session_id = datetime.now(timezone.utc).strftime("session_%Y%m%d_%H%M%S")
+        from datetime import datetime
+        session_id = datetime.now(UTC).strftime("session_%Y%m%d_%H%M%S")
         self.storage_path = Path(storage_path) / session_id
         self.session_id = session_id
 
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._running = False
         self._logger = logging.getLogger(__name__)
 
         # Error tracking for backoff
-        self._error_counts: Dict[str, int] = {}
-        self._last_error_time: Dict[str, float] = {}
+        self._error_counts: dict[str, int] = {}
+        self._last_error_time: dict[str, float] = {}
 
     # ============================================================================
     # Lifecycle Methods
@@ -125,7 +125,7 @@ class MonitoringService:
             try:
                 # Wait for task to complete
                 await asyncio.wait_for(self._task, timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._logger.warning("Monitoring task did not stop within timeout")
             except asyncio.CancelledError:
                 self._logger.info("Monitoring task cancelled successfully")
@@ -189,7 +189,7 @@ class MonitoringService:
 
         self._logger.info("Monitoring loop exited")
 
-    async def _process_instance(self, instance_id: str, instance_data: Dict) -> None:
+    async def _process_instance(self, instance_id: str, instance_data: dict) -> None:
         """
         Process a single instance and generate summary.
 
@@ -290,7 +290,7 @@ class MonitoringService:
         instance_id: str,
         summary: str,
         status: str,
-        metadata: Optional[Dict] = None
+        metadata: dict | None = None
     ) -> Path:
         """
         Persist summary to disk using atomic writes.
@@ -319,7 +319,7 @@ class MonitoringService:
             instance_dir.mkdir(parents=True, exist_ok=True)
 
             # Generate filename with timestamp
-            timestamp = datetime.now(timezone.utc)
+            timestamp = datetime.now(UTC)
             filename = self._get_summary_filename(timestamp)
             summary_file = instance_dir / filename
 
@@ -350,7 +350,7 @@ class MonitoringService:
                 self._logger.critical("Disk full, cannot write summaries")
             raise
 
-    async def _atomic_write(self, filepath: Path, data: Dict) -> None:
+    async def _atomic_write(self, filepath: Path, data: dict) -> None:
         """
         Perform atomic write to file.
 
@@ -523,7 +523,7 @@ class MonitoringService:
         self,
         instance_id: str,
         latest: bool = True
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """
         Retrieve a summary for a specific instance.
 
@@ -549,7 +549,7 @@ class MonitoringService:
                             content = await f.read()
                             return json.loads(content)
                     else:
-                        with open(latest_file, 'r') as f:
+                        with open(latest_file) as f:
                             return json.load(f)
 
             return None
@@ -558,7 +558,7 @@ class MonitoringService:
             self._logger.error(f"Error reading summary for {instance_id}: {e}")
             return None
 
-    async def get_all_summaries(self) -> Dict[str, Dict]:
+    async def get_all_summaries(self) -> dict[str, dict]:
         """
         Retrieve the latest summaries for all monitored instances.
 

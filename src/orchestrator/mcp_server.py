@@ -49,7 +49,7 @@ class OrchestrationMCPServer:
         source_tools = self.manager.mcp._tool_manager._tools
 
         registered_count = 0
-        for tool_name, tool_func in source_tools.items():
+        for _tool_name, tool_func in source_tools.items():
             # Get the original function from the FunctionTool
             original_func = tool_func.fn
 

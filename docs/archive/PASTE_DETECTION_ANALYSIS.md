@@ -16,7 +16,7 @@
 
 ### Current Implementation Bug
 
-Location: `/Users/nadavbarkai/dev/madrox/src/orchestrator/tmux_instance_manager.py:1507-1550`
+Location: `/path/to/user/dev/madrox/src/orchestrator/tmux_instance_manager.py:1507-1550`
 
 The current code does this for each line:
 
@@ -360,7 +360,7 @@ def test_large_message_no_paste_prompt():
 
 ## Exact Code Fix
 
-**File**: `/Users/nadavbarkai/dev/madrox/src/orchestrator/tmux_instance_manager.py`
+**File**: `/path/to/user/dev/madrox/src/orchestrator/tmux_instance_manager.py`
 
 **Lines**: 1507-1550 (method `_send_multiline_message_to_pane`)
 

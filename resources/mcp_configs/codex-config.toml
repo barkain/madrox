@@ -19,7 +19,7 @@ description = "Claude Orchestrator - Spawn and manage multiple Claude instances"
 # Command to run the stdio server
 # Update the path to point to your Madrox installation
 command = "python"
-args = ["/Users/nadavbarkai/dev/madrox/run_stdio_server.py"]
+args = ["/path/to/user/dev/madrox/run_stdio_server.py"]
 
 # Environment variables (optional)
 env = {
