@@ -121,15 +121,17 @@ async def test_validation_catches_missing_tools(test_config):
 
 
 def test_class_docstring_updated():
-    """Test that class docstring reflects the mount() approach."""
+    """Test that class docstring reflects the wrapper functions approach."""
     docstring = OrchestrationMCPServer.__doc__
 
-    # Verify docstring mentions mount() approach
-    assert 'mount' in docstring.lower(), "Docstring should mention mount() approach"
+    assert docstring is not None, "Class should have a docstring"
 
-    # Verify it doesn't still reference manual wrapper creation
-    assert 'manually register' not in docstring.lower() or 'mount' in docstring.lower(), \
-        "Docstring should not reference manual registration without mentioning mount()"
+    # Verify docstring mentions wrapper functions approach
+    assert 'wrapper' in docstring.lower(), "Docstring should mention wrapper functions approach"
+
+    # Verify it mentions proper binding
+    assert 'binding' in docstring.lower() or 'bind' in docstring.lower(), \
+        "Docstring should reference proper binding of methods"
 
 
 @pytest.mark.asyncio
