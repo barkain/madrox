@@ -34,6 +34,10 @@ htmlcov/
 .coverage.*
 *.cover
 .hypothesis/
+.playwright-mcp/
+
+# Linting
+.ruff_cache/
 
 # IDE
 .idea/
