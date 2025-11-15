@@ -8,12 +8,13 @@ import logging
 import re
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import libtmux
 
+from .compat import UTC
 from .llm_summarizer import LLMSummarizer
 from .monitoring_service import MonitoringService
 from .name_generator import get_instance_name
@@ -1675,6 +1676,14 @@ class TmuxInstanceManager:
             message: Message content (may contain newlines)
         """
         import time
+
+        # Health check: verify Claude CLI is running (not at shell prompt)
+        pane_content = pane.cmd('capture-pane', '-p').stdout[-500:]
+        shell_indicators = ['zsh: ', 'bash: ', '$ ']
+        if any(indicator in pane_content for indicator in shell_indicators):
+            raise RuntimeError(
+                "Claude CLI has exited. Instance at shell prompt. Restart needed."
+            )
 
         message_size_kb = len(message) / 1024
         lines = message.split("\n")

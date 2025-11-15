@@ -12,9 +12,11 @@ import json
 import logging
 import os
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+from .compat import UTC
 
 try:
     import aiofiles

@@ -2,8 +2,9 @@
 
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 
+from orchestrator.compat import UTC
 from supervision.analysis.models import AnalysisResult, AnalysisStatus, Message
 
 logger = logging.getLogger(__name__)

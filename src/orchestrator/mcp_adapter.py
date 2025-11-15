@@ -617,7 +617,9 @@ Begin execution now. Spawn your team and start the workflow."""
                     elif tool_name == "coordinate_instances":
                         # Bypass decorator - inline coordination logic
                         import uuid
-                        from datetime import UTC, datetime
+                        from datetime import datetime
+
+                        from .compat import UTC
 
                         task_id = str(uuid.uuid4())
                         coordinator_id = tool_args["coordinator_id"]

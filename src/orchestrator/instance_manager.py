@@ -3,12 +3,13 @@
 import asyncio
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 
+from .compat import UTC
 from .config import validate_model
 from .logging_manager import LoggingManager
 from .tmux_instance_manager import TmuxInstanceManager

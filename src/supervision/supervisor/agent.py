@@ -7,10 +7,11 @@ detects issues, makes autonomous decisions, and executes remediation actions.
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from orchestrator.compat import UTC
 from supervision.analysis.analyzer import TranscriptAnalyzer
 from supervision.analysis.models import AnalysisStatus
 from supervision.events.bus import EventBus
@@ -257,8 +258,9 @@ class SupervisorAgent:
             return issues
 
         # Parse transcript into messages (simple line-based parsing)
-        from datetime import UTC, datetime
+        from datetime import datetime
 
+        from orchestrator.compat import UTC
         from supervision.analysis.models import Message
 
         messages = [

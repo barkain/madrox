@@ -10,8 +10,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
+
+from ..compat import UTC
 
 try:
     from anthropic import AsyncAnthropic
