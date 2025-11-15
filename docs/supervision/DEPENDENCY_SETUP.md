@@ -359,31 +359,6 @@ jobs:
         run: uv run pytest tests/
 ```
 
-### Docker Integration
-
-```dockerfile
-# Dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
-
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
-
-# Install dependencies
-RUN uv sync --no-dev
-
-# Copy application
-COPY . .
-
-# Run application
-CMD ["uv", "run", "python", "main.py"]
-```
-
 ## Summary
 
 - **Same Repo**: Import directly from `supervision.*` and `orchestrator.*`

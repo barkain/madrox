@@ -439,8 +439,6 @@ artifacts:
       - "*.md"
       - "*.json"
       - "requirements.txt"
-      - "Dockerfile"
-      - "docker-compose.yml"
     exclude:
       - ".git"
       - "__pycache__"
@@ -514,8 +512,6 @@ DEFAULT_CONFIG = {
         "*.log",
         "*.yml",
         "*.yaml",
-        "Dockerfile",
-        "docker-compose.yml",
         "requirements.txt",
         "package.json",
         "Makefile",
@@ -696,53 +692,6 @@ ARTIFACTS_RETENTION_DAYS=30
 ARTIFACTS_MAX_SIZE_GB=100
 ARTIFACTS_PATTERNS="*.py,*.md,*.json,requirements.txt"
 ARTIFACTS_EXCLUDE_PATTERNS=".git,__pycache__,node_modules"
-```
-
-### Docker Environment
-
-```dockerfile
-# Dockerfile
-FROM python:3.11
-
-WORKDIR /app
-COPY . .
-
-ENV ARTIFACTS_DIR=/artifacts
-ENV ARTIFACTS_ENABLED=true
-ENV ARTIFACTS_COMPRESS=true
-ENV ARTIFACTS_RETENTION_DAYS=30
-
-VOLUME ["/artifacts"]
-
-ENTRYPOINT ["python", "run_orchestrator.py"]
-```
-
-### Docker Compose
-
-```yaml
-# docker-compose.yml
-version: "3.9"
-
-services:
-  madrox:
-    build: .
-    ports:
-      - "8001:8001"
-    environment:
-      ARTIFACTS_DIR: /artifacts
-      ARTIFACTS_ENABLED: "true"
-      ARTIFACTS_COMPRESS: "true"
-      ARTIFACTS_RETENTION_DAYS: "30"
-    volumes:
-      - artifacts:/artifacts
-    networks:
-      - madrox-net
-
-volumes:
-  artifacts:
-
-networks:
-  madrox-net:
 ```
 
 ## Runtime Configuration Changes

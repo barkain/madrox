@@ -194,7 +194,6 @@ codex mcp add madrox $(pwd)/madrox-mcp
 ## 📚 Next Steps
 
 - **Full Documentation**: See `README.md` for all available MCP tools
-- **Production Deployment**: See `docker/README.md` for containerized deployment
 - **Advanced Setup**: See `STDIO_MCP_SETUP.md` for detailed MCP configuration
 - **Examples**: Check `examples/` directory for usage patterns
 - **Tests**: Run `pytest tests/` to verify your installation
