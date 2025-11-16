@@ -88,7 +88,7 @@ class IncrementalLogReader:
         # Get previous position
         position = self.position_tracker.get_position(instance_id, log_type)
 
-        # Calculate current checksum for rotation detection
+        # Calculate current checksum (always calculate for storage)
         current_checksum = self._calculate_checksum(log_path)
 
         # Determine if we need to start from beginning
@@ -97,13 +97,6 @@ class IncrementalLogReader:
             # First time reading this file
             logger.info(f"First read of log file: {log_path}")
             start_from_beginning = True
-        elif position.checksum != current_checksum:
-            # File has been rotated or truncated
-            logger.info(
-                f"Log rotation detected for {log_path} "
-                f"(checksum changed from {position.checksum} to {current_checksum})"
-            )
-            start_from_beginning = True
         elif position.last_byte_offset > file_size:
             # File was truncated
             logger.warning(
@@ -111,6 +104,18 @@ class IncrementalLogReader:
                 f"(offset {position.last_byte_offset} > size {file_size})"
             )
             start_from_beginning = True
+        elif position.checksum != current_checksum:
+            # File has been rotated or content at beginning changed
+            # Only trigger if file size suggests rotation (decreased or similar size)
+            # to avoid false positives when appending to files smaller than checksum size
+            if file_size <= position.last_byte_offset + 100:
+                # File didn't grow much or shrunk - likely rotation
+                logger.info(
+                    f"Log rotation detected for {log_path} "
+                    f"(checksum changed from {position.checksum} to {current_checksum})"
+                )
+                start_from_beginning = True
+            # else: File grew significantly - likely append, checksum change is expected
 
         # Read new content
         try:
@@ -120,7 +125,8 @@ class IncrementalLogReader:
                     offset = 0
                     line_number = 0
                 else:
-                    # Seek to last position
+                    # Seek to last position (position is guaranteed non-None here)
+                    assert position is not None, "position should not be None when not starting from beginning"
                     offset = position.last_byte_offset
                     line_number = position.last_line_number
                     f.seek(offset)
@@ -129,7 +135,11 @@ class IncrementalLogReader:
                 new_lines: list[str] = []
                 lines_read = 0
 
-                for line in f:
+                while True:
+                    line = f.readline()
+                    if not line:  # EOF
+                        break
+
                     new_lines.append(line.rstrip("\n"))
                     lines_read += 1
                     line_number += 1
@@ -174,11 +184,12 @@ class IncrementalLogReader:
             return [], 0
 
     def _calculate_checksum(self, file_path: Path) -> str:
-        """Calculate MD5 checksum of first 1KB of file for rotation detection.
+        """Calculate MD5 checksum of first 16 bytes of file for rotation detection.
 
-        We only checksum the beginning of the file for efficiency. This is
-        sufficient to detect rotation/truncation while avoiding expensive
-        full-file checksums on large log files.
+        We only checksum a small fixed portion at the beginning of the file. This is
+        sufficient to detect rotation/truncation while minimizing false positives when
+        new content is appended to small files. Using only 16 bytes ensures the
+        checksum is less likely to change when appending content.
 
         Args:
             file_path: Path to file.
@@ -188,8 +199,9 @@ class IncrementalLogReader:
         """
         try:
             with file_path.open("rb") as f:
-                # Read first 1KB for checksum
-                chunk = f.read(1024)
+                # Read only first 16 bytes for checksum to minimize false rotation
+                # detection on small files when new content is appended
+                chunk = f.read(16)
                 if not chunk:
                     return ""
                 return hashlib.md5(chunk).hexdigest()

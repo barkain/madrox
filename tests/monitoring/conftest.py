@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from src.orchestrator.monitoring.models import AgentSummary, LogPosition, OnTrackStatus
-from src.orchestrator.monitoring.position_tracker import PositionTracker
+from orchestrator.monitoring.models import AgentSummary, LogPosition, OnTrackStatus
+from orchestrator.monitoring.position_tracker import PositionTracker
 
 
 @pytest.fixture

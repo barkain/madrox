@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from src.orchestrator.monitoring.log_reader import IncrementalLogReader
-from src.orchestrator.monitoring.position_tracker import PositionTracker
+from orchestrator.monitoring.log_reader import IncrementalLogReader
+from orchestrator.monitoring.position_tracker import PositionTracker
 
 
 class TestIncrementalLogReaderBasic:

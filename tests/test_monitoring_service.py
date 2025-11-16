@@ -21,15 +21,15 @@ class MockInstanceManager:
     def __init__(self):
         self.instances = {
             "test-instance-1": {
-                "status": "running",
+                "state": "running",
                 "name": "test_agent_1"
             },
             "test-instance-2": {
-                "status": "busy",
+                "state": "busy",
                 "name": "test_agent_2"
             },
             "test-instance-3": {
-                "status": "completed",
+                "state": "completed",
                 "name": "test_agent_3"
             }
         }
@@ -38,7 +38,7 @@ class MockInstanceManager:
         """Return all instances."""
         return self.instances
 
-    def get_instance_output(self, instance_id: str, limit: int = 1000):
+    async def get_instance_output(self, instance_id: str, limit: int = 1000):
         """Return mock output for an instance."""
         return {
             "output": f"Mock output for {instance_id}\nLine 2\nLine 3"
@@ -175,7 +175,13 @@ async def test_summary_persistence(monitoring_service, temp_storage):
 
     # Check that summary files were created
     storage_path = Path(temp_storage)
-    instance_dirs = list(storage_path.iterdir())
+
+    # Find session directory
+    session_dirs = [d for d in storage_path.iterdir() if d.is_dir() and d.name.startswith("session_")]
+    assert len(session_dirs) >= 1, "Should have created session directory"
+
+    session_dir = session_dirs[0]
+    instance_dirs = list(session_dir.iterdir())
 
     # Should have created directories for active instances
     assert len(instance_dirs) >= 1
@@ -200,7 +206,12 @@ async def test_summary_file_format(monitoring_service, temp_storage):
 
     # Find a summary file
     storage_path = Path(temp_storage)
-    for instance_dir in storage_path.iterdir():
+    # Navigate into session directory
+    session_dirs = [d for d in storage_path.iterdir() if d.is_dir() and d.name.startswith("session_")]
+    assert len(session_dirs) >= 1
+    session_dir = session_dirs[0]
+
+    for instance_dir in session_dir.iterdir():
         if instance_dir.is_dir():
             summary_files = list(instance_dir.glob("summary_*.json"))
             if summary_files:
@@ -276,8 +287,12 @@ async def test_get_summary(monitoring_service, temp_storage):
 
     # Get summary for an instance
     storage_path = Path(temp_storage)
-    instance_dirs = list(storage_path.iterdir())
+    # Navigate into session directory
+    session_dirs = [d for d in storage_path.iterdir() if d.is_dir() and d.name.startswith("session_")]
+    assert len(session_dirs) >= 1
+    session_dir = session_dirs[0]
 
+    instance_dirs = list(session_dir.iterdir())
     if instance_dirs and instance_dirs[0].is_dir():
         instance_id = instance_dirs[0].name
         summary = await monitoring_service.get_summary(instance_id)

@@ -13,7 +13,7 @@ Phase 2: LLM Summarizer - Testing
 """
 
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import aiohttp
 import pytest
@@ -122,10 +122,12 @@ async def test_summarize_with_valid_api_key(summarizer_with_api_key, sample_acti
 
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
+    mock_post.__aexit__.return_value = AsyncMock()
 
     with patch('aiohttp.ClientSession') as mock_session_class:
         mock_session = AsyncMock()
-        mock_session.post.return_value = mock_post
+        # Use regular Mock for post() since it returns a context manager, not a coroutine
+        mock_session.post = Mock(return_value=mock_post)
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         # Call summarize_activity
