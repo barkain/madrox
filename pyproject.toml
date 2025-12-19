@@ -11,6 +11,22 @@ version = "0.1.0"
 description = "Claude Conversational Orchestrator MCP Server - Enable Claude to spawn and manage multiple Claude instances"
 readme = "README.md"
 requires-python = ">=3.11"
+authors = [
+    { name = "Nadav Barkai" }
+]
+license = "MIT"
+keywords = ["mcp", "claude", "orchestrator", "ai", "agents", "llm", "automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "fastapi>=0.104.1",
     "uvicorn[standard]>=0.24.0",
@@ -41,6 +57,13 @@ dev = [
 
 [project.scripts]
 claude-orchestrator = "src.orchestrator.server:main"
+
+[project.urls]
+Homepage = "https://github.com/nadavbarkai/madrox"
+Repository = "https://github.com/nadavbarkai/madrox"
+Documentation = "https://github.com/nadavbarkai/madrox/tree/main/docs"
+Issues = "https://github.com/nadavbarkai/madrox/issues"
+Changelog = "https://github.com/nadavbarkai/madrox/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [

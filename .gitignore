@@ -35,6 +35,7 @@ htmlcov/
 *.cover
 .hypothesis/
 .playwright-mcp/
+coverage.json
 
 # Linting
 .ruff_cache/

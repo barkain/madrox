@@ -314,7 +314,7 @@ result = await spawn_multiple_instances(
 
 ---
 
-#### spawn_codex_instance
+#### spawn_codex
 
 Spawn a new OpenAI Codex instance (similar to `spawn_claude` but for Codex CLI).
 
@@ -2123,7 +2123,7 @@ claude mcp add madrox http://localhost:8001/mcp --transport http
 **Stdio Transport (Codex - automatic):**
 ```python
 # Codex instances automatically connect to stdio server
-spawn_codex_instance(name="codex-worker")
+spawn_codex(name="codex-worker")
 ```
 
 ---

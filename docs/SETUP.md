@@ -66,7 +66,7 @@ Fastest way to get Madrox running for development and testing.
 ### 1. Clone Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/nadavbarkai/madrox.git
 cd madrox-containerization
 ```
 
@@ -170,7 +170,7 @@ pip install uv
 ### 3. Clone Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/nadavbarkai/madrox.git
 cd madrox-containerization/src/orchestrator
 ```
 

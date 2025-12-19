@@ -854,7 +854,7 @@ cat /tmp/madrox_logs/instances/{instance_id}/instance.log
 
 ### Support Channels
 
-- **GitHub Issues**: https://github.com/yourusername/madrox/issues
+- **GitHub Issues**: https://github.com/nadavbarkai/madrox/issues
 - **Documentation**: See `docs/` directory for comprehensive guides
 - **Examples**: Review `tests/integration_demo.py` for working patterns
 

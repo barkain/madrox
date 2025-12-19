@@ -48,14 +48,16 @@ MADROX_TRANSPORT=stdio python run_orchestrator.py
 
 ### Testing
 ```bash
-# Run full test suite (26 tests)
-uv run pytest tests/test_orchestrator.py -v
+# Run full test suite
+uv run pytest tests/ -v
 
 # Run with coverage
-uv run pytest tests/test_orchestrator.py -v --cov=src/orchestrator --cov-report=html
+uv run pytest tests/ -v --cov=src/orchestrator --cov-report=html
 
-# Run single test
-uv run pytest tests/test_orchestrator.py::TestInstanceManager::test_spawn_instance_basic -v
+# Run specific test files
+uv run pytest tests/test_llm_summarizer.py -v
+uv run pytest tests/test_monitoring_service.py -v
+uv run pytest tests/test_mcp_tools_integration.py -v
 
 # Run integration demo
 uv run python tests/integration_demo.py
@@ -79,16 +81,22 @@ uv run mypy src/
 
 **Key Components:**
 
-1. **InstanceManager** (`src/orchestrator/instance_manager.py`) - Central orchestrator that:
-   - Spawns Claude Code CLI processes using `subprocess.Popen`
+1. **TmuxInstanceManager** (`src/orchestrator/tmux_instance_manager.py`) - Central orchestrator that:
+   - Spawns Claude Code CLI processes in isolated tmux sessions
    - Manages process lifecycle and state transitions
-   - Communicates via stdin/stdout using JSON streaming format
-   - Handles message routing and response buffering
+   - Communicates via terminal I/O using tmux send-keys and capture-pane
+   - Handles message routing and response parsing from terminal output
    - Tracks resource usage and enforces limits
 
 2. **MCP Server** (`src/orchestrator/server.py`) - FastAPI-based server exposing orchestration capabilities as MCP tools. Handles tool registration, request validation, and response formatting.
 
-3. **Data Models** - Dual model system:
+3. **LLMSummarizer** (`src/orchestrator/llm_summarizer.py`) - Optional activity summarization service:
+   - Generates natural language summaries of instance activity via OpenRouter API
+   - Supports multiple free and paid LLM models (Gemini, DeepSeek, Claude, etc.)
+   - Robust error handling with automatic fallback summaries
+   - Configurable via OPENROUTER_API_KEY environment variable
+
+4. **Data Models** - Dual model system:
    - `models.py`: SQLAlchemy models for database persistence (future capability)
    - `simple_models.py`: Lightweight Pydantic-free models for current runtime use
 
@@ -174,6 +182,7 @@ Environment variables:
 - `WORKSPACE_DIR`: Base workspace path (default: /tmp/claude_orchestrator)
 - `LOG_DIR`: Log directory (default: /tmp/madrox_logs)
 - `LOG_LEVEL`: Logging verbosity (default: INFO)
+- `OPENROUTER_API_KEY`: Optional API key for LLM-based activity summarization (OpenRouter)
 
 **Transport Modes:**
 - **HTTP/SSE**: Used by Claude Code clients, provides web UI and REST API
