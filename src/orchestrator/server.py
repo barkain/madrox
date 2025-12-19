@@ -6,38 +6,8 @@ import os
 from datetime import datetime
 from typing import Any
 
-try:
-    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-    from fastapi.middleware.cors import CORSMiddleware
-except ImportError:
-    # Fallback for type checking
-    class FastAPI:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def add_middleware(self, *args, **kwargs):
-            pass
-
-        def get(self, *args, **kwargs):
-            def decorator(func):
-                return func
-
-            return decorator
-
-        def post(self, *args, **kwargs):
-            def decorator(func):
-                return func
-
-            return decorator
-
-    class HTTPException(Exception):
-        def __init__(self, status_code, detail):
-            self.status_code = status_code
-            self.detail = detail
-
-    class CORSMiddleware:
-        pass
-
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from .instance_manager import InstanceManager
 from .logging_manager import LoggingManager, get_audit_log_stream_handler, get_log_stream_handler
