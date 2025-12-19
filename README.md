@@ -299,7 +299,7 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 ```bash
 git clone https://github.com/nadavbarkai/madrox.git
 cd madrox
-uv sync --all-groups
+uv sync
 ```
 
 **2. Start the server:**
