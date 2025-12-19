@@ -19,6 +19,6 @@ if sys.version_info >= (3, 11):
 else:
     # Python 3.10: datetime.UTC doesn't exist yet
     # Use timezone.utc as equivalent fallback
-    UTC = timezone.utc
+    UTC = timezone.utc  # noqa: UP017 - Intentional compatibility for Python 3.10
 
 __all__ = ["UTC"]

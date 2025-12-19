@@ -4,8 +4,8 @@ import logging
 
 from fastmcp import FastMCP
 
-from src.orchestrator.instance_manager import InstanceManager
-from src.orchestrator.simple_models import OrchestratorConfig
+from orchestrator.instance_manager import InstanceManager
+from orchestrator.simple_models import OrchestratorConfig
 
 logger = logging.getLogger(__name__)
 

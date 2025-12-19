@@ -4,9 +4,8 @@ This test module verifies that the supervision package integrates correctly
 with the Madrox orchestrator and provides the expected API surface.
 """
 
-import asyncio
 import logging
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -162,6 +161,7 @@ class TestIntegrationModels:
     def test_detected_issue_model(self):
         """Test DetectedIssue model structure."""
         from datetime import datetime
+
         from orchestrator.compat import UTC
 
         issue = DetectedIssue(
@@ -181,6 +181,7 @@ class TestIntegrationModels:
     def test_intervention_record_model(self):
         """Test InterventionRecord model structure."""
         from datetime import datetime
+
         from orchestrator.compat import UTC
 
         intervention = InterventionRecord(
@@ -245,6 +246,7 @@ class TestIntegrationLifecycle:
     async def test_supervisor_issue_detection(self, mock_instance_manager):
         """Test supervisor can detect and report issues."""
         from datetime import datetime
+
         from orchestrator.compat import UTC
 
         with patch("supervision.integration.manager_integration.SupervisorAgent") as MockAgent:
@@ -271,6 +273,7 @@ class TestIntegrationLifecycle:
     async def test_supervisor_intervention_tracking(self, mock_instance_manager):
         """Test supervisor tracks interventions."""
         from datetime import datetime
+
         from orchestrator.compat import UTC
 
         with patch("supervision.integration.manager_integration.SupervisorAgent") as MockAgent:

@@ -17,25 +17,25 @@ class TestUTCCompat:
 
     def test_utc_is_timezone_utc(self):
         """Test that UTC is equivalent to timezone.utc."""
-        assert UTC == timezone.utc
+        assert UTC == timezone.utc  # noqa: UP017 - Testing compatibility layer
 
     def test_utc_with_datetime_now(self):
         """Test that UTC works with datetime.now()."""
         now = datetime.now(UTC)
-        assert now.tzinfo == timezone.utc
+        assert now.tzinfo == timezone.utc  # noqa: UP017 - Testing compatibility layer
         assert now.tzinfo is not None
 
     def test_utc_with_datetime_fromtimestamp(self):
         """Test that UTC works with datetime.fromtimestamp()."""
         timestamp = 1234567890
         dt = datetime.fromtimestamp(timestamp, UTC)
-        assert dt.tzinfo == timezone.utc
+        assert dt.tzinfo == timezone.utc  # noqa: UP017 - Testing compatibility layer
 
     def test_utc_replace(self):
         """Test that UTC works with datetime.replace()."""
         dt = datetime(2025, 1, 1, 12, 0, 0)
         dt_utc = dt.replace(tzinfo=UTC)
-        assert dt_utc.tzinfo == timezone.utc
+        assert dt_utc.tzinfo == timezone.utc  # noqa: UP017 - Testing compatibility layer
 
     @pytest.mark.skipif(
         sys.version_info < (3, 11),
@@ -43,7 +43,7 @@ class TestUTCCompat:
     )
     def test_utc_is_native_in_py311_plus(self):
         """Test that UTC is the native datetime.UTC in Python 3.11+."""
-        if sys.version_info >= (3, 11):
+        if sys.version_info >= (3, 11):  # noqa: UP036 - Testing version-specific behavior
             from datetime import UTC as NativeUTC
 
             assert UTC is NativeUTC
@@ -54,7 +54,7 @@ class TestUTCCompat:
     )
     def test_utc_is_timezone_utc_in_py310(self):
         """Test that UTC is timezone.utc in Python 3.10."""
-        assert UTC is timezone.utc
+        assert UTC is timezone.utc  # noqa: UP017 - Testing compatibility layer
 
 
 class TestUTCUsage:
@@ -66,7 +66,9 @@ class TestUTCUsage:
         # Should be timezone-aware
         assert now.tzinfo is not None
         # Should be in UTC
-        assert now.utcoffset().total_seconds() == 0
+        offset = now.utcoffset()
+        assert offset is not None
+        assert offset.total_seconds() == 0
 
     def test_datetime_comparison_with_utc(self):
         """Test comparing datetime objects with UTC timezone."""

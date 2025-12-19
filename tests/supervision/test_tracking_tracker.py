@@ -8,7 +8,6 @@ from datetime import datetime
 import pytest
 
 from orchestrator.compat import UTC
-
 from supervision.events.bus import EventBus
 from supervision.events.models import Event
 from supervision.tracking.models import ProgressSnapshot, TaskStatus

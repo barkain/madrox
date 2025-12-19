@@ -3,8 +3,8 @@
 import asyncio
 import logging
 
-from src.orchestrator.instance_manager import InstanceManager, mcp
-from src.orchestrator.simple_models import OrchestratorConfig
+from orchestrator.instance_manager import InstanceManager, mcp
+from orchestrator.simple_models import OrchestratorConfig
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
