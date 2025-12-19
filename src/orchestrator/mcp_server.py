@@ -62,9 +62,7 @@ class OrchestrationMCPServer:
 
             registered_count += 1
 
-        logger.info(
-            f"Registered {registered_count} bound tools (self parameter pre-bound)"
-        )
+        logger.info(f"Registered {registered_count} bound tools (self parameter pre-bound)")
 
     async def run(self):
         """Get the FastMCP server instance for running."""

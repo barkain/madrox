@@ -47,24 +47,19 @@ class LLMSummarizer:
     # Recommended models for different use cases (2025)
     RECOMMENDED_MODELS = {
         # FREE OPTIONS (no cost)
-        "free_fast": "google/gemini-2.0-flash-exp:free",      # Best free option, faster than Gemini 1.5
-        "free_balanced": "deepseek/deepseek-r1:free",         # MIT licensed, good reasoning
-        "free_concurrent": "minimax/minimax-m2:free",         # High concurrency, cost efficient
-
+        "free_fast": "google/gemini-2.0-flash-exp:free",  # Best free option, faster than Gemini 1.5
+        "free_balanced": "deepseek/deepseek-r1:free",  # MIT licensed, good reasoning
+        "free_concurrent": "minimax/minimax-m2:free",  # High concurrency, cost efficient
         # CHEAP OPTIONS (ultra-low cost)
-        "ultra_fast": "google/gemini-2.5-flash-lite",         # Ultra-low latency, minimal cost
-        "fast": "google/gemini-2.5-flash",                    # Fast, advanced reasoning
-
+        "ultra_fast": "google/gemini-2.5-flash-lite",  # Ultra-low latency, minimal cost
+        "fast": "google/gemini-2.5-flash",  # Fast, advanced reasoning
         # QUALITY OPTIONS (balanced cost/quality)
-        "balanced": "anthropic/claude-haiku-4.5",             # Default, 200K context, good quality
-        "reasoning": "anthropic/claude-sonnet-4.5",           # Advanced reasoning, higher cost
+        "balanced": "anthropic/claude-haiku-4.5",  # Default, 200K context, good quality
+        "reasoning": "anthropic/claude-sonnet-4.5",  # Advanced reasoning, higher cost
     }
 
     def __init__(
-        self,
-        api_key: str | None = None,
-        model: str = DEFAULT_MODEL,
-        timeout: int = DEFAULT_TIMEOUT
+        self, api_key: str | None = None, model: str = DEFAULT_MODEL, timeout: int = DEFAULT_TIMEOUT
     ):
         """
         Initialize the LLMSummarizer.
@@ -129,10 +124,7 @@ class LLMSummarizer:
             )
 
     async def summarize_activity(
-        self,
-        instance_id: str,
-        activity_text: str,
-        max_tokens: int = DEFAULT_MAX_TOKENS
+        self, instance_id: str, activity_text: str, max_tokens: int = DEFAULT_MAX_TOKENS
     ) -> str:
         """
         Generate a natural language summary of instance activity.
@@ -178,9 +170,7 @@ class LLMSummarizer:
         # Generate summary via OpenRouter API
         try:
             summary = await self._call_openrouter_api(
-                instance_id=instance_id,
-                activity_text=activity_text,
-                max_tokens=max_tokens
+                instance_id=instance_id, activity_text=activity_text, max_tokens=max_tokens
             )
             return summary
 
@@ -189,9 +179,7 @@ class LLMSummarizer:
             return f"Instance {instance_id}: Summary generation timed out"
 
         except aiohttp.ClientError as e:
-            self.logger.warning(
-                f"Network error generating summary for instance {instance_id}: {e}"
-            )
+            self.logger.warning(f"Network error generating summary for instance {instance_id}: {e}")
             return f"Instance {instance_id}: Summary unavailable (network error)"
 
         except Exception as e:
@@ -201,10 +189,7 @@ class LLMSummarizer:
             return f"Instance {instance_id}: Summary unavailable (error: {type(e).__name__})"
 
     async def _call_openrouter_api(
-        self,
-        instance_id: str,
-        activity_text: str,
-        max_tokens: int
+        self, instance_id: str, activity_text: str, max_tokens: int
     ) -> str:
         """
         Call OpenRouter API to generate summary.
@@ -234,19 +219,14 @@ class LLMSummarizer:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/anthropics/madrox",
-            "X-Title": "Madrox Instance Monitor"
+            "X-Title": "Madrox Instance Monitor",
         }
 
         payload = {
             "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
+            "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
-            "temperature": 0.7
+            "temperature": 0.7,
         }
 
         # Make request with timeout
@@ -254,9 +234,7 @@ class LLMSummarizer:
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
-                self.OPENROUTER_API_URL,
-                headers=headers,
-                json=payload
+                self.OPENROUTER_API_URL, headers=headers, json=payload
             ) as response:
                 # Check HTTP status
                 if response.status != 200:
@@ -264,7 +242,9 @@ class LLMSummarizer:
                     self.logger.warning(
                         f"OpenRouter API returned status {response.status}: {error_text[:200]}"
                     )
-                    return f"Instance {instance_id}: Summary unavailable (API error {response.status})"
+                    return (
+                        f"Instance {instance_id}: Summary unavailable (API error {response.status})"
+                    )
 
                 # Parse response
                 data = await response.json()
@@ -272,10 +252,14 @@ class LLMSummarizer:
                 # Extract summary from response
                 if "choices" in data and len(data["choices"]) > 0:
                     summary = data["choices"][0]["message"]["content"].strip()
-                    self.logger.debug(f"Generated summary for instance {instance_id}: {len(summary)} chars")
+                    self.logger.debug(
+                        f"Generated summary for instance {instance_id}: {len(summary)} chars"
+                    )
                     return summary
                 else:
-                    self.logger.warning(f"Unexpected API response format for instance {instance_id}")
+                    self.logger.warning(
+                        f"Unexpected API response format for instance {instance_id}"
+                    )
                     return f"Instance {instance_id}: Summary unavailable (unexpected API response)"
 
     def _build_prompt(self, instance_id: str, activity_text: str) -> str:

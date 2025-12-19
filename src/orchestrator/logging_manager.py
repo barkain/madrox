@@ -242,7 +242,9 @@ class LoggingManager:
         # We need to reconfigure ALL existing loggers in the orchestrator namespace
         # EXCEPT orchestrator.audit which has its own handlers
         for name in list(logging.Logger.manager.loggerDict.keys()):
-            if (name.startswith("orchestrator.") or name.startswith("src.orchestrator.")) and name != "orchestrator.audit":
+            if (
+                name.startswith("orchestrator.") or name.startswith("src.orchestrator.")
+            ) and name != "orchestrator.audit":
                 child_logger = logging.getLogger(name)
                 if isinstance(child_logger, logging.Logger):  # Skip PlaceHolders
                     child_logger.setLevel(logging.DEBUG)  # Let parent's handlers filter

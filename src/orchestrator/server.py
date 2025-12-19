@@ -70,7 +70,7 @@ class ClaudeOrchestratorServer:
             "ARTIFACT_PATTERNS",
             "*.py,*.rs,*.js,*.ts,*.tsx,*.jsx,*.java,*.cpp,*.c,*.h,*.go,*.rb,*.php,*.swift,*.kt,"
             "*.md,*.txt,*.pdf,*.csv,*.json,*.yaml,*.yml,*.toml,*.xml,*.html,*.css,*.sql,*.sh,"
-            "Cargo.toml,Cargo.lock,package.json,requirements.txt,Dockerfile,Makefile,README,LICENSE"
+            "Cargo.toml,Cargo.lock,package.json,requirements.txt,Dockerfile,Makefile,README,LICENSE",
         )
         self.artifact_patterns = [p.strip() for p in artifact_patterns_str.split(",")]
 
@@ -88,7 +88,9 @@ class ClaudeOrchestratorServer:
         # We need to get the exact same logger object and reconfigure it
         server_logger = logging.getLogger("orchestrator.server")
         server_logger.handlers.clear()  # Remove any default handlers
-        server_logger.propagate = True  # Propagate to "orchestrator" parent which has configured handlers
+        server_logger.propagate = (
+            True  # Propagate to "orchestrator" parent which has configured handlers
+        )
         server_logger.setLevel(logging.DEBUG)  # Let parent handlers do the filtering
 
         # Test the reconfigured module-level logger
@@ -102,13 +104,15 @@ class ClaudeOrchestratorServer:
 
         # Initialize instance manager with logging and artifacts config
         instance_manager_config = config.to_dict()
-        instance_manager_config.update({
-            "workspace_base_dir": session_workspace_dir,  # Instances work in artifacts dir
-            "artifacts_dir": session_workspace_dir,       # Same location
-            "preserve_artifacts": self.preserve_artifacts,
-            "artifact_patterns": self.artifact_patterns,
-            "session_id": self.session_id,
-        })
+        instance_manager_config.update(
+            {
+                "workspace_base_dir": session_workspace_dir,  # Instances work in artifacts dir
+                "artifacts_dir": session_workspace_dir,  # Same location
+                "preserve_artifacts": self.preserve_artifacts,
+                "artifact_patterns": self.artifact_patterns,
+                "session_id": self.session_id,
+            }
+        )
         self.instance_manager = InstanceManager(instance_manager_config)
 
         # Clean up orphaned tmux sessions from previous server runs
@@ -397,7 +401,9 @@ class ClaudeOrchestratorServer:
                                     import json
 
                                     log_entry = json.loads(line.strip())
-                                    await websocket.send_json({"type": "system_log", "data": log_entry})
+                                    await websocket.send_json(
+                                        {"type": "system_log", "data": log_entry}
+                                    )
                                 except json.JSONDecodeError:
                                     continue
                     except Exception as e:
@@ -421,7 +427,9 @@ class ClaudeOrchestratorServer:
                     if new_audit_logs:
                         for audit_entry in new_audit_logs:
                             transformed_audit = transform_audit_log(audit_entry)
-                            await websocket.send_json({"type": "audit_log", "data": transformed_audit})
+                            await websocket.send_json(
+                                {"type": "audit_log", "data": transformed_audit}
+                            )
                         # Update timestamp to the newest audit log
                         last_audit_check = new_audit_logs[-1].get("timestamp", last_audit_check)
 
@@ -762,25 +770,31 @@ class ClaudeOrchestratorServer:
                     instance_count = len([d for d in session_dir.iterdir() if d.is_dir()])
                     summary_count = len(list(session_dir.rglob("summary_*.json")))
 
-                    sessions.append({
-                        "session_id": session_dir.name,
-                        "path": str(session_dir),
-                        "instance_count": instance_count,
-                        "summary_count": summary_count,
-                        "created_at": datetime.fromtimestamp(session_dir.stat().st_ctime).isoformat()
-                    })
+                    sessions.append(
+                        {
+                            "session_id": session_dir.name,
+                            "path": str(session_dir),
+                            "instance_count": instance_count,
+                            "summary_count": summary_count,
+                            "created_at": datetime.fromtimestamp(
+                                session_dir.stat().st_ctime
+                            ).isoformat(),
+                        }
+                    )
 
             # Get current session from MonitoringService
             current_session = None
-            if hasattr(self.instance_manager, 'tmux_manager'):
-                monitoring_service = getattr(self.instance_manager.tmux_manager, 'monitoring_service', None)
+            if hasattr(self.instance_manager, "tmux_manager"):
+                monitoring_service = getattr(
+                    self.instance_manager.tmux_manager, "monitoring_service", None
+                )
                 if monitoring_service:
                     current_session = monitoring_service.session_id
 
             return {
                 "current_session": current_session,
                 "total_sessions": len(sessions),
-                "sessions": sessions
+                "sessions": sessions,
             }
 
         @self.app.get("/api/monitoring/sessions/{session_id}/summaries")
@@ -807,7 +821,7 @@ class ClaudeOrchestratorServer:
                 "session_id": session_id,
                 "timestamp": datetime.utcnow().isoformat(),
                 "instance_count": len(summaries),
-                "summaries": summaries
+                "summaries": summaries,
             }
 
         @self.app.get("/api/monitoring/sessions/{session_id}/instances/{instance_id}")
@@ -820,7 +834,7 @@ class ClaudeOrchestratorServer:
             if not instance_path.exists():
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Instance {instance_id} not found in session {session_id}"
+                    detail=f"Instance {instance_id} not found in session {session_id}",
                 )
 
             summaries = []
@@ -832,15 +846,17 @@ class ClaudeOrchestratorServer:
                 "session_id": session_id,
                 "instance_id": instance_id,
                 "summary_count": len(summaries),
-                "summaries": summaries
+                "summaries": summaries,
             }
 
         @self.app.get("/api/monitoring/current")
         async def get_current_session_summaries():
             """Get summaries for the current active session."""
             # Get current session from MonitoringService
-            if hasattr(self.instance_manager, 'tmux_manager'):
-                monitoring_service = getattr(self.instance_manager.tmux_manager, 'monitoring_service', None)
+            if hasattr(self.instance_manager, "tmux_manager"):
+                monitoring_service = getattr(
+                    self.instance_manager.tmux_manager, "monitoring_service", None
+                )
                 if monitoring_service:
                     session_id = monitoring_service.session_id
                     return await get_session_summaries(session_id)
@@ -1347,23 +1363,23 @@ class ClaudeOrchestratorServer:
                 ["tmux", "list-sessions", "-F", "#{session_name}"],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
             )
 
             if result.returncode == 0:
                 session_count = 0
-                for line in result.stdout.strip().split('\n'):
-                    if line.startswith('madrox-'):
+                for line in result.stdout.strip().split("\n"):
+                    if line.startswith("madrox-"):
                         # Kill the session
                         subprocess.run(
-                            ["tmux", "kill-session", "-t", line],
-                            capture_output=True,
-                            check=False
+                            ["tmux", "kill-session", "-t", line], capture_output=True, check=False
                         )
                         session_count += 1
 
                 if session_count > 0:
-                    logger.info(f"Cleaned up {session_count} orphaned tmux sessions from previous runs")
+                    logger.info(
+                        f"Cleaned up {session_count} orphaned tmux sessions from previous runs"
+                    )
         except Exception as e:
             logger.warning(f"Failed to cleanup orphaned tmux sessions: {e}")
 

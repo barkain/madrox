@@ -7,14 +7,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.orchestrator.monitoring.models import AgentSummary, OnTrackStatus
-from src.orchestrator.monitoring.summary_generator import SummaryGenerator
+from orchestrator.monitoring.models import AgentSummary, OnTrackStatus
+from orchestrator.monitoring.summary_generator import SummaryGenerator
 
 
 @pytest.fixture
 def mock_anthropic_client():
     """Create a mock AsyncAnthropic client."""
-    with patch("src.orchestrator.monitoring.summary_generator.AsyncAnthropic") as mock_class:
+    with patch("orchestrator.monitoring.summary_generator.AsyncAnthropic") as mock_class:
         mock_client = MagicMock()
         mock_class.return_value = mock_client
         yield mock_client
@@ -166,6 +166,7 @@ async def test_generate_summary_blocked_status(mock_anthropic_client, sample_age
 
     assert summary.on_track_status == OnTrackStatus.BLOCKED
     assert summary.idle_duration_seconds == 120.0
+    assert summary.recommended_action is not None
     assert "Investigate" in summary.recommended_action
 
 
@@ -205,17 +206,23 @@ async def test_generate_summary_unknown_status(mock_anthropic_client, sample_age
 async def test_prompt_construction(mock_anthropic_client, sample_agent_context, sample_log_lines):
     """Test that prompt is constructed correctly."""
     mock_message = MagicMock()
-    mock_message.content = [MagicMock(text=json.dumps({
-        "current_activity": "Test",
-        "on_track_status": "on_track",
-        "confidence_score": 0.5,
-        "drift_reasons": [],
-        "alignment_keywords": [],
-        "last_tool_used": None,
-        "recent_tools": [],
-        "idle_duration_seconds": 0.0,
-        "recommended_action": None,
-    }))]
+    mock_message.content = [
+        MagicMock(
+            text=json.dumps(
+                {
+                    "current_activity": "Test",
+                    "on_track_status": "on_track",
+                    "confidence_score": 0.5,
+                    "drift_reasons": [],
+                    "alignment_keywords": [],
+                    "last_tool_used": None,
+                    "recent_tools": [],
+                    "idle_duration_seconds": 0.0,
+                    "recommended_action": None,
+                }
+            )
+        )
+    ]
     mock_anthropic_client.messages.create = AsyncMock(return_value=mock_message)
 
     generator = SummaryGenerator(api_key="test-key")
@@ -242,7 +249,9 @@ async def test_prompt_construction(mock_anthropic_client, sample_agent_context, 
 
 
 @pytest.mark.asyncio
-async def test_invalid_json_response_retry(mock_anthropic_client, sample_agent_context, sample_log_lines):
+async def test_invalid_json_response_retry(
+    mock_anthropic_client, sample_agent_context, sample_log_lines
+):
     """Test retry logic when Claude returns invalid JSON."""
     # First call returns invalid JSON, second call succeeds
     valid_response = {
@@ -373,7 +382,9 @@ async def test_empty_log_lines(mock_anthropic_client, sample_agent_context):
 
 
 @pytest.mark.asyncio
-async def test_invalid_on_track_status(mock_anthropic_client, sample_agent_context, sample_log_lines):
+async def test_invalid_on_track_status(
+    mock_anthropic_client, sample_agent_context, sample_log_lines
+):
     """Test handling of invalid on_track_status value."""
     response = {
         "current_activity": "Working",
@@ -405,7 +416,9 @@ async def test_invalid_on_track_status(mock_anthropic_client, sample_agent_conte
 
 
 @pytest.mark.asyncio
-async def test_confidence_score_range(mock_anthropic_client, sample_agent_context, sample_log_lines):
+async def test_confidence_score_range(
+    mock_anthropic_client, sample_agent_context, sample_log_lines
+):
     """Test confidence scores across range 0.0-1.0."""
     for score in [0.0, 0.25, 0.5, 0.75, 1.0]:
         response = {

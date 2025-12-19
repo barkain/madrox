@@ -4,11 +4,10 @@ Tests the OrchestrationMCPServer to ensure all 27 tools are properly
 registered and accessible via the STDIO transport.
 """
 
-
 import pytest
 
-from src.orchestrator.mcp_server import OrchestrationMCPServer
-from src.orchestrator.simple_models import OrchestratorConfig
+from orchestrator.mcp_server import OrchestrationMCPServer
+from orchestrator.simple_models import OrchestratorConfig
 
 
 @pytest.fixture
@@ -35,13 +34,13 @@ async def test_all_tools_registered(test_config):
 
     # Verify specific critical tools exist
     critical_tools = [
-        'spawn_claude',
-        'spawn_codex',
-        'send_to_instance',
-        'reply_to_caller',
-        'get_pending_replies',
-        'get_instance_status',
-        'terminate_instance',
+        "spawn_claude",
+        "spawn_codex",
+        "send_to_instance",
+        "reply_to_caller",
+        "get_pending_replies",
+        "get_instance_status",
+        "terminate_instance",
     ]
 
     for tool_name in critical_tools:
@@ -57,42 +56,42 @@ async def test_tool_categories_complete(test_config):
 
     # Define expected tool categories and their members
     categories = {
-        'lifecycle': [
-            'spawn_claude',
-            'spawn_codex',
-            'spawn_multiple_instances',
-            'spawn_team_from_template',
-            'terminate_instance',
-            'terminate_multiple_instances',
+        "lifecycle": [
+            "spawn_claude",
+            "spawn_codex",
+            "spawn_multiple_instances",
+            "spawn_team_from_template",
+            "terminate_instance",
+            "terminate_multiple_instances",
         ],
-        'messaging': [
-            'send_to_instance',
-            'send_to_multiple_instances',
-            'reply_to_caller',
-            'get_pending_replies',
-            'broadcast_to_children',
-            'get_instance_output',
+        "messaging": [
+            "send_to_instance",
+            "send_to_multiple_instances",
+            "reply_to_caller",
+            "get_pending_replies",
+            "broadcast_to_children",
+            "get_instance_output",
         ],
-        'status': [
-            'get_instance_status',
-            'get_live_instance_status',
-            'get_multiple_instance_outputs',
-            'get_children',
-            'get_instance_tree',
-            'get_main_instance_id',
-            'get_tmux_pane_content',
+        "status": [
+            "get_instance_status",
+            "get_live_instance_status",
+            "get_multiple_instance_outputs",
+            "get_children",
+            "get_instance_tree",
+            "get_main_instance_id",
+            "get_tmux_pane_content",
         ],
-        'files': [
-            'retrieve_instance_file',
-            'retrieve_multiple_instance_files',
-            'list_instance_files',
-            'list_multiple_instance_files',
+        "files": [
+            "retrieve_instance_file",
+            "retrieve_multiple_instance_files",
+            "list_instance_files",
+            "list_multiple_instance_files",
         ],
-        'coordination': [
-            'coordinate_instances',
-            'interrupt_instance',
-            'interrupt_multiple_instances',
-            'get_job_status',
+        "coordination": [
+            "coordinate_instances",
+            "interrupt_instance",
+            "interrupt_multiple_instances",
+            "get_job_status",
         ],
     }
 
@@ -112,8 +111,8 @@ async def test_validation_catches_missing_tools(test_config):
 
     # The fact that server initialized successfully means validation passed
     # and 27 tools are present (validation would have raised RuntimeError otherwise)
-    assert hasattr(server, 'mcp')
-    assert hasattr(server, 'manager')
+    assert hasattr(server, "mcp")
+    assert hasattr(server, "manager")
 
     # Verify the validation constant matches reality
     tools = await server.mcp.get_tools()
@@ -127,11 +126,12 @@ def test_class_docstring_updated():
     assert docstring is not None, "Class should have a docstring"
 
     # Verify docstring mentions wrapper functions approach
-    assert 'wrapper' in docstring.lower(), "Docstring should mention wrapper functions approach"
+    assert "wrapper" in docstring.lower(), "Docstring should mention wrapper functions approach"
 
     # Verify it mentions proper binding
-    assert 'binding' in docstring.lower() or 'bind' in docstring.lower(), \
+    assert "binding" in docstring.lower() or "bind" in docstring.lower(), (
         "Docstring should reference proper binding of methods"
+    )
 
 
 @pytest.mark.asyncio

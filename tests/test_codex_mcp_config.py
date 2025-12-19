@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from src.orchestrator.tmux_instance_manager import TmuxInstanceManager
+from orchestrator.tmux_instance_manager import TmuxInstanceManager
 
 
 def test_codex_mcp_configuration():
@@ -36,7 +36,9 @@ def test_codex_mcp_configuration():
     manager._configure_mcp_servers(mock_pane, instance)
 
     # Verify `codex mcp add` commands were sent (playwright + madrox)
-    assert len(sent_commands) == 2, f"Expected 2 commands (playwright + madrox), got {len(sent_commands)}: {sent_commands}"
+    assert len(sent_commands) == 2, (
+        f"Expected 2 commands (playwright + madrox), got {len(sent_commands)}: {sent_commands}"
+    )
 
     # First command should be playwright
     assert "codex mcp add playwright npx @playwright/mcp@latest" in sent_commands[0]
@@ -80,7 +82,9 @@ def test_codex_mcp_with_env_vars():
     manager._configure_mcp_servers(mock_pane, instance)
 
     # Should have 2 commands: github + madrox (always added)
-    assert len(sent_commands) == 2, f"Expected 2 commands (github + madrox), got {len(sent_commands)}: {sent_commands}"
+    assert len(sent_commands) == 2, (
+        f"Expected 2 commands (github + madrox), got {len(sent_commands)}: {sent_commands}"
+    )
 
     # First command should be github with env var
     assert "codex mcp add github npx -y @modelcontextprotocol/server-github" in sent_commands[0]
@@ -113,7 +117,9 @@ def test_codex_madrox_stdio_support():
     manager._configure_mcp_servers(mock_pane, instance)
 
     # Should send 1 command for Madrox via stdio transport
-    assert len(sent_commands) == 1, f"Expected 1 command (madrox stdio), got {len(sent_commands)}: {sent_commands}"
+    assert len(sent_commands) == 1, (
+        f"Expected 1 command (madrox stdio), got {len(sent_commands)}: {sent_commands}"
+    )
     assert "codex mcp add madrox" in sent_commands[0]
     assert "MADROX_TRANSPORT=stdio" in sent_commands[0]
 

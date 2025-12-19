@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.orchestrator.log_stream_handler import (
+from orchestrator.log_stream_handler import (
     LogStreamHandler,
     audit_log,
     get_log_stream_handler,

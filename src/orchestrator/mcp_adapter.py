@@ -50,50 +50,55 @@ class MCPAdapter:
 
             # Filter out 'self' from inputSchema properties (artifact from method binding)
             input_schema = mcp_tool.inputSchema.copy()
-            if 'properties' in input_schema and 'self' in input_schema['properties']:
-                input_schema['properties'] = {
-                    k: v for k, v in input_schema['properties'].items() if k != 'self'
+            if "properties" in input_schema and "self" in input_schema["properties"]:
+                input_schema["properties"] = {
+                    k: v for k, v in input_schema["properties"].items() if k != "self"
                 }
-                if 'required' in input_schema and 'self' in input_schema['required']:
-                    input_schema['required'] = [
-                        r for r in input_schema['required'] if r != 'self'
-                    ]
+                if "required" in input_schema and "self" in input_schema["required"]:
+                    input_schema["required"] = [r for r in input_schema["required"] if r != "self"]
 
-            tools_list.append({
-                "name": mcp_tool.name,
-                "description": mcp_tool.description,
-                "inputSchema": input_schema,
-            })
+            tools_list.append(
+                {
+                    "name": mcp_tool.name,
+                    "description": mcp_tool.description,
+                    "inputSchema": input_schema,
+                }
+            )
 
         # Add MonitoringService tools
-        tools_list.extend([
-            {
-                "name": "get_agent_summary",
-                "description": "Get AI-generated activity summary for a specific Claude instance",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "instance_id": {"type": "string", "description": "Instance ID to retrieve summary for"}
+        tools_list.extend(
+            [
+                {
+                    "name": "get_agent_summary",
+                    "description": "Get AI-generated activity summary for a specific Claude instance",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "instance_id": {
+                                "type": "string",
+                                "description": "Instance ID to retrieve summary for",
+                            }
+                        },
+                        "required": ["instance_id"],
                     },
-                    "required": ["instance_id"]
-                }
-            },
-            {
-                "name": "get_all_agent_summaries",
-                "description": "Get activity summaries for all monitored instances",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "status_filter": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Optional filter by status"
-                        }
+                },
+                {
+                    "name": "get_all_agent_summaries",
+                    "description": "Get activity summaries for all monitored instances",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "status_filter": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Optional filter by status",
+                            }
+                        },
+                        "required": [],
                     },
-                    "required": []
-                }
-            }
-        ])
+                },
+            ]
+        )
 
         logger.info(f"Built tools list: {len(tools_list)} tools discovered from FastMCP")
         return tools_list
@@ -142,7 +147,7 @@ class MCPAdapter:
         Returns:
             Dictionary with team_size, duration, estimated_cost, supervisor_role
         """
-        lines = template_content.split('\n')
+        lines = template_content.split("\n")
 
         # Parse Team Size from "Team Size: X instances"
         team_size = 6  # default
@@ -168,8 +173,15 @@ class MCPAdapter:
         in_supervisor_section = False
         for line in lines:
             # Look for supervisor section headers
-            if any(header in line for header in ["### Technical Lead", "### Research Lead",
-                                                   "### Security Lead", "### Data Engineering Lead"]):
+            if any(
+                header in line
+                for header in [
+                    "### Technical Lead",
+                    "### Research Lead",
+                    "### Security Lead",
+                    "### Data Engineering Lead",
+                ]
+            ):
                 in_supervisor_section = True
             elif line.startswith("###"):
                 in_supervisor_section = False
@@ -184,7 +196,7 @@ class MCPAdapter:
             "team_size": team_size,
             "duration": duration,
             "estimated_cost": f"${team_size * 5}",
-            "supervisor_role": supervisor_role
+            "supervisor_role": supervisor_role,
         }
 
     def _extract_section(self, content: str, header: str) -> str:
@@ -197,7 +209,7 @@ class MCPAdapter:
         Returns:
             Section content
         """
-        lines = content.split('\n')
+        lines = content.split("\n")
         section_lines = []
         in_section = False
 
@@ -210,7 +222,7 @@ class MCPAdapter:
             if in_section:
                 section_lines.append(line)
 
-        return '\n'.join(section_lines).strip()
+        return "\n".join(section_lines).strip()
 
     def _detect_caller_instance(self) -> str | None:
         """Detect which managed instance is making the MCP tool call.
@@ -253,7 +265,8 @@ class MCPAdapter:
 
         # Strategy 3: If only one running instance, it must be the caller
         running_instances = [
-            iid for iid, inst in self.manager.instances.items()
+            iid
+            for iid, inst in self.manager.instances.items()
             if inst.get("state") in ["running", "idle", "busy"]
         ]
 
@@ -262,7 +275,9 @@ class MCPAdapter:
             logger.info(f"Auto-detected caller as only running instance: {caller_id}")
             return caller_id
 
-        logger.warning(f"Failed to auto-detect caller instance (found {len(running_instances)} running instances)")
+        logger.warning(
+            f"Failed to auto-detect caller instance (found {len(running_instances)} running instances)"
+        )
         return None
 
     def _build_template_instruction(self, template_content: str, task_description: str) -> str:
@@ -470,7 +485,9 @@ Begin execution now. Spawn your team and start the workflow."""
                             if response is None:
                                 response = {"status": "message_sent"}
                         else:
-                            raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
+                            raise ValueError(
+                                f"Unsupported instance type: {instance.get('instance_type')}"
+                            )
 
                         # Handle response based on whether we waited or not
                         if isinstance(response, dict) and "status" in response:
@@ -530,7 +547,9 @@ Begin execution now. Spawn your team and start the workflow."""
                                 )
                                 return result or {"status": "message_sent"}
                             else:
-                                raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
+                                raise ValueError(
+                                    f"Unsupported instance type: {instance.get('instance_type')}"
+                                )
 
                         send_tasks = []
                         for msg_config in messages_config:
@@ -606,10 +625,7 @@ Begin execution now. Spawn your team and start the workflow."""
                             limit=tool_args.get("limit", 100),
                             since=tool_args.get("since"),
                         )
-                        output = {
-                            "instance_id": tool_args["instance_id"],
-                            "output": messages
-                        }
+                        output = {"instance_id": tool_args["instance_id"], "output": messages}
                         result = {
                             "content": [{"type": "text", "text": json.dumps(output, indent=2)}]
                         }
@@ -993,7 +1009,11 @@ Begin execution now. Spawn your team and start the workflow."""
                             job_status = None
                         else:
                             job = self.manager.jobs[job_id]
-                            if not wait_for_completion or job["status"] in ["completed", "failed", "timeout"]:
+                            if not wait_for_completion or job["status"] in [
+                                "completed",
+                                "failed",
+                                "timeout",
+                            ]:
                                 job_status = job
                             else:
                                 # Wait for completion
@@ -1021,8 +1041,7 @@ Begin execution now. Spawn your team and start the workflow."""
                         # Use summary_only=True when getting all instances to avoid huge payloads
                         instance_id = tool_args.get("instance_id")
                         status = self.manager._get_instance_status_internal(
-                            instance_id=instance_id,
-                            summary_only=(instance_id is None)
+                            instance_id=instance_id, summary_only=(instance_id is None)
                         )
                         result = {
                             "content": [{"type": "text", "text": json.dumps(status, indent=2)}]
@@ -1082,7 +1101,9 @@ Begin execution now. Spawn your team and start the workflow."""
 
                     elif tool_name == "get_children":
                         # Bypass decorator - use internal method
-                        children = self.manager._get_children_internal(parent_id=tool_args["parent_id"])
+                        children = self.manager._get_children_internal(
+                            parent_id=tool_args["parent_id"]
+                        )
                         result = {
                             "content": [
                                 {
@@ -1119,7 +1140,9 @@ Begin execution now. Spawn your team and start the workflow."""
                                     )
                                     return result or {"status": "message_sent"}
                                 else:
-                                    raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
+                                    raise ValueError(
+                                        f"Unsupported instance type: {instance.get('instance_type')}"
+                                    )
 
                             tasks = [send_to_child(child) for child in children]
                             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1129,19 +1152,25 @@ Begin execution now. Spawn your team and start the workflow."""
                             for i, child in enumerate(children):
                                 result = results[i]
                                 if isinstance(result, Exception):
-                                    formatted_results.append({
-                                        "child_id": child["id"],
-                                        "child_name": child["name"],
-                                        "status": "error",
-                                        "error": str(result),
-                                    })
+                                    formatted_results.append(
+                                        {
+                                            "child_id": child["id"],
+                                            "child_name": child["name"],
+                                            "status": "error",
+                                            "error": str(result),
+                                        }
+                                    )
                                 else:
-                                    formatted_results.append({
-                                        "child_id": child["id"],
-                                        "child_name": child["name"],
-                                        "status": "sent" if not wait_for_responses else "completed",
-                                        "response": result if wait_for_responses else None,
-                                    })
+                                    formatted_results.append(
+                                        {
+                                            "child_id": child["id"],
+                                            "child_name": child["name"],
+                                            "status": "sent"
+                                            if not wait_for_responses
+                                            else "completed",
+                                            "response": result if wait_for_responses else None,
+                                        }
+                                    )
 
                             broadcast_result = {
                                 "children_count": len(children),
@@ -1162,7 +1191,10 @@ Begin execution now. Spawn your team and start the workflow."""
                         # Bypass decorator - inline tree building
                         roots = []
                         for instance_id, instance in self.manager.instances.items():
-                            if not instance.get("parent_instance_id") and instance.get("state") != "terminated":
+                            if (
+                                not instance.get("parent_instance_id")
+                                and instance.get("state") != "terminated"
+                            ):
                                 roots.append((instance_id, instance.get("name", "unknown")))
 
                         if not roots:
@@ -1172,7 +1204,9 @@ Begin execution now. Spawn your team and start the workflow."""
                             lines = []
                             for i, (root_id, _) in enumerate(roots):
                                 is_last_root = i == len(roots) - 1
-                                self.manager._build_tree_recursive(root_id, "", is_last_root, lines, is_root=True)
+                                self.manager._build_tree_recursive(
+                                    root_id, "", is_last_root, lines, is_root=True
+                                )
                             tree_output = "\n".join(lines)
 
                         result = {
@@ -1228,7 +1262,9 @@ Begin execution now. Spawn your team and start the workflow."""
                             parent_instance_id=tool_args.get("parent_instance_id"),
                         )
                         # Copy to main instances dict
-                        self.manager.instances[instance_id] = self.manager.tmux_manager.instances[instance_id]
+                        self.manager.instances[instance_id] = self.manager.tmux_manager.instances[
+                            instance_id
+                        ]
                         self.manager.instances[instance_id]["instance_type"] = "codex"
 
                         result = {
@@ -1251,7 +1287,9 @@ Begin execution now. Spawn your team and start the workflow."""
                         try:
                             session = self.manager.tmux_manager.tmux_sessions.get(instance_id)
                             if not session:
-                                raise RuntimeError(f"No tmux session found for instance {instance_id}")
+                                raise RuntimeError(
+                                    f"No tmux session found for instance {instance_id}"
+                                )
 
                             window = session.windows[0]
                             pane = window.panes[0]
@@ -1260,9 +1298,13 @@ Begin execution now. Spawn your team and start the workflow."""
                             if lines == -1:
                                 content = "\n".join(pane.cmd("capture-pane", "-p").stdout)
                             else:
-                                content = "\n".join(pane.cmd("capture-pane", "-p", "-S", f"-{lines}").stdout)
+                                content = "\n".join(
+                                    pane.cmd("capture-pane", "-p", "-S", f"-{lines}").stdout
+                                )
                         except Exception as e:
-                            logger.error(f"Failed to capture tmux pane for instance {instance_id}: {e}")
+                            logger.error(
+                                f"Failed to capture tmux pane for instance {instance_id}: {e}"
+                            )
                             raise
 
                         result = {
@@ -1300,8 +1342,12 @@ Begin execution now. Spawn your team and start the workflow."""
 
                         if reply_result["success"]:
                             # Format delivered_to: show first 8 chars of instance ID for readability
-                            delivered_to = reply_result.get('delivered_to', 'caller')
-                            if delivered_to and len(delivered_to) > 8 and delivered_to != 'coordinator':
+                            delivered_to = reply_result.get("delivered_to", "caller")
+                            if (
+                                delivered_to
+                                and len(delivered_to) > 8
+                                and delivered_to != "coordinator"
+                            ):
                                 delivered_to_display = f"{delivered_to[:8]}..."
                             else:
                                 delivered_to_display = delivered_to
@@ -1340,10 +1386,10 @@ Begin execution now. Spawn your team and start the workflow."""
                         if replies:
                             reply_text = f"📬 Received {len(replies)} pending replies:\n\n"
                             for idx, reply in enumerate(replies, 1):
-                                sender = reply.get('sender_id', 'unknown')
+                                sender = reply.get("sender_id", "unknown")
                                 sender_display = f"{sender[:8]}..." if len(sender) > 8 else sender
-                                message = reply.get('reply_message', '')
-                                correlation = reply.get('correlation_id', 'none')
+                                message = reply.get("reply_message", "")
+                                correlation = reply.get("correlation_id", "none")
                                 reply_text += f"Reply #{idx} from {sender_display}:\n"
                                 reply_text += f"  Message: {message}\n"
                                 reply_text += f"  Correlation: {correlation}\n\n"
@@ -1379,7 +1425,9 @@ Begin execution now. Spawn your team and start the workflow."""
                         if not parent_id:
                             parent_id = self._detect_caller_instance()
                             if parent_id:
-                                logger.info(f"Auto-injected parent_instance_id={parent_id} for team supervisor")
+                                logger.info(
+                                    f"Auto-injected parent_instance_id={parent_id} for team supervisor"
+                                )
 
                         # Load template file
                         template_path = Path("templates") / f"{template_name}.md"
@@ -1400,8 +1448,7 @@ Begin execution now. Spawn your team and start the workflow."""
 
                         # Build instruction message FIRST (before spawning)
                         instruction = self._build_template_instruction(
-                            template_content=template_content,
-                            task_description=task_description
+                            template_content=template_content, task_description=task_description
                         )
 
                         # Spawn supervisor WITH instruction as initial_prompt (bypasses paste detection)
@@ -1416,7 +1463,7 @@ Begin execution now. Spawn your team and start the workflow."""
                         # No need to send_message - instruction already received via CLI argument
                         logger.info(
                             f"Spawned supervisor {supervisor_id} with initial instruction "
-                            f"({len(instruction)} chars, {len(instruction)/1024:.2f}KB)"
+                            f"({len(instruction)} chars, {len(instruction) / 1024:.2f}KB)"
                         )
 
                         # Wait briefly for network assembly
@@ -1427,7 +1474,10 @@ Begin execution now. Spawn your team and start the workflow."""
                         try:
                             roots = []
                             for instance_id, instance in self.manager.instances.items():
-                                if not instance.get("parent_instance_id") and instance.get("state") != "terminated":
+                                if (
+                                    not instance.get("parent_instance_id")
+                                    and instance.get("state") != "terminated"
+                                ):
                                     roots.append((instance_id, instance.get("name", "unknown")))
 
                             if roots:
@@ -1435,7 +1485,9 @@ Begin execution now. Spawn your team and start the workflow."""
                                 lines = []
                                 for i, (root_id, _) in enumerate(roots):
                                     is_last_root = i == len(roots) - 1
-                                    self.manager._build_tree_recursive(root_id, "", is_last_root, lines, is_root=True)
+                                    self.manager._build_tree_recursive(
+                                        root_id, "", is_last_root, lines, is_root=True
+                                    )
                                 tree_preview = "\n".join(lines)
                         except Exception as e:
                             logger.warning(f"Failed to build tree preview: {e}")
@@ -1445,16 +1497,16 @@ Begin execution now. Spawn your team and start the workflow."""
 
 📋 **Template Details:**
 - Supervisor ID: {supervisor_id}
-- Team Size: {template_meta['team_size']} instances
-- Estimated Duration: {template_meta['duration']}
-- Estimated Cost: {template_meta['estimated_cost']}
+- Team Size: {template_meta["team_size"]} instances
+- Estimated Duration: {template_meta["duration"]}
+- Estimated Cost: {template_meta["estimated_cost"]}
 - Status: Initializing
 
 🌳 **Network Topology:**
 {tree_preview}
 
 📝 **Task:**
-{task_description[:200]}{'...' if len(task_description) > 200 else ''}
+{task_description[:200]}{"..." if len(task_description) > 200 else ""}
 
 ⏳ The supervisor is now spawning the team and executing the workflow.
 Use get_pending_replies({supervisor_id}) to monitor progress.
@@ -1471,11 +1523,25 @@ Use get_instance_tree() to see the full network hierarchy."""
 
                     elif tool_name == "get_agent_summary":
                         instance_id = tool_args["instance_id"]
-                        monitoring_service = getattr(self.manager, 'monitoring_service', None) or getattr(getattr(self.manager, 'tmux_manager', None), 'monitoring_service', None)
+                        monitoring_service = getattr(
+                            self.manager, "monitoring_service", None
+                        ) or getattr(
+                            getattr(self.manager, "tmux_manager", None), "monitoring_service", None
+                        )
                         if not monitoring_service:
-                            result = {"error": {"code": -32603, "message": "MonitoringService not available"}}
+                            result = {
+                                "error": {
+                                    "code": -32603,
+                                    "message": "MonitoringService not available",
+                                }
+                            }
                         elif not monitoring_service.is_running():
-                            result = {"error": {"code": -32603, "message": "MonitoringService not running"}}
+                            result = {
+                                "error": {
+                                    "code": -32603,
+                                    "message": "MonitoringService not running",
+                                }
+                            }
                         else:
                             try:
                                 summary = await monitoring_service.get_summary(instance_id)
@@ -1483,7 +1549,7 @@ Use get_instance_tree() to see the full network hierarchy."""
                                     result = {
                                         "error": {
                                             "code": -32603,
-                                            "message": f"No summary found for instance {instance_id}"
+                                            "message": f"No summary found for instance {instance_id}",
                                         }
                                     }
                                 else:
@@ -1500,11 +1566,25 @@ Use get_instance_tree() to see the full network hierarchy."""
 
                     elif tool_name == "get_all_agent_summaries":
                         status_filter = tool_args.get("status_filter")
-                        monitoring_service = getattr(self.manager, 'monitoring_service', None) or getattr(getattr(self.manager, 'tmux_manager', None), 'monitoring_service', None)
+                        monitoring_service = getattr(
+                            self.manager, "monitoring_service", None
+                        ) or getattr(
+                            getattr(self.manager, "tmux_manager", None), "monitoring_service", None
+                        )
                         if not monitoring_service:
-                            result = {"error": {"code": -32603, "message": "MonitoringService not available"}}
+                            result = {
+                                "error": {
+                                    "code": -32603,
+                                    "message": "MonitoringService not available",
+                                }
+                            }
                         elif not monitoring_service.is_running():
-                            result = {"error": {"code": -32603, "message": "MonitoringService not running"}}
+                            result = {
+                                "error": {
+                                    "code": -32603,
+                                    "message": "MonitoringService not running",
+                                }
+                            }
                         else:
                             try:
                                 summaries = await monitoring_service.get_all_summaries()
@@ -1521,10 +1601,10 @@ Use get_instance_tree() to see the full network hierarchy."""
                                     "content": [
                                         {
                                             "type": "text",
-                                            "text": json.dumps({
-                                                "summaries": summaries,
-                                                "count": len(summaries)
-                                            }, indent=2),
+                                            "text": json.dumps(
+                                                {"summaries": summaries, "count": len(summaries)},
+                                                indent=2,
+                                            ),
                                         }
                                     ]
                                 }

@@ -542,7 +542,7 @@ class TmuxInstanceManager:
             # Register instance in shared metadata for cross-process visibility
             # This allows parent HTTP server to see instances spawned by STDIO children
             created_at_str = instance["created_at"]
-            if hasattr(created_at_str, 'isoformat'):
+            if hasattr(created_at_str, "isoformat"):
                 created_at_str = created_at_str.isoformat()
 
             self.shared_state.instance_metadata[instance_id] = {
@@ -1678,12 +1678,10 @@ class TmuxInstanceManager:
         import time
 
         # Health check: verify Claude CLI is running (not at shell prompt)
-        pane_content = pane.cmd('capture-pane', '-p').stdout[-500:]
-        shell_indicators = ['zsh: ', 'bash: ', '$ ']
+        pane_content = pane.cmd("capture-pane", "-p").stdout[-500:]
+        shell_indicators = ["zsh: ", "bash: ", "$ "]
         if any(indicator in pane_content for indicator in shell_indicators):
-            raise RuntimeError(
-                "Claude CLI has exited. Instance at shell prompt. Restart needed."
-            )
+            raise RuntimeError("Claude CLI has exited. Instance at shell prompt. Restart needed.")
 
         message_size_kb = len(message) / 1024
         lines = message.split("\n")

@@ -5,8 +5,8 @@ import threading
 import time
 from pathlib import Path
 
-from src.orchestrator.monitoring.models import LogPosition
-from src.orchestrator.monitoring.position_tracker import PositionTracker
+from orchestrator.monitoring.models import LogPosition
+from orchestrator.monitoring.position_tracker import PositionTracker
 
 
 class TestPositionTrackerBasicCRUD:
@@ -258,9 +258,7 @@ class TestPositionTrackerConcurrency:
                 tracker.update_position(pos)
                 time.sleep(0.001)  # Small delay to increase contention
 
-        threads = [
-            threading.Thread(target=update_positions, args=(i,)) for i in range(num_threads)
-        ]
+        threads = [threading.Thread(target=update_positions, args=(i,)) for i in range(num_threads)]
         for thread in threads:
             thread.start()
         for thread in threads:
@@ -368,9 +366,7 @@ class TestPositionTrackerConcurrency:
 class TestPositionTrackerKeyFormat:
     """Tests for position key formatting."""
 
-    def test_different_instance_same_log_type(
-        self, position_tracker: PositionTracker
-    ) -> None:
+    def test_different_instance_same_log_type(self, position_tracker: PositionTracker) -> None:
         """Test that different instances with same log type are stored separately."""
         pos1 = LogPosition(
             instance_id="instance-1",
@@ -402,9 +398,7 @@ class TestPositionTrackerKeyFormat:
         assert retrieved1.last_byte_offset == 100
         assert retrieved2.last_byte_offset == 200
 
-    def test_same_instance_different_log_types(
-        self, position_tracker: PositionTracker
-    ) -> None:
+    def test_same_instance_different_log_types(self, position_tracker: PositionTracker) -> None:
         """Test that same instance with different log types are stored separately."""
         pos1 = LogPosition(
             instance_id="instance-1",
@@ -458,9 +452,7 @@ class TestPositionTrackerEdgeCases:
         assert retrieved.instance_id == ""
         assert retrieved.log_type == ""
 
-    def test_position_with_special_characters(
-        self, position_tracker: PositionTracker
-    ) -> None:
+    def test_position_with_special_characters(self, position_tracker: PositionTracker) -> None:
         """Test position with special characters in IDs."""
         pos = LogPosition(
             instance_id="instance:with:colons",

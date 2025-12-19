@@ -381,7 +381,9 @@ class InstanceManager:
                 results["failed"].append({"instance_id": iid, "error": str(e)})
         return results
 
-    def _get_instance_status_internal(self, instance_id: str | None = None, summary_only: bool = False) -> dict[str, Any]:
+    def _get_instance_status_internal(
+        self, instance_id: str | None = None, summary_only: bool = False
+    ) -> dict[str, Any]:
         """Internal method to get status of instance(s).
 
         Args:
@@ -395,7 +397,7 @@ class InstanceManager:
         all_instances = dict(self.instances)
 
         # Add instances from shared_state.instance_metadata (cross-process visibility)
-        if hasattr(self, 'shared_state_manager') and self.shared_state_manager:
+        if hasattr(self, "shared_state_manager") and self.shared_state_manager:
             try:
                 for iid, metadata in self.shared_state_manager.instance_metadata.items():
                     if iid not in all_instances:
@@ -553,9 +555,7 @@ class InstanceManager:
             # Drain remaining messages (non-blocking, timeout=0)
             while True:
                 try:
-                    reply = await self.tmux_manager._get_from_shared_queue(
-                        instance_id, timeout=0
-                    )
+                    reply = await self.tmux_manager._get_from_shared_queue(instance_id, timeout=0)
                     replies.append(reply)
                 except (TimeoutError, Exception):
                     # No more messages or empty queue
@@ -638,7 +638,9 @@ class InstanceManager:
 
         # Log root instance creation for debugging
         if parent_id is None:
-            logger.info(f"Spawning root-level instance '{name}' with no parent (external client spawn)")
+            logger.info(
+                f"Spawning root-level instance '{name}' with no parent (external client spawn)"
+            )
 
         # Validate that parent_instance_id exists (if provided)
         if parent_id and parent_id not in self.instances:
@@ -796,7 +798,7 @@ class InstanceManager:
         # No need to send_message - instruction already received via CLI argument
         logger.info(
             f"Spawned supervisor {supervisor_id} with initial instruction "
-            f"({len(instruction)} chars, {len(instruction)/1024:.2f}KB)"
+            f"({len(instruction)} chars, {len(instruction) / 1024:.2f}KB)"
         )
 
         # Wait briefly for network assembly
@@ -1007,7 +1009,9 @@ Begin execution now. Spawn your team and start the workflow."""
         # Return current status after max wait
         return self.jobs[job_id]
 
-    def _get_children_internal(self, parent_id: str, include_terminated: bool = False) -> list[dict[str, Any]]:
+    def _get_children_internal(
+        self, parent_id: str, include_terminated: bool = False
+    ) -> list[dict[str, Any]]:
         """Internal method to get all child instances of a parent.
 
         Args:
@@ -1039,6 +1043,7 @@ Begin execution now. Spawn your team and start the workflow."""
             artifacts_base = Path(self.config.get("artifacts_dir", "/tmp/madrox_logs/artifacts"))
             if artifacts_base.exists():
                 import json
+
                 for artifact_dir in artifacts_base.iterdir():
                     if not artifact_dir.is_dir():
                         continue

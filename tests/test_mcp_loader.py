@@ -1,7 +1,6 @@
 """Test MCP configuration loader."""
 
-
-from src.orchestrator.mcp_loader import MCPConfigLoader, get_mcp_servers
+from orchestrator.mcp_loader import MCPConfigLoader, get_mcp_servers
 
 
 def test_list_available_configs():

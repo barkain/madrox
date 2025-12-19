@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from src.orchestrator.tmux_instance_manager import TmuxInstanceManager
+from orchestrator.tmux_instance_manager import TmuxInstanceManager
 
 
 def test_mcp_stdio_config_format():

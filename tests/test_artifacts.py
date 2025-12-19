@@ -115,9 +115,7 @@ class TestArtifactsDirectoryStructure:
     def test_instance_artifact_subdirectory(self, temp_artifacts_dir):
         """Test creation of instance artifact subdirectory."""
         instance_id = "test-instance-12345"
-        instance_dir = (
-            temp_artifacts_dir / "artifacts" / "instances" / instance_id
-        )
+        instance_dir = temp_artifacts_dir / "artifacts" / "instances" / instance_id
 
         instance_dir.mkdir(parents=True, exist_ok=True)
 
@@ -153,9 +151,7 @@ class TestInstanceArtifactPreservation:
 
     def test_instance_manifest_structure(self, temp_artifacts_dir, mock_instance):
         """Test instance manifest JSON structure."""
-        instance_dir = (
-            temp_artifacts_dir / "instances" / mock_instance["instance_id"]
-        )
+        instance_dir = temp_artifacts_dir / "instances" / mock_instance["instance_id"]
         instance_dir.mkdir(parents=True, exist_ok=True)
 
         # Create manifest
@@ -590,10 +586,12 @@ class TestIntegration:
                 json.dumps({"member": i, "status": "completed"})
             )
             (instance_dir / "manifest.json").write_text(
-                json.dumps({
-                    "instance_id": member["instance_id"],
-                    "name": member["name"],
-                })
+                json.dumps(
+                    {
+                        "instance_id": member["instance_id"],
+                        "name": member["name"],
+                    }
+                )
             )
             team_members_artifacts.append(instance_dir)
 
@@ -612,17 +610,13 @@ class TestIntegration:
         for i in range(2):
             instance_dir = artifacts_root / "instances" / f"instance-{i}"
             instance_dir.mkdir(parents=True, exist_ok=True)
-            (instance_dir / "data.json").write_text(
-                json.dumps({"instance": i})
-            )
+            (instance_dir / "data.json").write_text(json.dumps({"instance": i}))
 
         # Create teams
         for i in range(2):
             team_dir = artifacts_root / "teams" / f"team-{i}"
             team_dir.mkdir(parents=True, exist_ok=True)
-            (team_dir / "summary.json").write_text(
-                json.dumps({"team": i})
-            )
+            (team_dir / "summary.json").write_text(json.dumps({"team": i}))
 
         # Collect all artifacts
         instances = list(artifacts_root.glob("instances/*/data.json"))

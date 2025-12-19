@@ -326,7 +326,6 @@ class TestIntegrationBoundaries:
         # Should not import orchestrator internals
         import sys
 
-
         supervision_modules = [
             name for name in sys.modules.keys() if name.startswith("supervision.")
         ]

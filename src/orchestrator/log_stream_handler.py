@@ -87,16 +87,16 @@ class LogStreamHandler(logging.Handler):
             True if this is an audit log, False otherwise
         """
         # Check for explicit is_audit flag
-        if hasattr(record, 'is_audit') and record.is_audit:
+        if hasattr(record, "is_audit") and record.is_audit:
             return True
 
         # Check logger name for 'audit.' prefix
-        if record.name.startswith('audit.') or 'audit' in record.name.split('.'):
+        if record.name.startswith("audit.") or "audit" in record.name.split("."):
             return True
 
         # Check message for [AUDIT] prefix
         message = record.getMessage()
-        if message.startswith('[AUDIT]'):
+        if message.startswith("[AUDIT]"):
             return True
 
         return False
@@ -111,7 +111,7 @@ class LogStreamHandler(logging.Handler):
         Returns:
             Formatted message dictionary
         """
-        timestamp = datetime.fromtimestamp(record.created).isoformat() + 'Z'
+        timestamp = datetime.fromtimestamp(record.created).isoformat() + "Z"
 
         if is_audit:
             # Format as audit log
@@ -122,22 +122,22 @@ class LogStreamHandler(logging.Handler):
                     "level": record.levelname,
                     "logger": record.name,
                     "message": record.getMessage(),
-                }
+                },
             }
 
             # Add audit-specific fields if present
-            if hasattr(record, 'action'):
-                message_data['data']['action'] = record.action
+            if hasattr(record, "action"):
+                message_data["data"]["action"] = record.action
 
-            if hasattr(record, 'metadata'):
-                message_data['data']['metadata'] = record.metadata
+            if hasattr(record, "metadata"):
+                message_data["data"]["metadata"] = record.metadata
 
             # Include instance_id and event_type if available
-            if hasattr(record, 'instance_id'):
-                message_data['data']['instance_id'] = record.instance_id
+            if hasattr(record, "instance_id"):
+                message_data["data"]["instance_id"] = record.instance_id
 
-            if hasattr(record, 'event_type'):
-                message_data['data']['event_type'] = record.event_type
+            if hasattr(record, "event_type"):
+                message_data["data"]["event_type"] = record.event_type
 
         else:
             # Format as system log
@@ -151,15 +151,15 @@ class LogStreamHandler(logging.Handler):
                     "module": record.module,
                     "function": record.funcName,
                     "line": record.lineno,
-                }
+                },
             }
 
             # Add extra context fields if present
-            if hasattr(record, 'instance_id'):
-                message_data['data']['instance_id'] = record.instance_id
+            if hasattr(record, "instance_id"):
+                message_data["data"]["instance_id"] = record.instance_id
 
-            if hasattr(record, 'instance_name'):
-                message_data['data']['instance_name'] = record.instance_name
+            if hasattr(record, "instance_name"):
+                message_data["data"]["instance_name"] = record.instance_name
 
         return message_data
 
@@ -174,10 +174,7 @@ class LogStreamHandler(logging.Handler):
             return
 
         # Schedule the broadcast on the event loop
-        asyncio.run_coroutine_threadsafe(
-            self._async_broadcast(message_data),
-            self._loop
-        )
+        asyncio.run_coroutine_threadsafe(self._async_broadcast(message_data), self._loop)
 
     async def _async_broadcast(self, message_data: dict[str, Any]):
         """Asynchronously broadcast a message to all WebSocket clients.
@@ -206,7 +203,7 @@ def audit_log(
     action: str | None = None,
     metadata: dict[str, Any] | None = None,
     level: int = logging.INFO,
-    **kwargs
+    **kwargs,
 ):
     """Convenience function for logging audit events.
 
@@ -230,9 +227,9 @@ def audit_log(
         ... )
     """
     extra = {
-        'is_audit': True,
-        'action': action,
-        'metadata': metadata or {},
+        "is_audit": True,
+        "action": action,
+        "metadata": metadata or {},
     }
     extra.update(kwargs)
 

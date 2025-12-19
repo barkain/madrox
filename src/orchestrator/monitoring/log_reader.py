@@ -126,7 +126,9 @@ class IncrementalLogReader:
                     line_number = 0
                 else:
                     # Seek to last position (position is guaranteed non-None here)
-                    assert position is not None, "position should not be None when not starting from beginning"
+                    assert position is not None, (
+                        "position should not be None when not starting from beginning"
+                    )
                     offset = position.last_byte_offset
                     line_number = position.last_line_number
                     f.seek(offset)
@@ -145,9 +147,7 @@ class IncrementalLogReader:
                     line_number += 1
 
                     if lines_read >= self.max_lines:
-                        logger.debug(
-                            f"Reached max_lines limit ({self.max_lines}) for {log_path}"
-                        )
+                        logger.debug(f"Reached max_lines limit ({self.max_lines}) for {log_path}")
                         break
 
                 # Update offset to current position

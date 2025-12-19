@@ -30,6 +30,7 @@ except ImportError:
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def mock_openrouter_response():
     """Mock successful OpenRouter API response."""
@@ -40,16 +41,12 @@ def mock_openrouter_response():
             {
                 "message": {
                     "role": "assistant",
-                    "content": "Instance is processing data analysis tasks with pandas and generating visualizations."
+                    "content": "Instance is processing data analysis tasks with pandas and generating visualizations.",
                 },
-                "finish_reason": "stop"
+                "finish_reason": "stop",
             }
         ],
-        "usage": {
-            "prompt_tokens": 150,
-            "completion_tokens": 50,
-            "total_tokens": 200
-        }
+        "usage": {"prompt_tokens": 150, "completion_tokens": 50, "total_tokens": 200},
     }
 
 
@@ -76,7 +73,7 @@ def long_activity_text():
 @pytest.fixture
 async def summarizer_with_api_key():
     """LLMSummarizer instance with API key set."""
-    with patch.dict(os.environ, {'OPENROUTER_API_KEY': 'test-api-key-12345'}):
+    with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-api-key-12345"}):
         if LLMSummarizer:
             summarizer = LLMSummarizer()
             yield summarizer
@@ -89,7 +86,7 @@ async def summarizer_without_api_key():
     """LLMSummarizer instance without API key."""
     with patch.dict(os.environ, {}, clear=True):
         # Ensure OPENROUTER_API_KEY is not set
-        os.environ.pop('OPENROUTER_API_KEY', None)
+        os.environ.pop("OPENROUTER_API_KEY", None)
         if LLMSummarizer:
             summarizer = LLMSummarizer()
             yield summarizer
@@ -101,9 +98,12 @@ async def summarizer_without_api_key():
 # Test: Successful API Call with Valid Key
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.skipif(LLMSummarizer is None, reason="LLMSummarizer not yet implemented")
-async def test_summarize_with_valid_api_key(summarizer_with_api_key, sample_activity_text, mock_openrouter_response):
+async def test_summarize_with_valid_api_key(
+    summarizer_with_api_key, sample_activity_text, mock_openrouter_response
+):
     """
     Test successful summary generation with valid API key.
 
@@ -124,7 +124,7 @@ async def test_summarize_with_valid_api_key(summarizer_with_api_key, sample_acti
     mock_post.__aenter__.return_value = mock_response
     mock_post.__aexit__.return_value = AsyncMock()
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         # Use regular Mock for post() since it returns a context manager, not a coroutine
         mock_session.post = Mock(return_value=mock_post)
@@ -132,9 +132,7 @@ async def test_summarize_with_valid_api_key(summarizer_with_api_key, sample_acti
 
         # Call summarize_activity
         result = await summarizer.summarize_activity(
-            instance_id="test-instance-123",
-            activity_text=sample_activity_text,
-            max_tokens=200
+            instance_id="test-instance-123", activity_text=sample_activity_text, max_tokens=200
         )
 
         # Verify API was called
@@ -145,15 +143,15 @@ async def test_summarize_with_valid_api_key(summarizer_with_api_key, sample_acti
         assert "openrouter.ai" in call_args[0][0]
 
         # Check headers
-        headers = call_args[1]['headers']
-        assert 'Authorization' in headers
-        assert 'Bearer test-api-key-12345' in headers['Authorization']
+        headers = call_args[1]["headers"]
+        assert "Authorization" in headers
+        assert "Bearer test-api-key-12345" in headers["Authorization"]
 
         # Check request body
-        json_data = call_args[1]['json']
-        assert 'model' in json_data
-        assert 'messages' in json_data
-        assert json_data['max_tokens'] == 200
+        json_data = call_args[1]["json"]
+        assert "model" in json_data
+        assert "messages" in json_data
+        assert json_data["max_tokens"] == 200
 
         # Verify result
         assert isinstance(result, str)
@@ -163,7 +161,9 @@ async def test_summarize_with_valid_api_key(summarizer_with_api_key, sample_acti
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(LLMSummarizer is None, reason="LLMSummarizer not yet implemented")
-async def test_request_format_matches_openrouter_spec(summarizer_with_api_key, sample_activity_text):
+async def test_request_format_matches_openrouter_spec(
+    summarizer_with_api_key, sample_activity_text
+):
     """
     Test that API request format exactly matches OpenRouter specification.
 
@@ -177,22 +177,20 @@ async def test_request_format_matches_openrouter_spec(summarizer_with_api_key, s
 
     mock_response = AsyncMock()
     mock_response.status = 200
-    mock_response.json = AsyncMock(return_value={
-        "choices": [{"message": {"content": "Test summary"}}]
-    })
+    mock_response.json = AsyncMock(
+        return_value={"choices": [{"message": {"content": "Test summary"}}]}
+    )
 
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         await summarizer.summarize_activity(
-            instance_id="test-instance",
-            activity_text=sample_activity_text,
-            max_tokens=150
+            instance_id="test-instance", activity_text=sample_activity_text, max_tokens=150
         )
 
         # Verify call was made
@@ -204,22 +202,23 @@ async def test_request_format_matches_openrouter_spec(summarizer_with_api_key, s
         assert url == "https://openrouter.ai/api/v1/chat/completions"
 
         # Check all required headers
-        headers = call_args[1]['headers']
-        assert 'Authorization' in headers
-        assert headers['Authorization'].startswith('Bearer ')
-        assert 'HTTP-Referer' in headers or 'Content-Type' in headers
+        headers = call_args[1]["headers"]
+        assert "Authorization" in headers
+        assert headers["Authorization"].startswith("Bearer ")
+        assert "HTTP-Referer" in headers or "Content-Type" in headers
 
         # Check message structure
-        json_data = call_args[1]['json']
-        assert 'messages' in json_data
-        messages = json_data['messages']
+        json_data = call_args[1]["json"]
+        assert "messages" in json_data
+        messages = json_data["messages"]
         assert len(messages) >= 1
-        assert any(msg['role'] in ['system', 'user'] for msg in messages)
+        assert any(msg["role"] in ["system", "user"] for msg in messages)
 
 
 # ============================================================================
 # Test: Missing API Key (Fallback Behavior)
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(LLMSummarizer is None, reason="LLMSummarizer not yet implemented")
@@ -236,9 +235,7 @@ async def test_summarize_without_api_key(summarizer_without_api_key, sample_acti
     summarizer = summarizer_without_api_key
 
     result = await summarizer.summarize_activity(
-        instance_id="test-instance-no-key",
-        activity_text=sample_activity_text,
-        max_tokens=200
+        instance_id="test-instance-no-key", activity_text=sample_activity_text, max_tokens=200
     )
 
     # Verify fallback behavior
@@ -265,9 +262,7 @@ async def test_no_api_key_no_exception_raised(summarizer_without_api_key):
     # Should not raise any exception
     try:
         result = await summarizer.summarize_activity(
-            instance_id="test-no-exception",
-            activity_text="Some activity text",
-            max_tokens=100
+            instance_id="test-no-exception", activity_text="Some activity text", max_tokens=100
         )
         assert isinstance(result, str)
     except Exception as e:
@@ -277,6 +272,7 @@ async def test_no_api_key_no_exception_raised(summarizer_without_api_key):
 # ============================================================================
 # Test: API Timeout Scenarios
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(LLMSummarizer is None, reason="LLMSummarizer not yet implemented")
@@ -293,15 +289,13 @@ async def test_api_timeout_returns_fallback(summarizer_with_api_key, sample_acti
     summarizer = summarizer_with_api_key
 
     # Mock timeout
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.side_effect = TimeoutError("API request timeout")
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         result = await summarizer.summarize_activity(
-            instance_id="test-timeout",
-            activity_text=sample_activity_text,
-            max_tokens=200
+            instance_id="test-timeout", activity_text=sample_activity_text, max_tokens=200
         )
 
         # Verify fallback behavior
@@ -322,19 +316,16 @@ async def test_connection_timeout_graceful_fallback(summarizer_with_api_key):
     """
     summarizer = summarizer_with_api_key
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         # Simulate connection timeout
         mock_session.post.side_effect = aiohttp.ClientConnectorError(
-            connection_key=None,
-            os_error=TimeoutError("Connection timeout")
+            connection_key=None, os_error=TimeoutError("Connection timeout")
         )
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         result = await summarizer.summarize_activity(
-            instance_id="test-conn-timeout",
-            activity_text="Some text",
-            max_tokens=100
+            instance_id="test-conn-timeout", activity_text="Some text", max_tokens=100
         )
 
         assert isinstance(result, str)
@@ -344,6 +335,7 @@ async def test_connection_timeout_graceful_fallback(summarizer_with_api_key):
 # ============================================================================
 # Test: API Error Responses
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(LLMSummarizer is None, reason="LLMSummarizer not yet implemented")
@@ -365,15 +357,13 @@ async def test_api_401_unauthorized(summarizer_with_api_key, sample_activity_tex
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         result = await summarizer.summarize_activity(
-            instance_id="test-401",
-            activity_text=sample_activity_text,
-            max_tokens=200
+            instance_id="test-401", activity_text=sample_activity_text, max_tokens=200
         )
 
         assert isinstance(result, str)
@@ -400,15 +390,13 @@ async def test_api_403_forbidden(summarizer_with_api_key, sample_activity_text):
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         result = await summarizer.summarize_activity(
-            instance_id="test-403",
-            activity_text=sample_activity_text,
-            max_tokens=200
+            instance_id="test-403", activity_text=sample_activity_text, max_tokens=200
         )
 
         assert isinstance(result, str)
@@ -435,15 +423,13 @@ async def test_api_500_server_error(summarizer_with_api_key, sample_activity_tex
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         result = await summarizer.summarize_activity(
-            instance_id="test-500",
-            activity_text=sample_activity_text,
-            max_tokens=200
+            instance_id="test-500", activity_text=sample_activity_text, max_tokens=200
         )
 
         assert isinstance(result, str)
@@ -470,15 +456,13 @@ async def test_api_rate_limit_429(summarizer_with_api_key, sample_activity_text)
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         result = await summarizer.summarize_activity(
-            instance_id="test-429",
-            activity_text=sample_activity_text,
-            max_tokens=200
+            instance_id="test-429", activity_text=sample_activity_text, max_tokens=200
         )
 
         assert isinstance(result, str)
@@ -488,6 +472,7 @@ async def test_api_rate_limit_429(summarizer_with_api_key, sample_activity_text)
 # ============================================================================
 # Test: Different Instance States
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(LLMSummarizer is None, reason="LLMSummarizer not yet implemented")
@@ -499,22 +484,22 @@ async def test_summarize_running_instance(summarizer_with_api_key):
 
     mock_response = AsyncMock()
     mock_response.status = 200
-    mock_response.json = AsyncMock(return_value={
-        "choices": [{"message": {"content": "Instance is running batch processing tasks"}}]
-    })
+    mock_response.json = AsyncMock(
+        return_value={
+            "choices": [{"message": {"content": "Instance is running batch processing tasks"}}]
+        }
+    )
 
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         result = await summarizer.summarize_activity(
-            instance_id="running-instance",
-            activity_text=activity,
-            max_tokens=150
+            instance_id="running-instance", activity_text=activity, max_tokens=150
         )
 
         assert isinstance(result, str)
@@ -531,22 +516,22 @@ async def test_summarize_idle_instance(summarizer_with_api_key):
 
     mock_response = AsyncMock()
     mock_response.status = 200
-    mock_response.json = AsyncMock(return_value={
-        "choices": [{"message": {"content": "Instance is idle, waiting for new tasks"}}]
-    })
+    mock_response.json = AsyncMock(
+        return_value={
+            "choices": [{"message": {"content": "Instance is idle, waiting for new tasks"}}]
+        }
+    )
 
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         result = await summarizer.summarize_activity(
-            instance_id="idle-instance",
-            activity_text=activity,
-            max_tokens=100
+            instance_id="idle-instance", activity_text=activity, max_tokens=100
         )
 
         assert isinstance(result, str)
@@ -561,22 +546,28 @@ async def test_summarize_busy_instance_long_output(summarizer_with_api_key, long
 
     mock_response = AsyncMock()
     mock_response.status = 200
-    mock_response.json = AsyncMock(return_value={
-        "choices": [{"message": {"content": "Instance is very busy processing multiple tasks concurrently"}}]
-    })
+    mock_response.json = AsyncMock(
+        return_value={
+            "choices": [
+                {
+                    "message": {
+                        "content": "Instance is very busy processing multiple tasks concurrently"
+                    }
+                }
+            ]
+        }
+    )
 
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         result = await summarizer.summarize_activity(
-            instance_id="busy-instance",
-            activity_text=long_activity_text,
-            max_tokens=250
+            instance_id="busy-instance", activity_text=long_activity_text, max_tokens=250
         )
 
         assert isinstance(result, str)
@@ -590,9 +581,7 @@ async def test_summarize_empty_activity(summarizer_with_api_key):
     summarizer = summarizer_with_api_key
 
     result = await summarizer.summarize_activity(
-        instance_id="empty-activity",
-        activity_text="",
-        max_tokens=100
+        instance_id="empty-activity", activity_text="", max_tokens=100
     )
 
     # Should handle empty input gracefully
@@ -602,6 +591,7 @@ async def test_summarize_empty_activity(summarizer_with_api_key):
 # ============================================================================
 # Test: Exception Handling - No Exceptions Raised
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(LLMSummarizer is None, reason="LLMSummarizer not yet implemented")
@@ -616,16 +606,14 @@ async def test_no_exceptions_on_network_error(summarizer_with_api_key):
     """
     summarizer = summarizer_with_api_key
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.side_effect = aiohttp.ClientError("Network error")
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         try:
             result = await summarizer.summarize_activity(
-                instance_id="network-error",
-                activity_text="Some text",
-                max_tokens=100
+                instance_id="network-error", activity_text="Some text", max_tokens=100
             )
             assert isinstance(result, str)
         except Exception as e:
@@ -652,16 +640,14 @@ async def test_no_exceptions_on_json_decode_error(summarizer_with_api_key):
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         try:
             result = await summarizer.summarize_activity(
-                instance_id="json-error",
-                activity_text="Some text",
-                max_tokens=100
+                instance_id="json-error", activity_text="Some text", max_tokens=100
             )
             assert isinstance(result, str)
         except Exception as e:
@@ -689,16 +675,14 @@ async def test_no_exceptions_on_unexpected_response_format(summarizer_with_api_k
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         try:
             result = await summarizer.summarize_activity(
-                instance_id="bad-format",
-                activity_text="Some text",
-                max_tokens=100
+                instance_id="bad-format", activity_text="Some text", max_tokens=100
             )
             assert isinstance(result, str)
         except Exception as e:
@@ -722,7 +706,7 @@ async def test_all_error_paths_return_strings(summarizer_with_api_key):
     ]
 
     for error in error_scenarios:
-        with patch('aiohttp.ClientSession') as mock_session_class:
+        with patch("aiohttp.ClientSession") as mock_session_class:
             mock_session = AsyncMock()
             mock_session.post.side_effect = error
             mock_session_class.return_value.__aenter__.return_value = mock_session
@@ -731,7 +715,7 @@ async def test_all_error_paths_return_strings(summarizer_with_api_key):
                 result = await summarizer.summarize_activity(
                     instance_id=f"error-test-{type(error).__name__}",
                     activity_text="Test activity",
-                    max_tokens=100
+                    max_tokens=100,
                 )
                 assert isinstance(result, str), f"Expected string for {type(error).__name__}"
                 assert len(result) > 0, f"Expected non-empty string for {type(error).__name__}"
@@ -742,6 +726,7 @@ async def test_all_error_paths_return_strings(summarizer_with_api_key):
 # ============================================================================
 # Test: Caching and Performance
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(LLMSummarizer is None, reason="LLMSummarizer not yet implemented")
@@ -758,14 +743,14 @@ async def test_multiple_calls_with_different_instances(summarizer_with_api_key):
 
     mock_response = AsyncMock()
     mock_response.status = 200
-    mock_response.json = AsyncMock(return_value={
-        "choices": [{"message": {"content": "Summary text"}}]
-    })
+    mock_response.json = AsyncMock(
+        return_value={"choices": [{"message": {"content": "Summary text"}}]}
+    )
 
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
@@ -775,7 +760,7 @@ async def test_multiple_calls_with_different_instances(summarizer_with_api_key):
             result = await summarizer.summarize_activity(
                 instance_id=f"instance-{i}",
                 activity_text=f"Activity for instance {i}",
-                max_tokens=100
+                max_tokens=100,
             )
             results.append(result)
 
@@ -801,26 +786,22 @@ async def test_max_tokens_parameter_passed_correctly(summarizer_with_api_key):
 
     mock_response = AsyncMock()
     mock_response.status = 200
-    mock_response.json = AsyncMock(return_value={
-        "choices": [{"message": {"content": "Summary"}}]
-    })
+    mock_response.json = AsyncMock(return_value={"choices": [{"message": {"content": "Summary"}}]})
 
     mock_post = AsyncMock()
     mock_post.__aenter__.return_value = mock_response
 
-    with patch('aiohttp.ClientSession') as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.post.return_value = mock_post
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
         test_max_tokens = 300
         await summarizer.summarize_activity(
-            instance_id="test-max-tokens",
-            activity_text="Test activity",
-            max_tokens=test_max_tokens
+            instance_id="test-max-tokens", activity_text="Test activity", max_tokens=test_max_tokens
         )
 
         # Verify max_tokens in request
         call_args = mock_session.post.call_args
-        json_data = call_args[1]['json']
-        assert json_data['max_tokens'] == test_max_tokens
+        json_data = call_args[1]["json"]
+        assert json_data["max_tokens"] == test_max_tokens

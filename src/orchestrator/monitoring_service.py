@@ -34,7 +34,7 @@ class MonitoringService:
     """
 
     # Class Attributes (Singleton pattern)
-    _instance: Optional['MonitoringService'] = None
+    _instance: Optional["MonitoringService"] = None
     _lock: asyncio.Lock = None  # Will be initialized at runtime
 
     def __init__(
@@ -43,7 +43,7 @@ class MonitoringService:
         llm_summarizer: Any,
         poll_interval: int = 12,
         storage_path: str = "/tmp/madrox_logs/summaries",
-        max_tokens: int = 100
+        max_tokens: int = 100,
     ):
         """
         Initialize the monitoring service.
@@ -62,6 +62,7 @@ class MonitoringService:
 
         # Create session-specific subdirectory: /tmp/madrox_logs/summaries/session_YYYYMMDD_HHMMSS/
         from datetime import datetime
+
         session_id = datetime.now(UTC).strftime("session_%Y%m%d_%H%M%S")
         self.storage_path = Path(storage_path) / session_id
         self.session_id = session_id
@@ -102,7 +103,9 @@ class MonitoringService:
         self._running = True
         self._task = asyncio.create_task(self._monitoring_loop())
 
-        self._logger.info(f"MonitoringService started (poll interval: {self.poll_interval}s, session: {self.session_id})")
+        self._logger.info(
+            f"MonitoringService started (poll interval: {self.poll_interval}s, session: {self.session_id})"
+        )
 
     async def stop(self, timeout: float = 5.0) -> None:
         """
@@ -163,7 +166,7 @@ class MonitoringService:
                 active_instances = {
                     instance_id: data
                     for instance_id, data in instances.items()
-                    if data.get('state') in ['running', 'idle', 'busy']
+                    if data.get("state") in ["running", "idle", "busy"]
                 }
 
                 self._logger.debug(f"Found {len(active_instances)} active instances")
@@ -220,9 +223,7 @@ class MonitoringService:
             # Generate summary using LLMSummarizer
             self._logger.debug(f"Generating summary for instance {instance_id}")
             summary = await self.llm_summarizer.summarize_activity(
-                instance_id=instance_id,
-                activity_text=activity,
-                max_tokens=self.max_tokens
+                instance_id=instance_id, activity_text=activity, max_tokens=self.max_tokens
             )
 
             # Calculate generation time
@@ -232,18 +233,20 @@ class MonitoringService:
             await self._persist_summary(
                 instance_id=instance_id,
                 summary=summary,
-                status=instance_data.get('state', 'unknown'),
+                status=instance_data.get("state", "unknown"),
                 metadata={
-                    'output_length': len(activity),
-                    'error_count': self._error_counts.get(instance_id, 0),
-                    'generation_time_ms': generation_time_ms,
-                    'poll_interval': self.poll_interval
-                }
+                    "output_length": len(activity),
+                    "error_count": self._error_counts.get(instance_id, 0),
+                    "generation_time_ms": generation_time_ms,
+                    "poll_interval": self.poll_interval,
+                },
             )
 
             # Record success
             self._record_success(instance_id)
-            self._logger.info(f"Successfully processed instance {instance_id} ({generation_time_ms}ms)")
+            self._logger.info(
+                f"Successfully processed instance {instance_id} ({generation_time_ms}ms)"
+            )
 
         except Exception as e:
             self._logger.error(f"Error processing instance {instance_id}: {e}")
@@ -264,16 +267,15 @@ class MonitoringService:
         try:
             # Get recent output (last 1000 lines)
             output_data = await self.instance_manager.get_instance_output(
-                instance_id=instance_id,
-                limit=1000
+                instance_id=instance_id, limit=1000
             )
 
             # Extract output text
             if isinstance(output_data, dict):
-                output = output_data.get('output', '')
+                output = output_data.get("output", "")
             elif isinstance(output_data, list):
                 # If it's a list of messages, join them
-                output = '\n'.join(str(msg) for msg in output_data)
+                output = "\n".join(str(msg) for msg in output_data)
             else:
                 output = str(output_data)
 
@@ -288,11 +290,7 @@ class MonitoringService:
     # ============================================================================
 
     async def _persist_summary(
-        self,
-        instance_id: str,
-        summary: str,
-        status: str,
-        metadata: dict | None = None
+        self, instance_id: str, summary: str, status: str, metadata: dict | None = None
     ) -> Path:
         """
         Persist summary to disk using atomic writes.
@@ -327,11 +325,11 @@ class MonitoringService:
 
             # Prepare summary data
             summary_data = {
-                'instance_id': instance_id,
-                'timestamp': timestamp.isoformat(),
-                'status': status,
-                'summary': summary,
-                'metadata': metadata or {}
+                "instance_id": instance_id,
+                "timestamp": timestamp.isoformat(),
+                "status": status,
+                "summary": summary,
+                "metadata": metadata or {},
             }
 
             # Atomic write
@@ -360,17 +358,17 @@ class MonitoringService:
             filepath: Target file path
             data: Data to write (will be JSON serialized)
         """
-        temp_path = filepath.with_suffix('.tmp')
+        temp_path = filepath.with_suffix(".tmp")
 
         # Write to temp file
         if aiofiles:
             # Use async file I/O if available
-            async with aiofiles.open(temp_path, 'w') as f:
+            async with aiofiles.open(temp_path, "w") as f:
                 await f.write(json.dumps(data, indent=2))
                 await f.flush()
         else:
             # Fallback to sync I/O
-            with open(temp_path, 'w') as f:
+            with open(temp_path, "w") as f:
                 f.write(json.dumps(data, indent=2))
                 f.flush()
                 os.fsync(f.fileno())
@@ -452,8 +450,7 @@ class MonitoringService:
         backoff = self._get_backoff_seconds(error_count)
 
         self._logger.warning(
-            f"Error recorded for {instance_id} "
-            f"(count: {error_count}, backoff: {backoff}s)"
+            f"Error recorded for {instance_id} (count: {error_count}, backoff: {backoff}s)"
         )
 
     def _record_success(self, instance_id: str) -> None:
@@ -481,7 +478,7 @@ class MonitoringService:
         Formula: min(2^error_count, 300) seconds
         Max backoff: 5 minutes
         """
-        return min(2 ** error_count, 300)
+        return min(2**error_count, 300)
 
     # ============================================================================
     # Utility Methods
@@ -489,11 +486,8 @@ class MonitoringService:
 
     @classmethod
     async def get_instance(
-        cls,
-        instance_manager: Any,
-        llm_summarizer: Any,
-        **kwargs
-    ) -> 'MonitoringService':
+        cls, instance_manager: Any, llm_summarizer: Any, **kwargs
+    ) -> "MonitoringService":
         """
         Get or create the singleton MonitoringService instance.
 
@@ -514,18 +508,12 @@ class MonitoringService:
         async with cls._lock:
             if cls._instance is None:
                 cls._instance = cls(
-                    instance_manager=instance_manager,
-                    llm_summarizer=llm_summarizer,
-                    **kwargs
+                    instance_manager=instance_manager, llm_summarizer=llm_summarizer, **kwargs
                 )
 
             return cls._instance
 
-    async def get_summary(
-        self,
-        instance_id: str,
-        latest: bool = True
-    ) -> dict | None:
+    async def get_summary(self, instance_id: str, latest: bool = True) -> dict | None:
         """
         Retrieve a summary for a specific instance.
 
@@ -547,7 +535,7 @@ class MonitoringService:
                 latest_file = instance_dir / "latest.json"
                 if latest_file.exists():
                     if aiofiles:
-                        async with aiofiles.open(latest_file, 'r') as f:
+                        async with aiofiles.open(latest_file, "r") as f:
                             content = await f.read()
                             return json.loads(content)
                     else:

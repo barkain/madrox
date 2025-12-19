@@ -77,9 +77,7 @@ class TestIncrementalLogReaderBasic:
         assert second_lines == ["Line 4", "Line 5"]
         assert second_total == 5
 
-    def test_read_empty_file(
-        self, empty_log_file: Path, position_tracker: PositionTracker
-    ) -> None:
+    def test_read_empty_file(self, empty_log_file: Path, position_tracker: PositionTracker) -> None:
         """Test reading an empty log file."""
         reader = IncrementalLogReader(position_tracker=position_tracker)
 
@@ -92,9 +90,7 @@ class TestIncrementalLogReaderBasic:
         assert len(new_lines) == 0
         assert total_lines == 0
 
-    def test_read_nonexistent_file(
-        self, tmp_path: Path, position_tracker: PositionTracker
-    ) -> None:
+    def test_read_nonexistent_file(self, tmp_path: Path, position_tracker: PositionTracker) -> None:
         """Test reading a file that doesn't exist."""
         nonexistent = tmp_path / "nonexistent.log"
         reader = IncrementalLogReader(position_tracker=position_tracker)
@@ -112,9 +108,7 @@ class TestIncrementalLogReaderBasic:
 class TestIncrementalLogReaderMaxLines:
     """Tests for max_lines limiting."""
 
-    def test_max_lines_limit(
-        self, tmp_path: Path, position_tracker: PositionTracker
-    ) -> None:
+    def test_max_lines_limit(self, tmp_path: Path, position_tracker: PositionTracker) -> None:
         """Test that max_lines limits the number of lines read."""
         log_file = tmp_path / "large.log"
         lines = [f"Line {i}" for i in range(100)]
@@ -319,9 +313,7 @@ class TestIncrementalLogReaderPositionTracking:
 class TestIncrementalLogReaderResetPosition:
     """Tests for reset_position functionality."""
 
-    def test_reset_position(
-        self, temp_log_file: Path, position_tracker: PositionTracker
-    ) -> None:
+    def test_reset_position(self, temp_log_file: Path, position_tracker: PositionTracker) -> None:
         """Test that reset_position clears the position."""
         reader = IncrementalLogReader(position_tracker=position_tracker)
 
@@ -337,9 +329,7 @@ class TestIncrementalLogReaderResetPosition:
         reader.reset_position("test-instance", "tmux_output")
         assert position_tracker.get_position("test-instance", "tmux_output") is None
 
-    def test_read_after_reset(
-        self, temp_log_file: Path, position_tracker: PositionTracker
-    ) -> None:
+    def test_read_after_reset(self, temp_log_file: Path, position_tracker: PositionTracker) -> None:
         """Test reading after resetting position."""
         reader = IncrementalLogReader(position_tracker=position_tracker)
 
@@ -366,9 +356,7 @@ class TestIncrementalLogReaderResetPosition:
 class TestIncrementalLogReaderLastNLines:
     """Tests for read_last_n_lines utility method."""
 
-    def test_read_last_n_lines(
-        self, tmp_path: Path, position_tracker: PositionTracker
-    ) -> None:
+    def test_read_last_n_lines(self, tmp_path: Path, position_tracker: PositionTracker) -> None:
         """Test reading last N lines from a file."""
         log_file = tmp_path / "test.log"
         lines = [f"Line {i}" for i in range(10)]
@@ -429,9 +417,7 @@ class TestIncrementalLogReaderLastNLines:
 class TestIncrementalLogReaderEdgeCases:
     """Tests for edge cases and error handling."""
 
-    def test_very_long_lines(
-        self, tmp_path: Path, position_tracker: PositionTracker
-    ) -> None:
+    def test_very_long_lines(self, tmp_path: Path, position_tracker: PositionTracker) -> None:
         """Test handling of very long lines."""
         log_file = tmp_path / "long.log"
         long_line = "x" * 10000
@@ -448,9 +434,7 @@ class TestIncrementalLogReaderEdgeCases:
         assert len(new_lines[0]) == 10000
         assert new_lines[1] == "Short line"
 
-    def test_unicode_content(
-        self, tmp_path: Path, position_tracker: PositionTracker
-    ) -> None:
+    def test_unicode_content(self, tmp_path: Path, position_tracker: PositionTracker) -> None:
         """Test handling of Unicode characters."""
         log_file = tmp_path / "unicode.log"
         log_file.write_text("Hello 世界\nEmoji 🚀\n", encoding="utf-8")
@@ -484,9 +468,7 @@ class TestIncrementalLogReaderEdgeCases:
         assert new_lines[2] == ""
         assert new_lines[3] == "Line 2"
 
-    def test_no_trailing_newline(
-        self, tmp_path: Path, position_tracker: PositionTracker
-    ) -> None:
+    def test_no_trailing_newline(self, tmp_path: Path, position_tracker: PositionTracker) -> None:
         """Test file without trailing newline."""
         log_file = tmp_path / "no_newline.log"
         log_file.write_text("Line 1\nLine 2")  # No trailing newline

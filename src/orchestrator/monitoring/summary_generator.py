@@ -56,9 +56,7 @@ class SummaryGenerator:
             ImportError: If anthropic SDK is not installed.
         """
         if AsyncAnthropic is None:
-            raise ImportError(
-                "anthropic package is required. Install with: pip install anthropic"
-            )
+            raise ImportError("anthropic package is required. Install with: pip install anthropic")
 
         self.anthropic_client = AsyncAnthropic(api_key=api_key)
         self.model = model or CLAUDE_HAIKU_MODEL
@@ -97,9 +95,7 @@ class SummaryGenerator:
         response_json = await self._call_claude_with_retry(prompt)
 
         # Parse and construct AgentSummary
-        summary = self._parse_response_to_summary(
-            response_json, instance_id, agent_context
-        )
+        summary = self._parse_response_to_summary(response_json, instance_id, agent_context)
 
         return summary
 
@@ -222,7 +218,9 @@ Do not include any text before or after the JSON object."""
             except json.JSONDecodeError as e:
                 logger.warning(f"Invalid JSON from Claude (attempt {attempt + 1}): {e}")
                 if attempt == MAX_RETRIES - 1:
-                    raise Exception(f"Failed to get valid JSON after {MAX_RETRIES} attempts") from None
+                    raise Exception(
+                        f"Failed to get valid JSON after {MAX_RETRIES} attempts"
+                    ) from None
 
             except Exception as e:
                 error_type = type(e).__name__
