@@ -75,7 +75,7 @@ Here's a real instance of Madrox orchestrating a complete software development t
 
 ### Team Hierarchy
 
-![Development Team Tree](assets/madrox-team-hierarchy-tree.png)
+![Development Team Tree](resources/assets/madrox-team-hierarchy-tree.png)
 
 **What you're seeing:**
 - **Tech Lead** (Architect role) coordinates the entire team
@@ -86,7 +86,7 @@ Here's a real instance of Madrox orchestrating a complete software development t
 
 ### Complete Workflow Execution
 
-![Development Workflow](assets/madrox-development-workflow-execution.png)
+![Development Workflow](resources/assets/madrox-development-workflow-execution.png)
 
 **The full development lifecycle:**
 1. **Tech Lead spawns team** - Creates 6 specialized instances with specific roles
