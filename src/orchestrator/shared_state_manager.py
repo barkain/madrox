@@ -9,12 +9,33 @@ limitation of asyncio.Queue which is local to a single process.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from multiprocessing import Lock, Manager, Queue
 from multiprocessing.managers import DictProxy
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# SECURITY FIX (CWE-770): Message retention policy to prevent unbounded memory growth
+MESSAGE_RETENTION_HOURS = 24  # Keep messages for 24 hours
+MAX_MESSAGES_PER_INSTANCE = 1000  # Max messages to keep per instance
+
+
+# SECURITY FIX (CWE-532): Helper function to redact authkeys in logs
+def redact_authkey(authkey: bytes | None) -> str:
+    """Redact authentication keys for logging.
+
+    Args:
+        authkey: Authentication key bytes to redact
+
+    Returns:
+        Redacted string like "***1234" showing last 4 bytes in hex
+    """
+    if not authkey:
+        return "[not set]"
+    # Show last 4 bytes as hex
+    last_bytes = authkey[-4:] if len(authkey) >= 4 else authkey
+    return f"***{last_bytes.hex()}"
 
 
 class SharedStateManager:
@@ -107,10 +128,11 @@ class SharedStateManager:
             self.manager_address = self.manager._address
             self.manager_authkey = self.manager._authkey
 
-            # Address can be either (host, port) tuple or Unix socket path (string)
+            # SECURITY FIX (CWE-532): Redact authkey in logs, don't expose raw value
             address_type = "unix_socket" if isinstance(self.manager_address, str) else "tcp"
             logger.info(
-                f"Manager address: {self.manager_address} ({address_type}), authkey available for IPC"
+                f"Manager address: {self.manager_address} ({address_type}), "
+                f"authkey={redact_authkey(self.manager_authkey)}"
             )
 
             # Shared queues for message passing (instance_id -> Queue)
@@ -331,14 +353,124 @@ class SharedStateManager:
                 del self.instance_metadata[instance_id]
                 logger.debug(f"Removed metadata for {instance_id}")
 
-            # Note: We don't clean up messages in message_registry as they may
-            # be needed for debugging or audit purposes. Consider adding a
-            # separate cleanup_old_messages() method with a retention policy.
+            # SECURITY FIX (CWE-770): Clean up old messages for this instance
+            self.cleanup_old_messages(instance_id=instance_id)
 
             logger.info(f"Successfully cleaned up resources for {instance_id}")
         except Exception as e:
             logger.error(f"Error during cleanup of instance {instance_id}: {e}", exc_info=True)
             # Don't raise - cleanup errors are logged but not critical
+
+    def cleanup_old_messages(
+        self,
+        instance_id: str | None = None,
+        retention_hours: int = MESSAGE_RETENTION_HOURS,
+        max_messages: int = MAX_MESSAGES_PER_INSTANCE,
+    ) -> int:
+        """Clean up old messages from the message registry to prevent memory leaks.
+
+        SECURITY FIX (CWE-770): Implements TTL-based cleanup to prevent unbounded
+        memory growth in long-running processes.
+
+        Args:
+            instance_id: If provided, only clean messages for this instance.
+                        If None, clean all old messages across all instances.
+            retention_hours: Age threshold in hours (default: 24)
+            max_messages: Maximum messages to keep per instance (default: 1000)
+
+        Returns:
+            Number of messages cleaned up
+
+        Example:
+            >>> manager = SharedStateManager()
+            >>> # Clean messages older than 24 hours
+            >>> removed = manager.cleanup_old_messages()
+            >>> print(f"Removed {removed} old messages")
+        """
+        try:
+            from datetime import datetime, timezone
+
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=retention_hours)
+            messages_to_remove = []
+
+            # Iterate through message registry
+            for message_id, envelope in list(self.message_registry.items()):
+                try:
+                    # Filter by instance_id if provided
+                    if instance_id:
+                        sender_id = envelope.get("sender_id")
+                        recipient_id = envelope.get("recipient_id")
+                        if sender_id != instance_id and recipient_id != instance_id:
+                            continue
+
+                    # Check message age
+                    sent_at_str = envelope.get("sent_at")
+                    if sent_at_str:
+                        # Parse ISO format timestamp
+                        sent_at = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
+                        if sent_at < cutoff_time:
+                            messages_to_remove.append(message_id)
+                            continue
+
+                    # Also remove completed/failed messages after some time
+                    status = envelope.get("status")
+                    if status in ["replied", "timeout", "error"]:
+                        updated_at_str = envelope.get("updated_at")
+                        if updated_at_str:
+                            updated_at = datetime.fromisoformat(
+                                updated_at_str.replace("Z", "+00:00")
+                            )
+                            # Remove completed messages after 1 hour
+                            if updated_at < datetime.now(timezone.utc) - timedelta(hours=1):
+                                messages_to_remove.append(message_id)
+
+                except (ValueError, AttributeError, KeyError) as e:
+                    logger.warning(
+                        f"Error checking message {message_id} for cleanup: {e}. Skipping."
+                    )
+                    continue
+
+            # Enforce max_messages limit per instance if instance_id provided
+            if instance_id and max_messages > 0:
+                instance_messages = []
+                for message_id, envelope in self.message_registry.items():
+                    sender_id = envelope.get("sender_id")
+                    recipient_id = envelope.get("recipient_id")
+                    if sender_id == instance_id or recipient_id == instance_id:
+                        sent_at_str = envelope.get("sent_at", "")
+                        instance_messages.append((message_id, sent_at_str))
+
+                # If we have more than max_messages, remove oldest ones
+                if len(instance_messages) > max_messages:
+                    # Sort by timestamp (oldest first)
+                    instance_messages.sort(key=lambda x: x[1])
+                    # Mark oldest messages for removal
+                    excess_count = len(instance_messages) - max_messages
+                    for msg_id, _ in instance_messages[:excess_count]:
+                        if msg_id not in messages_to_remove:
+                            messages_to_remove.append(msg_id)
+
+            # Remove marked messages
+            removed_count = 0
+            for message_id in messages_to_remove:
+                try:
+                    if message_id in self.message_registry:
+                        del self.message_registry[message_id]
+                        removed_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to remove message {message_id}: {e}")
+
+            if removed_count > 0:
+                logger.info(
+                    f"Cleaned up {removed_count} old messages "
+                    f"(instance_id={instance_id or 'all'}, retention={retention_hours}h)"
+                )
+
+            return removed_count
+
+        except Exception as e:
+            logger.error(f"Error during message cleanup: {e}", exc_info=True)
+            return 0
 
     def get_queue_depth(self, instance_id: str) -> int | None:
         """Get the current depth (number of messages) in an instance's queue.
