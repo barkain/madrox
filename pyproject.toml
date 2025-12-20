@@ -53,6 +53,8 @@ dev = [
     "pytest-mock>=3.12.0",
     "ruff>=0.1.0",
     "mypy>=1.7.0",
+    "types-PyYAML>=6.0.0",
+    "types-aiofiles>=23.0.0",
 ]
 
 [project.scripts]
@@ -70,6 +72,8 @@ dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
+    "types-aiofiles>=25.1.0.20251011",
+    "types-pyyaml>=6.0.12.20250915",
 ]
 
 [tool.pytest.ini_options]
@@ -114,39 +118,43 @@ warn_unreachable = true
 no_implicit_optional = false
 
 [[tool.mypy.overrides]]
-module = "src.orchestrator.mcp_adapter"
+module = "orchestrator.mcp_adapter"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "src.orchestrator.shared_state_manager"
+module = "orchestrator.shared_state_manager"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "src.orchestrator.config"
+module = "orchestrator.instance_manager"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "src.orchestrator.monitoring_service"
+module = "orchestrator.monitoring_service"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "src.orchestrator.log_stream_handler"
+module = "orchestrator.log_stream_handler"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "src.orchestrator.tmux_instance_manager"
+module = "orchestrator.llm_summarizer"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "src.orchestrator.instance_manager"
+module = "orchestrator.monitoring.summary_generator"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "src.supervision.coordination.coordinator"
+module = "supervision.coordination.coordinator"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "src.supervision.supervisor.agent"
+module = "orchestrator.server"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "orchestrator.tmux_instance_manager"
 ignore_errors = true
 
 [tool.coverage.run]
