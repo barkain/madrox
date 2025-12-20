@@ -813,7 +813,9 @@ class ClaudeOrchestratorServer:
                 UUID(session_id)
                 UUID(instance_id)
             except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid session_id or instance_id format")
+                raise HTTPException(
+                    status_code=400, detail="Invalid session_id or instance_id format"
+                )
 
             instance_path = Path("/tmp/madrox_logs/summaries") / session_id / instance_id
             if not instance_path.exists():

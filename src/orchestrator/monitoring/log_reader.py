@@ -127,7 +127,9 @@ class IncrementalLogReader:
                 else:
                     # Seek to last position (position is guaranteed non-None here)
                     if position is None:
-                        raise ValueError("position should not be None when not starting from beginning")
+                        raise ValueError(
+                            "position should not be None when not starting from beginning"
+                        )
                     offset = position.last_byte_offset
                     line_number = position.last_line_number
                     f.seek(offset)
