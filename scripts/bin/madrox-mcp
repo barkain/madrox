@@ -1,0 +1,24 @@
+#!/bin/bash
+# Madrox MCP Server Wrapper for Codex CLI
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Navigate to the repository root (two levels up from scripts/bin/)
+REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
+cd "$REPO_ROOT"
+
+# Check if we're in a virtual environment or if uv is available
+if [ -n "$VIRTUAL_ENV" ]; then
+    # Already in a virtual environment, use python directly
+    exec python scripts/bin/run_orchestrator_stdio.py
+elif command -v uv >/dev/null 2>&1; then
+    # uv is available in PATH
+    exec uv run python scripts/bin/run_orchestrator_stdio.py
+elif [ -f "$HOME/.local/bin/uv" ]; then
+    # uv is in the common local bin location
+    exec "$HOME/.local/bin/uv" run python scripts/bin/run_orchestrator_stdio.py
+else
+    # Try to use python directly (assumes dependencies are installed)
+    exec python scripts/bin/run_orchestrator_stdio.py
+fi

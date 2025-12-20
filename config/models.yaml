@@ -1,0 +1,24 @@
+# Madrox Model Configuration
+# Configure allowed models for Claude and Codex providers
+
+# Codex provider (OpenAI GPT models)
+codex:
+  # Default model when none is specified
+  default: gpt-5-codex
+
+  # List of allowed Codex models
+  # Note: Currently only gpt-5-codex is supported by Codex CLI
+  allowed_models:
+    - gpt-5-codex
+
+# Claude provider (Anthropic Claude models)
+claude:
+  # Default model when none is specified
+  # claude-sonnet-4-5 is recommended for daily use - smartest model with best performance
+  default: claude-sonnet-4-5
+
+  # List of allowed Claude models
+  allowed_models:
+    - claude-sonnet-4-5   # Recommended: Smartest model for daily use
+    - claude-opus-4-1     # Legacy: Reaches usage limits faster, use sparingly
+    - claude-haiku-4-5    # Fastest: Best for simple, quick tasks

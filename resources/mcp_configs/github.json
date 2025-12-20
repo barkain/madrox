@@ -1,0 +1,12 @@
+{
+  "name": "github",
+  "description": "GitHub MCP server for repository operations",
+  "config": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"]
+  },
+  "env": {
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "<your-github-token>"
+  },
+  "notes": "Requires GITHUB_PERSONAL_ACCESS_TOKEN environment variable"
+}

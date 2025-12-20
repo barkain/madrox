@@ -1,0 +1,108 @@
+# Pre-commit hooks for Madrox
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+default_language_version:
+  python: python3.11
+
+repos:
+  # Ruff - Fast Python linter and formatter (replaces Black, isort, flake8, and more)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      # Run the Ruff formatter
+      - id: ruff-format
+        name: ruff format
+        description: Format Python code with Ruff
+        types_or: [python, pyi]
+        args: []
+
+      # Run the Ruff linter
+      - id: ruff
+        name: ruff check
+        description: Lint Python code with Ruff
+        types_or: [python, pyi]
+        args:
+          - --fix  # Automatically fix fixable issues
+          - --exit-non-zero-on-fix  # Exit with error if fixes were applied
+
+  # Mypy - Static type checker for Python
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        name: mypy type checking
+        description: Run mypy static type checker
+        additional_dependencies:
+          - types-requests
+          - types-aiofiles
+          - pydantic
+          - fastapi
+          - sqlalchemy
+        args:
+          - --ignore-missing-imports
+          - --no-strict-optional
+          - --warn-redundant-casts
+          - --warn-unused-ignores
+        exclude: ^tests/
+
+  # Pre-commit's built-in hooks for general file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Remove trailing whitespace from all text files
+      - id: trailing-whitespace
+        name: trim trailing whitespace
+        description: Trim trailing whitespace from all text files
+        args: [--markdown-linebreak-ext=md]  # Preserve markdown double-space line breaks
+
+      # Ensure files end with a newline
+      - id: end-of-file-fixer
+        name: fix end of files
+        description: Ensure files end with a newline character
+
+      # Validate YAML file syntax
+      - id: check-yaml
+        name: check yaml syntax
+        description: Validate YAML file syntax
+        args: [--safe]  # Use safe YAML loader
+
+      # Additional useful hooks for Python projects
+      - id: check-json
+        name: check json syntax
+        description: Validate JSON file syntax
+
+      - id: check-toml
+        name: check toml syntax
+        description: Validate TOML file syntax
+
+      - id: check-merge-conflict
+        name: check for merge conflicts
+        description: Check for merge conflict strings
+
+      - id: check-case-conflict
+        name: check filename case conflicts
+        description: Check for files with names that would conflict on case-insensitive filesystems
+
+      - id: check-added-large-files
+        name: check for large files
+        description: Prevent committing large files (>500KB)
+        args: [--maxkb=500]
+
+      - id: mixed-line-ending
+        name: fix mixed line endings
+        description: Ensure consistent line endings (LF)
+        args: [--fix=lf]
+
+# Configuration for pre-commit.ci (optional CI service)
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false

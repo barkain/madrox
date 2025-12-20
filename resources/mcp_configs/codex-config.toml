@@ -1,0 +1,60 @@
+# Codex CLI Configuration for Madrox MCP Server
+#
+# This configuration file enables OpenAI's Codex CLI to use the Madrox MCP server
+# for orchestrating multiple Claude instances.
+#
+# Installation:
+# 1. Copy this file to ~/.codex/config.toml (or merge with existing config)
+# 2. Update the path to your Madrox installation directory
+# 3. Restart Codex CLI
+
+# MCP Servers Configuration
+[mcp_servers]
+
+[mcp_servers.madrox]
+# Server name and description
+name = "madrox"
+description = "Claude Orchestrator - Spawn and manage multiple Claude instances"
+
+# Command to run the stdio server
+# Update the path to point to your Madrox installation
+command = "python"
+args = ["/path/to/user/dev/madrox/run_stdio_server.py"]
+
+# Environment variables (optional)
+env = {
+    MAX_INSTANCES = "10",
+    WORKSPACE_DIR = "/tmp/claude_orchestrator",
+    LOG_LEVEL = "INFO"
+}
+
+# Available tools from this server
+[[mcp_servers.madrox.tools]]
+name = "spawn_claude"
+description = "Spawn a new Claude instance with specific role"
+
+[[mcp_servers.madrox.tools]]
+name = "send_to_instance"
+description = "Send a message to a specific Claude instance"
+
+[[mcp_servers.madrox.tools]]
+name = "get_instance_output"
+description = "Get recent output from a Claude instance"
+
+[[mcp_servers.madrox.tools]]
+name = "coordinate_instances"
+description = "Coordinate multiple instances for a complex task"
+
+[[mcp_servers.madrox.tools]]
+name = "terminate_instance"
+description = "Terminate a Claude instance"
+
+[[mcp_servers.madrox.tools]]
+name = "get_instance_status"
+description = "Get status for instances"
+
+# Example usage in Codex:
+# After configuring, you can use commands like:
+# - "Spawn a Claude instance named 'researcher' with role 'data_scientist'"
+# - "Send 'analyze this dataset' to instance researcher"
+# - "Coordinate instances for building a web application"

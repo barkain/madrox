@@ -1,0 +1,9 @@
+{
+  "name": "sqlite",
+  "description": "SQLite MCP server for database operations",
+  "config": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-sqlite", "/path/to/database.db"]
+  },
+  "notes": "Replace /path/to/database.db with the actual path to your SQLite database"
+}

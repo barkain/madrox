@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.coverage.*
+*.cover
+.hypothesis/
+.playwright-mcp/
+coverage.json
+
+# Linting
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Local configuration
+.claude_mcp_config.json
+
+# Logs
+*.log
+logs/
+
+# Instance workspaces
+/workspace/
+/tmp/claude_orchestrator/
+
+# Package manager
+
+# Test scripts in root (use tests/ directory for real tests)
+/test_*.py
+/*.txt
+# Debug artifacts
+debug_network_run.log
+debug_summary_initial.md
+network_monitor_history.json
+debug_network.log
+.claude/
