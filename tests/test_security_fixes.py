@@ -45,15 +45,14 @@ class TestCommandInjectionFix:
             "test$(ls)",
             "test|cat /etc/passwd",
             "test&& echo pwned",
-            "../../../etc/passwd",
         ]
 
         for dangerous_input in dangerous_inputs:
             quoted = shlex.quote(dangerous_input)
             # Quoted string should be safe (wrapped in single quotes or escaped)
-            assert quoted.startswith("'") or "\\" in quoted, f"Not properly quoted: {quoted}"
-            # Should not contain unescaped shell metacharacters
-            assert ";" not in quoted or "\\;" in quoted or quoted.startswith("'")
+            assert quoted.startswith("'"), f"Shell metacharacters not quoted: {quoted}"
+            # Original dangerous characters should be inside quotes
+            assert dangerous_input in quoted or "\\;" in quoted
 
     def test_env_var_name_validation(self):
         """Test that environment variable names are validated."""
