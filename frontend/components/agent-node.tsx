@@ -1,6 +1,6 @@
 import { memo } from "react"
 import { Handle, Position } from "@xyflow/react"
-import { Activity, Clock, Zap, Coins } from "lucide-react"
+import { Activity, Clock } from "lucide-react"
 import type { AgentInstance } from "@/types"
 
 interface AgentNodeProps {
@@ -73,22 +73,6 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
             Uptime
           </span>
           <span className="font-mono text-foreground">{calculateUptime()}</span>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground flex items-center gap-1">
-            <Zap className="h-3 w-3" />
-            Tokens
-          </span>
-          <span className="font-mono text-foreground">{data.totalTokens?.toLocaleString() || 0}</span>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground flex items-center gap-1">
-            <Coins className="h-3 w-3" />
-            Cost
-          </span>
-          <span className="font-mono text-foreground">${data.totalCost?.toFixed(4) || "0.0000"}</span>
         </div>
       </div>
 

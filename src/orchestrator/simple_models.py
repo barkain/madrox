@@ -6,55 +6,6 @@ from enum import Enum
 from typing import Any
 
 
-class TokenUsage:
-    """Token usage statistics from Claude API responses."""
-
-    def __init__(
-        self,
-        input_tokens: int = 0,
-        output_tokens: int = 0,
-        cache_creation_input_tokens: int = 0,
-        cache_read_input_tokens: int = 0,
-    ):
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
-        self.cache_creation_input_tokens = cache_creation_input_tokens
-        self.cache_read_input_tokens = cache_read_input_tokens
-
-    @property
-    def total_tokens(self) -> int:
-        """Total tokens used (input + output)."""
-        return self.total_input_tokens + self.output_tokens
-
-    @property
-    def total_input_tokens(self) -> int:
-        """Total input tokens including cache creation."""
-        return self.input_tokens + self.cache_creation_input_tokens
-
-    def to_dict(self) -> dict[str, int]:
-        """Convert to dictionary for serialization."""
-        return {
-            "input_tokens": self.input_tokens,
-            "output_tokens": self.output_tokens,
-            "cache_creation_input_tokens": self.cache_creation_input_tokens,
-            "cache_read_input_tokens": self.cache_read_input_tokens,
-            "total_tokens": self.total_tokens,
-            "total_input_tokens": self.total_input_tokens,
-        }
-
-    def __add__(self, other: "TokenUsage") -> "TokenUsage":
-        """Add two TokenUsage instances together."""
-        if not isinstance(other, TokenUsage):
-            return NotImplemented
-        return TokenUsage(
-            input_tokens=self.input_tokens + other.input_tokens,
-            output_tokens=self.output_tokens + other.output_tokens,
-            cache_creation_input_tokens=self.cache_creation_input_tokens
-            + other.cache_creation_input_tokens,
-            cache_read_input_tokens=self.cache_read_input_tokens + other.cache_read_input_tokens,
-        )
-
-
 class MessageStatus(str, Enum):
     """Status of a message in the bidirectional communication protocol."""
 
@@ -161,7 +112,6 @@ class SpawnInstanceRequest:
         workspace_dir: str | None = None,
         environment_vars: dict[str, str] | None = None,
         max_total_tokens: int | None = None,
-        max_cost: float | None = None,
         timeout_minutes: int | None = None,
         parent_instance_id: str | None = None,
     ):
@@ -174,7 +124,6 @@ class SpawnInstanceRequest:
         self.workspace_dir = workspace_dir
         self.environment_vars = environment_vars or {}
         self.max_total_tokens = max_total_tokens
-        self.max_cost = max_cost
         self.timeout_minutes = timeout_minutes
         self.parent_instance_id = parent_instance_id
 
@@ -206,7 +155,6 @@ class InstanceOutput:
         response: str,
         timestamp: datetime,
         tokens_used: int,
-        cost: float,
         processing_time_ms: int,
         conversation_id: str | None = None,
         message_id: str | None = None,
@@ -215,7 +163,6 @@ class InstanceOutput:
         self.response = response
         self.timestamp = timestamp
         self.tokens_used = tokens_used
-        self.cost = cost
         self.processing_time_ms = processing_time_ms
         self.conversation_id = conversation_id
         self.message_id = message_id
@@ -253,7 +200,6 @@ class InstanceMetrics:
         state: InstanceState,
         total_requests: int,
         total_tokens: int,
-        total_cost: float,
         avg_response_time_ms: float,
         success_rate: float,
         uptime_seconds: int,
@@ -266,7 +212,6 @@ class InstanceMetrics:
         self.state = state
         self.total_requests = total_requests
         self.total_tokens = total_tokens
-        self.total_cost = total_cost
         self.avg_response_time_ms = avg_response_time_ms
         self.success_rate = success_rate
         self.uptime_seconds = uptime_seconds
@@ -287,7 +232,6 @@ class OrchestratorConfig:
         default_model: str = "claude-4-sonnet-20250514",
         max_concurrent_instances: int = 10,
         max_tokens_per_instance: int = 100000,
-        max_total_cost: float = 100.0,
         instance_timeout_minutes: int = 60,
         workspace_base_dir: str = "/tmp/claude_orchestrator",
         enable_isolation: bool = True,
@@ -305,7 +249,6 @@ class OrchestratorConfig:
         self.default_model = default_model
         self.max_concurrent_instances = max_concurrent_instances
         self.max_tokens_per_instance = max_tokens_per_instance
-        self.max_total_cost = max_total_cost
         self.instance_timeout_minutes = instance_timeout_minutes
         self.workspace_base_dir = workspace_base_dir
         self.enable_isolation = enable_isolation
@@ -329,7 +272,6 @@ class OrchestratorConfig:
             "default_model": self.default_model,
             "max_concurrent_instances": self.max_concurrent_instances,
             "max_tokens_per_instance": self.max_tokens_per_instance,
-            "max_total_cost": self.max_total_cost,
             "instance_timeout_minutes": self.instance_timeout_minutes,
             "workspace_base_dir": self.workspace_base_dir,
             "enable_isolation": self.enable_isolation,

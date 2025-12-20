@@ -19,7 +19,6 @@ from .llm_summarizer import LLMSummarizer
 from .monitoring_service import MonitoringService
 from .name_generator import get_instance_name
 from .simple_models import MessageEnvelope
-from .usage_tracker import UsageTracker
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,6 @@ class TmuxInstanceManager:
 
         # Resource tracking
         self.total_tokens_used = 0
-        self.total_cost = 0.0
 
         # Create workspace base directory
         self.workspace_base = Path(config.get("workspace_base_dir", "/tmp/claude_orchestrator"))
@@ -61,10 +59,6 @@ class TmuxInstanceManager:
         # Connect to tmux server
         self.tmux_server = libtmux.Server()
         logger.info("Connected to tmux server")
-
-        # Initialize usage tracker for actual token counting
-        self.usage_tracker = UsageTracker()
-        logger.info("UsageTracker initialized")
 
         # Store server port for MCP config generation
         import os
@@ -481,18 +475,6 @@ class TmuxInstanceManager:
         metadata_file = workspace_dir / ".madrox_instance_id"
         metadata_file.write_text(instance_id)
 
-        # Generate session ID for Claude CLI token tracking
-        session_id = str(uuid.uuid4())
-
-        # Write session ID file for UsageTracker discovery
-        try:
-            session_id_file = workspace_dir / ".madrox_session_id"
-            session_id_file.write_text(session_id)
-            logger.info(f"Created session ID file: {session_id_file}")
-        except Exception as e:
-            logger.warning(f"Failed to create session ID file: {e}", exc_info=True)
-            # Non-fatal: continue even if session tracking fails
-
         # Lazy startup of health monitoring (after event loop is running)
         if self.shared_state and not self._health_monitoring_enabled:
             try:
@@ -540,7 +522,6 @@ class TmuxInstanceManager:
             "created_at": datetime.now(UTC).isoformat(),
             "last_activity": datetime.now(UTC).isoformat(),
             "total_tokens_used": 0,
-            "total_cost": 0.0,
             "request_count": 0,
             "max_tokens": kwargs.get("max_tokens", 4096),
             "temperature": kwargs.get("temperature", 0.0),
@@ -551,14 +532,10 @@ class TmuxInstanceManager:
             "statusline": "",
             "error_message": None,
             "retry_count": 0,
-            "_session_id": session_id,
         }
 
         self.instances[instance_id] = instance
         self.message_history[instance_id] = []
-
-        # Register instance with usage tracker for actual token counting
-        self.usage_tracker.register_instance(instance_id, str(workspace_dir))
 
         # Initialize response queue for this instance immediately at spawn
         # This ensures the instance can receive replies from children even before sending messages
@@ -787,27 +764,13 @@ class TmuxInstanceManager:
 
             if not wait_for_response:
                 # Still track outbound message tokens even when not waiting for response
-                try:
-                    # Try to get actual token usage from UsageTracker
-                    usage = self.usage_tracker.get_session_usage(instance_id)
-                    estimated_tokens = usage.total_tokens
-                    if estimated_tokens == 0:
-                        # Fallback to word-count estimation if no usage data
-                        estimated_tokens = len(message.split())
-                except Exception as e:
-                    logger.warning(
-                        f"Error getting usage from tracker: {e}, falling back to estimation"
-                    )
-                    estimated_tokens = len(message.split())
-
-                estimated_cost = estimated_tokens * 0.00001
+                # Fallback to word-count estimation
+                estimated_tokens = len(message.split())
 
                 instance["total_tokens_used"] += estimated_tokens
-                instance["total_cost"] += estimated_cost
                 instance["request_count"] += 1
 
                 self.total_tokens_used += estimated_tokens
-                self.total_cost += estimated_cost
 
                 return {
                     "instance_id": instance_id,
@@ -849,27 +812,13 @@ class TmuxInstanceManager:
                 response_timestamp = datetime.now(UTC)
                 response_time = (response_timestamp - send_timestamp).total_seconds()
 
-                try:
-                    # Try to get actual token usage from UsageTracker
-                    usage = self.usage_tracker.get_session_usage(instance_id)
-                    estimated_tokens = usage.total_tokens
-                    if estimated_tokens == 0:
-                        # Fallback to word-count estimation if no usage data
-                        estimated_tokens = len(message.split()) + len(response_text.split())
-                except Exception as e:
-                    logger.warning(
-                        f"Error getting usage from tracker: {e}, falling back to estimation"
-                    )
-                    estimated_tokens = len(message.split()) + len(response_text.split())
-
-                estimated_cost = estimated_tokens * 0.00001
+                # Fallback to word-count estimation
+                estimated_tokens = len(message.split()) + len(response_text.split())
 
                 instance["total_tokens_used"] += estimated_tokens
-                instance["total_cost"] += estimated_cost
                 instance["request_count"] += 1
 
                 self.total_tokens_used += estimated_tokens
-                self.total_cost += estimated_cost
 
                 # Add to message history
                 self.message_history[instance_id].append(
@@ -897,15 +846,6 @@ class TmuxInstanceManager:
                     )
 
                 instance["state"] = "idle"
-
-                # Try to discover session file after first message exchange
-                if not self.usage_tracker.instance_sessions.get(instance_id):
-                    logger.debug(
-                        f"Session file not yet found for {instance_id}, attempting retry discovery"
-                    )
-                    self.usage_tracker.retry_session_discovery(
-                        instance_id, max_retries=3, delay=0.5
-                    )
 
                 return {
                     "instance_id": instance_id,
@@ -991,26 +931,13 @@ class TmuxInstanceManager:
             # Calculate response time
             response_time = (response_timestamp - send_timestamp).total_seconds()
 
-            # Update usage statistics with actual token usage
-            try:
-                # Try to get actual token usage from UsageTracker
-                usage = self.usage_tracker.get_session_usage(instance_id)
-                estimated_tokens = usage.total_tokens
-                if estimated_tokens == 0:
-                    # Fallback to word-count estimation if no usage data
-                    estimated_tokens = len(message.split()) + len(response_text.split())
-            except Exception as e:
-                logger.warning(f"Error getting usage from tracker: {e}, falling back to estimation")
-                estimated_tokens = len(message.split()) + len(response_text.split())
-
-            estimated_cost = estimated_tokens * 0.00001
+            # Update usage statistics with word-count estimation
+            estimated_tokens = len(message.split()) + len(response_text.split())
 
             instance["total_tokens_used"] += estimated_tokens
-            instance["total_cost"] += estimated_cost
             instance["request_count"] += 1
 
             self.total_tokens_used += estimated_tokens
-            self.total_cost += estimated_cost
 
             # Log response with structured data
             if self.logging_manager:
@@ -1025,7 +952,6 @@ class TmuxInstanceManager:
                         "direction": "inbound",
                         "content": response_text,
                         "tokens": estimated_tokens,
-                        "cost": estimated_cost,
                         "response_time": response_time,
                     },
                 )
@@ -1042,7 +968,6 @@ class TmuxInstanceManager:
                         "message_length": len(message),
                         "response_length": len(response_text),
                         "tokens": estimated_tokens,
-                        "cost": estimated_cost,
                         "response_time_seconds": response_time,
                     },
                 )
@@ -1056,20 +981,12 @@ class TmuxInstanceManager:
                 },
             )
 
-            # Try to discover session file after first message exchange
-            if not self.usage_tracker.instance_sessions.get(instance_id):
-                logger.debug(
-                    f"Session file not yet found for {instance_id}, attempting retry discovery"
-                )
-                self.usage_tracker.retry_session_discovery(instance_id, max_retries=3, delay=0.5)
-
             return {
                 "instance_id": instance_id,
                 "message_id": message_id,
                 "response": response_text,
                 "timestamp": response_timestamp.isoformat(),
                 "tokens_used": estimated_tokens,
-                "cost": estimated_cost,
                 "protocol": "polling_fallback",  # Legacy polling method
             }
 
@@ -1265,7 +1182,6 @@ class TmuxInstanceManager:
                     extra={
                         "total_requests": instance.get("request_count", 0),
                         "total_tokens": instance.get("total_tokens_used", 0),
-                        "total_cost": instance.get("total_cost", 0.0),
                     },
                 )
 
@@ -1279,7 +1195,6 @@ class TmuxInstanceManager:
                         "final_state": "terminated",
                         "total_requests": instance.get("request_count", 0),
                         "total_tokens": instance.get("total_tokens_used", 0),
-                        "total_cost": instance.get("total_cost", 0.0),
                         "uptime_seconds": (
                             datetime.now(UTC) - datetime.fromisoformat(instance["created_at"])
                         ).total_seconds(),
@@ -1325,7 +1240,6 @@ class TmuxInstanceManager:
                     ]
                 ),
                 "total_tokens_used": self.total_tokens_used,
-                "total_cost": self.total_cost,
             }
 
     def get_all_instances(self) -> dict[str, dict[str, Any]]:
@@ -1491,11 +1405,6 @@ class TmuxInstanceManager:
             # Add model if specified
             if model := instance.get("model"):
                 cmd_parts.extend(["--model", model])
-
-            # Add pre-generated session ID for token tracking
-            if session_id := instance.get("_session_id"):
-                cmd_parts.extend(["--session-id", session_id])
-                logger.debug(f"Using pre-specified session ID: {session_id}")
 
             # Add initial_prompt as CLI argument to avoid paste detection
             # Claude CLI accepts prompts directly - bypasses paste detection entirely
@@ -2260,12 +2169,6 @@ class TmuxInstanceManager:
             max_tokens = instance.get("resource_limits", {}).get("max_total_tokens")
             if max_tokens and instance["total_tokens_used"] > max_tokens:
                 logger.warning(f"Instance {instance_id} exceeded token limit, terminating")
-                await self.terminate_instance(instance_id, force=True)
-                continue
-
-            max_cost = instance.get("resource_limits", {}).get("max_cost")
-            if max_cost and instance["total_cost"] > max_cost:
-                logger.warning(f"Instance {instance_id} exceeded cost limit, terminating")
                 await self.terminate_instance(instance_id, force=True)
                 continue
 
