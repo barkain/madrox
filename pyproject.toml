@@ -114,39 +114,39 @@ warn_unreachable = true
 no_implicit_optional = false
 
 [[tool.mypy.overrides]]
-module = "orchestrator.mcp_adapter"
+module = "src.orchestrator.mcp_adapter"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "orchestrator.shared_state_manager"
+module = "src.orchestrator.shared_state_manager"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "orchestrator.config"
+module = "src.orchestrator.config"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "orchestrator.monitoring_service"
+module = "src.orchestrator.monitoring_service"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "orchestrator.log_stream_handler"
+module = "src.orchestrator.log_stream_handler"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "orchestrator.tmux_instance_manager"
+module = "src.orchestrator.tmux_instance_manager"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "orchestrator.instance_manager"
+module = "src.orchestrator.instance_manager"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "supervision.coordination.coordinator"
+module = "src.supervision.coordination.coordinator"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "supervision.supervisor.agent"
+module = "src.supervision.supervisor.agent"
 ignore_errors = true
 
 [tool.coverage.run]

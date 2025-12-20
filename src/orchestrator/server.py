@@ -772,6 +772,13 @@ class ClaudeOrchestratorServer:
             """Get all summaries for a specific session."""
             import json
             from pathlib import Path
+            from uuid import UUID
+
+            # Validate session_id is a valid UUID to prevent path traversal
+            try:
+                UUID(session_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid session_id format")
 
             session_path = Path("/tmp/madrox_logs/summaries") / session_id
             if not session_path.exists():
@@ -799,6 +806,14 @@ class ClaudeOrchestratorServer:
             """Get summary history for a specific instance in a session."""
             import json
             from pathlib import Path
+            from uuid import UUID
+
+            # Validate session_id and instance_id are valid UUIDs to prevent path traversal
+            try:
+                UUID(session_id)
+                UUID(instance_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid session_id or instance_id format")
 
             instance_path = Path("/tmp/madrox_logs/summaries") / session_id / instance_id
             if not instance_path.exists():
