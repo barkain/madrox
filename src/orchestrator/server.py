@@ -6,8 +6,13 @@ import os
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import (  # type: ignore[import-untyped]
+    FastAPI,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-untyped]
 
 from .instance_manager import InstanceManager
 from .logging_manager import LoggingManager, get_audit_log_stream_handler, get_log_stream_handler
@@ -778,7 +783,7 @@ class ClaudeOrchestratorServer:
             try:
                 UUID(session_id)
             except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid session_id format")
+                raise HTTPException(status_code=400, detail="Invalid session_id format") from None
 
             session_path = Path("/tmp/madrox_logs/summaries") / session_id
             if not session_path.exists():
@@ -815,7 +820,7 @@ class ClaudeOrchestratorServer:
             except ValueError:
                 raise HTTPException(
                     status_code=400, detail="Invalid session_id or instance_id format"
-                )
+                ) from None
 
             instance_path = Path("/tmp/madrox_logs/summaries") / session_id / instance_id
             if not instance_path.exists():
@@ -940,12 +945,12 @@ class ClaudeOrchestratorServer:
         logger.info(f"Sending message to instance {instance_id}: {message[:100]}...")
 
         try:
+            # Note: priority parameter is accepted but not used by instance_manager
             response = await self.instance_manager.send_to_instance(
                 instance_id=instance_id,
                 message=message,
                 wait_for_response=wait_for_response,
                 timeout_seconds=timeout_seconds,
-                priority=priority,
             )
 
             if response:
@@ -1099,21 +1104,25 @@ class ClaudeOrchestratorServer:
     async def start_server(self):
         """Start the MCP server."""
         try:
-            import uvicorn
+            import uvicorn  # type: ignore[import-untyped]
         except ImportError:
             # Fallback for type checking
-            class Config:
-                def __init__(self, *args, **kwargs):
+            class _Config:
+                def __init__(self, *args: Any, **kwargs: Any) -> None:
                     pass
 
-            class Server:
-                def __init__(self, *args, **kwargs):
+            class _Server:
+                def __init__(self, *args: Any, **kwargs: Any) -> None:
                     pass
 
-                async def serve(self):
+                async def serve(self) -> None:
                     pass
 
-            uvicorn = type("uvicorn", (), {"Config": Config, "Server": Server})()
+            class _UvicornModule:
+                Config = _Config
+                Server = _Server
+
+            uvicorn = _UvicornModule()  # type: ignore[assignment]
 
         logger.info(
             f"Starting Claude Orchestrator Server on {self.config.server_host}:{self.config.server_port}"
