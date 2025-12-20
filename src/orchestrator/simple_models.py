@@ -6,6 +6,55 @@ from enum import Enum
 from typing import Any
 
 
+class TokenUsage:
+    """Token usage statistics from Claude API responses."""
+
+    def __init__(
+        self,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_creation_input_tokens: int = 0,
+        cache_read_input_tokens: int = 0,
+    ):
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.cache_creation_input_tokens = cache_creation_input_tokens
+        self.cache_read_input_tokens = cache_read_input_tokens
+
+    @property
+    def total_tokens(self) -> int:
+        """Total tokens used (input + output)."""
+        return self.total_input_tokens + self.output_tokens
+
+    @property
+    def total_input_tokens(self) -> int:
+        """Total input tokens including cache creation."""
+        return self.input_tokens + self.cache_creation_input_tokens
+
+    def to_dict(self) -> dict[str, int]:
+        """Convert to dictionary for serialization."""
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cache_creation_input_tokens": self.cache_creation_input_tokens,
+            "cache_read_input_tokens": self.cache_read_input_tokens,
+            "total_tokens": self.total_tokens,
+            "total_input_tokens": self.total_input_tokens,
+        }
+
+    def __add__(self, other: "TokenUsage") -> "TokenUsage":
+        """Add two TokenUsage instances together."""
+        if not isinstance(other, TokenUsage):
+            return NotImplemented
+        return TokenUsage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cache_creation_input_tokens=self.cache_creation_input_tokens
+            + other.cache_creation_input_tokens,
+            cache_read_input_tokens=self.cache_read_input_tokens + other.cache_read_input_tokens,
+        )
+
+
 class MessageStatus(str, Enum):
     """Status of a message in the bidirectional communication protocol."""
 
