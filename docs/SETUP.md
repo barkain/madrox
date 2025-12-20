@@ -633,19 +633,6 @@ export MONITORING_STORAGE_PATH="/tmp/madrox_logs/summaries"
 export MONITORING_CACHE_AGE=60
 ```
 
-**Docker Configuration**
-
-Add to `.env` file:
-
-```bash
-# Required for LLM summaries
-OPENROUTER_API_KEY=sk-or-v1-xxxxx
-
-# Optional monitoring settings
-MONITORING_POLL_INTERVAL=12
-MONITORING_STORAGE_PATH=/tmp/madrox_logs/summaries
-```
-
 **Verify Monitoring is Active**
 
 ```bash
@@ -903,14 +890,12 @@ instances = await manager.spawn_multiple_instances([
 
 For production use:
 
-1. **Use Docker deployment** for isolation and resource management
+1. **Use production deployment** for isolation and resource management
 2. **Configure resource limits** to prevent runaway costs
 3. **Enable audit logging** for compliance and debugging
 4. **Set up monitoring** using health checks and metrics
 5. **Configure backups** for database and logs
 6. **Use reverse proxy** with HTTPS (Nginx/HAProxy)
-
-See [docker/README.md](../docker/README.md) for production deployment guide.
 
 ---
 
@@ -1000,35 +985,6 @@ See [docker/README.md](../docker/README.md) for production deployment guide.
 
 ---
 
-#### Docker Issues
-
-**Symptom:** Container won't start or is unhealthy
-
-**Solutions:**
-
-1. **Check container logs:**
-   ```bash
-   docker compose logs madrox
-   ```
-
-2. **Verify API key set:**
-   ```bash
-   docker compose exec madrox env | grep ANTHROPIC_API_KEY
-   ```
-
-3. **Test health inside container:**
-   ```bash
-   docker compose exec madrox curl -f http://localhost:8001/health
-   ```
-
-4. **Rebuild image:**
-   ```bash
-   docker compose down
-   docker compose up -d --build
-   ```
-
----
-
 ### Debug Mode
 
 Enable verbose logging:
@@ -1075,8 +1031,6 @@ You've successfully installed and configured Madrox! Here's what you accomplishe
 | List tools | `curl http://localhost:8001/tools` |
 | View logs | `tail -f /tmp/madrox_logs/server.log` |
 | Run tests | `uv run pytest tests/ -v` |
-| Docker start | `docker compose up -d` |
-| Docker logs | `docker compose logs -f` |
 
 **Next Steps:**
 - Try the [integration demo](../tests/integration_demo.py)

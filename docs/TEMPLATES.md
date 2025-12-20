@@ -120,7 +120,6 @@ TASK: Build a task management SaaS application with:
 - Task CRUD operations with categories and tags
 - PostgreSQL database
 - React frontend with Tailwind CSS
-- Docker deployment
 - Automated testing
 ```
 

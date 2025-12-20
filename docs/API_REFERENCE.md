@@ -432,7 +432,6 @@ result = await spawn_team_from_template(
     - Task CRUD operations with categories and tags
     - PostgreSQL database
     - React frontend with Tailwind CSS
-    - Docker deployment
     - Automated testing
     """
 )
