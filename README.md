@@ -69,124 +69,36 @@ graph TD
 
 ---
 
-Here's another example: **reverse engineering a keygenme challenge** (real workflow from [this repo](https://github.com/barkain/reverse-engineering)). This shows **nested hierarchical orchestration** - instances spawning their own specialized sub-instances.
+## 📸 Real-World Example: Software Development Team
 
-```mermaid
-graph TD
-    User[👤 You: 'Crack this KeygenMe - create a working keygen']
+Here's a real instance of Madrox orchestrating a complete software development team with 6 specialized instances working together:
 
-    User --> Coordinator[🎯 Coordinator Instance<br/>Debugger Role]
+### Team Hierarchy
 
-    Coordinator -->|initial recon| StaticAnalyzer[🔍 Static Analyzer<br/>strings, imports, symbols]
+![Development Team Tree](assets/madrox-team-hierarchy-tree.png)
 
-    StaticAnalyzer -->|validation function found<br/>magic constants identified| Coordinator
+**What you're seeing:**
+- **Tech Lead** (Architect role) coordinates the entire team
+- **6 Specialized Instances**: Frontend Dev, Backend Dev, DevOps, QA Engineer, Documentation Writer, Code Reviewer
+- **Real-time Status**: Each instance shows current state (idle/busy/running)
+- **Hierarchical Structure**: Tree visualization shows parent-child relationships
+- **Multi-Model Support**: Mix of Claude instances working together
 
-    Coordinator -->|spawn parallel analysis| Disassembler[⚙️ Disassembler<br/>x86-64 assembly analysis]
-    Coordinator -->|spawn parallel analysis| CryptoAnalyst[🔐 Crypto Analyst<br/>hash/LCG pattern recognition]
+### Complete Workflow Execution
 
-    %% Disassembler spawns its own children
-    Disassembler -->|spawns specialists| ControlFlow[🔀 Control Flow Analyzer<br/>trace execution paths]
-    Disassembler -->|spawns specialists| RegisterOps[📊 Register Operations<br/>track data transformations]
+![Development Workflow](assets/madrox-development-workflow-execution.png)
 
-    ControlFlow -->|execution graph| Disassembler
-    RegisterOps -->|data flow analysis| Disassembler
+**The full development lifecycle:**
+1. **Tech Lead spawns team** - Creates 6 specialized instances with specific roles
+2. **Parallel Development** - Frontend and Backend work simultaneously on their components
+3. **DevOps configures infrastructure** - Docker, CI/CD pipeline setup
+4. **Code Review & Testing** - QA validates implementation, Reviewer assesses quality
+5. **Documentation** - Technical docs and API reference generated
+6. **Coordination** - Tech Lead aggregates results and manages dependencies
 
-    %% CryptoAnalyst spawns its own children
-    CryptoAnalyst -->|spawns specialists| HashAnalyzer[#️⃣ Hash Function Expert<br/>identify hash algorithm]
-    CryptoAnalyst -->|spawns specialists| LCGExpert[🎲 LCG/PRNG Specialist<br/>detect linear congruence]
-    CryptoAnalyst -->|spawns specialists| ConstantMatcher[🔢 Constant Pattern Matcher<br/>find magic numbers]
+This demonstrates Madrox's core strengths: hierarchical coordination, role specialization, parallel execution, and bidirectional communication across a multi-instance network.
 
-    HashAnalyzer -->|name to hash: h*31+c pattern| CryptoAnalyst
-    LCGExpert -->|LCG constants identified<br/>mult: 0x41C64E6D<br/>add: 0x3039| CryptoAnalyst
-    ConstantMatcher -->|0x1337BEEF, 0xDEADBEEF<br/>0x85EBCA6B found| CryptoAnalyst
-
-    Disassembler -->|control flow + register ops| Coordinator
-    CryptoAnalyst -->|complete crypto analysis| Coordinator
-
-    Coordinator -->|algorithm understood| AlgorithmReconstructor[🧮 Algorithm Specialist<br/>reconstruct validation logic]
-
-    %% AlgorithmReconstructor spawns validator
-    AlgorithmReconstructor -->|spawns| MathValidator[📐 Mathematical Validator<br/>verify formula correctness]
-
-    MathValidator -->|formula validated| AlgorithmReconstructor
-    AlgorithmReconstructor -->|name to hash formula<br/>hash to checksum formula| Coordinator
-
-    Coordinator -->|create keygen| PythonDev[💻 Backend Dev<br/>implement keygen.py]
-
-    %% PythonDev spawns code reviewer
-    PythonDev -->|spawns| CodeReviewer[👁️ Code Reviewer<br/>check implementation]
-
-    CodeReviewer -->|code approved| PythonDev
-    PythonDev -->|keygen code| Coordinator
-
-    Coordinator -->|validate solution| Tester[🧪 Testing Specialist<br/>test multiple names]
-
-    %% Tester spawns multiple test runners
-    Tester -->|spawns parallel| TestRunner1[🏃 Test Runner 1<br/>Alice, Bob, Charlie]
-    Tester -->|spawns parallel| TestRunner2[🏃 Test Runner 2<br/>DryTau, Edge Cases]
-    Tester -->|spawns parallel| Fuzzer[🎯 Fuzzer<br/>random name generation]
-
-    TestRunner1 -->|✅ all passed| Tester
-    TestRunner2 -->|✅ all passed| Tester
-    Fuzzer -->|✅ 1000/1000 valid| Tester
-
-    Tester -->|all tests pass| Coordinator
-
-    Coordinator -->|final phase| DocWriter[📝 Documentation Writer<br/>writeup + solution report]
-
-    %% DocWriter spawns documentation specialists
-    DocWriter -->|spawns| TechnicalWriter[📖 Technical Writer<br/>algorithm explanation]
-    DocWriter -->|spawns| TutorialWriter[🎓 Tutorial Writer<br/>usage guide]
-    DocWriter -->|spawns| DiagramCreator[🎨 Diagram Creator<br/>visual flow charts]
-
-    TechnicalWriter -->|technical writeup| DocWriter
-    TutorialWriter -->|user guide| DocWriter
-    DiagramCreator -->|visual diagrams| DocWriter
-
-    DocWriter -->|working keygen<br/>+ comprehensive analysis| User
-
-    style User fill:#e1f5ff
-    style Coordinator fill:#fff3cd
-    style StaticAnalyzer fill:#d4edda
-    style Disassembler fill:#cce5ff
-    style CryptoAnalyst fill:#cce5ff
-    style AlgorithmReconstructor fill:#d1ecf1
-    style PythonDev fill:#cce5ff
-    style Tester fill:#d1ecf1
-    style DocWriter fill:#f8d7da
-
-    %% Nested children - lighter shades
-    style ControlFlow fill:#e6f2ff
-    style RegisterOps fill:#e6f2ff
-    style HashAnalyzer fill:#e6f2ff
-    style LCGExpert fill:#e6f2ff
-    style ConstantMatcher fill:#e6f2ff
-    style MathValidator fill:#e8f4f8
-    style CodeReviewer fill:#f0f0f0
-    style TestRunner1 fill:#e8f4f8
-    style TestRunner2 fill:#e8f4f8
-    style Fuzzer fill:#e8f4f8
-    style TechnicalWriter fill:#ffe6e6
-    style TutorialWriter fill:#ffe6e6
-    style DiagramCreator fill:#ffe6e6
-```
-
-**What's happening - with hierarchical depth:**
-
-**Level 1 - Coordinator spawns main team:**
-1. **Static Analyzer** → Finds entry points, magic constants
-2. **Disassembler** → **Spawns 2 specialists**: Control Flow Analyzer + Register Operations Tracker
-3. **Crypto Analyst** → **Spawns 3 specialists**: Hash Expert + LCG Expert + Constant Matcher
-
-**Level 2 - Specialists spawn their own workers:**
-4. **Algorithm Reconstructor** → **Spawns**: Mathematical Validator to verify formulas
-5. **Python Dev** → **Spawns**: Code Reviewer for quality assurance
-6. **Tester** → **Spawns 3 parallel runners**: TestRunner1, TestRunner2, Fuzzer (validates 1000 random names)
-7. **Doc Writer** → **Spawns 3 documentation specialists**: Technical Writer, Tutorial Writer, Diagram Creator
-
-**Total network: 21 instances across 3 hierarchical levels** - each instance delegates to its own specialized team.
-
-**Result**: Working keygen with comprehensive validation (1000+ tests) and multi-format documentation - impossible with flat single-instance or even single-level orchestration.
+---
 
 ## 🆚 Why Madrox vs Claude's Built-in Subagent?
 
