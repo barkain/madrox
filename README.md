@@ -71,32 +71,44 @@ graph TD
 
 ## 📸 Real-World Example: Software Development Team
 
-Here's a real instance of Madrox orchestrating a complete software development team with 6 specialized instances working together:
+Here's a real instance of Madrox orchestrating a complete software development team with 10 specialized instances working together:
 
+```
+team-lead (technical_lead)
+├── dev-squad-leader (backend_developer)
+│   ├── dev-1 (backend_developer)
+│   └── dev-2 (frontend_developer)
+├── analysts-squad-leader (data_scientist)
+│   ├── analyst-1 (data_scientist)
+│   └── analyst-2 (data_scientist)
+├── devops-squad-leader (devops)
+│   └── devops-1 (devops)
+└── architect (architect)
+```
 ### Team Hierarchy
 
 ![Development Team Tree](resources/assets/madrox-team-hierarchy-tree.png)
 
 **What you're seeing:**
-- **Tech Lead** (Architect role) coordinates the entire team
-- **6 Specialized Instances**: Frontend Dev, Backend Dev, DevOps, QA Engineer, Documentation Writer, Code Reviewer
+- **3-Level Hierarchy**: Team Lead → Squad Leaders (+ Architect) → Specialists
+- **10 Specialized Instances**: 1 Tech Lead, 3 Squad Leaders, 1 Architect, 5 Specialists
+- **Squad Organization**: Dev Squad (2 developers), Analysts Squad (2 data scientists), DevOps Squad (1 engineer)
 - **Real-time Status**: Each instance shows current state (idle/busy/running)
-- **Hierarchical Structure**: Tree visualization shows parent-child relationships
-- **Multi-Model Support**: Mix of Claude instances working together
+- **Parent-Child Relationships**: Clear visualization of reporting structure and delegation paths
 
 ### Complete Workflow Execution
 
 ![Development Workflow](resources/assets/madrox-development-workflow-execution.png)
 
 **The full development lifecycle:**
-1. **Tech Lead spawns team** - Creates 6 specialized instances with specific roles
-2. **Parallel Development** - Frontend and Backend work simultaneously on their components
-3. **DevOps configures infrastructure** - Docker, CI/CD pipeline setup
-4. **Code Review & Testing** - QA validates implementation, Reviewer assesses quality
-5. **Documentation** - Technical docs and API reference generated
-6. **Coordination** - Tech Lead aggregates results and manages dependencies
+1. **Team Lead spawns organization** - Creates 3-level hierarchy with 10 instances total
+2. **Squad Leaders coordinate** - Dev, Analysts, and DevOps squad leaders manage their teams
+3. **Architect provides guidance** - System design and architectural decisions at leadership level
+4. **Parallel Execution** - Squads work concurrently: Dev Squad (backend/frontend), Analysts Squad (data work), DevOps Squad (infrastructure)
+5. **Bidirectional Communication** - Specialists report to squad leaders, squad leaders coordinate with Tech Lead
+6. **Hierarchical Coordination** - Tech Lead aggregates squad results and manages cross-squad dependencies
 
-This demonstrates Madrox's core strengths: hierarchical coordination, role specialization, parallel execution, and bidirectional communication across a multi-instance network.
+This demonstrates Madrox's core strengths: deep hierarchical coordination (3 levels), role specialization with squad organization, parallel execution across multiple squads, and bidirectional communication through the management chain.
 
 ---
 
