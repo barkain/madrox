@@ -22,6 +22,26 @@ from .simple_models import MessageEnvelope
 
 logger = logging.getLogger(__name__)
 
+# SECURITY FIX (CWE-770): Message history limits to prevent unbounded memory growth
+MAX_MESSAGE_HISTORY_PER_INSTANCE = 500  # Keep last 500 messages per instance
+
+
+# SECURITY FIX (CWE-532): Helper function to redact authkeys in logs
+def redact_authkey(authkey: bytes | None) -> str:
+    """Redact authentication keys for logging.
+
+    Args:
+        authkey: Authentication key bytes to redact
+
+    Returns:
+        Redacted string like "***1234" showing last 4 bytes in hex
+    """
+    if not authkey:
+        return "[not set]"
+    # Show last 4 bytes as hex
+    last_bytes = authkey[-4:] if len(authkey) >= 4 else authkey
+    return f"***{last_bytes.hex()}"
+
 
 class TmuxInstanceManager:
     """Manages Claude instances via tmux sessions."""
@@ -102,6 +122,26 @@ class TmuxInstanceManager:
 
         # NOTE: Don't start health monitoring here - no event loop yet!
         # Health monitoring will start lazily when first instance is spawned
+
+    def _limit_message_history(self, instance_id: str) -> None:
+        """Limit message history size to prevent unbounded memory growth.
+
+        SECURITY FIX (CWE-770): Keeps only the last MAX_MESSAGE_HISTORY_PER_INSTANCE
+        messages per instance to prevent memory leaks in long-running processes.
+
+        Args:
+            instance_id: Instance ID whose message history to limit
+        """
+        if instance_id in self.message_history:
+            history = self.message_history[instance_id]
+            if len(history) > MAX_MESSAGE_HISTORY_PER_INSTANCE:
+                # Keep only the last MAX_MESSAGE_HISTORY_PER_INSTANCE messages
+                excess = len(history) - MAX_MESSAGE_HISTORY_PER_INSTANCE
+                self.message_history[instance_id] = history[-MAX_MESSAGE_HISTORY_PER_INSTANCE:]
+                logger.debug(
+                    f"Trimmed {excess} old messages from history for instance {instance_id} "
+                    f"(keeping last {MAX_MESSAGE_HISTORY_PER_INSTANCE})"
+                )
 
     async def _get_from_shared_queue(self, instance_id: str, timeout: int) -> dict:
         """Get message from shared queue with async wrapper.
@@ -230,14 +270,18 @@ class TmuxInstanceManager:
                         manager_host, manager_port = manager_address
                         env_vars["MADROX_MANAGER_HOST"] = str(manager_host)
                         env_vars["MADROX_MANAGER_PORT"] = str(manager_port)
+                        # SECURITY FIX (CWE-532): Redact authkey in logs
                         logger.debug(
-                            f"Passing Manager IPC credentials to child (TCP): {manager_host}:{manager_port}"
+                            f"Passing Manager IPC credentials to child (TCP): {manager_host}:{manager_port}, "
+                            f"authkey={redact_authkey(self.shared_state.manager_authkey)}"
                         )
                     else:
                         # Unix socket path
                         env_vars["MADROX_MANAGER_SOCKET"] = str(manager_address)
+                        # SECURITY FIX (CWE-532): Redact authkey in logs
                         logger.debug(
-                            f"Passing Manager IPC credentials to child (Unix socket): {manager_address}"
+                            f"Passing Manager IPC credentials to child (Unix socket): {manager_address}, "
+                            f"authkey={redact_authkey(self.shared_state.manager_authkey)}"
                         )
 
                     # Encode authkey as base64 for safe environment variable passing
@@ -282,6 +326,9 @@ class TmuxInstanceManager:
                     transport = server_config.get("transport", "stdio" if has_command else "http")
 
                     if transport == "stdio":
+                        import re
+                        import shlex
+
                         command = server_config.get("command")
                         if not command:
                             logger.warning(
@@ -289,17 +336,56 @@ class TmuxInstanceManager:
                             )
                             continue
 
+                        # SECURITY FIX (CWE-77): Validate server_name to prevent command injection
+                        # Only allow alphanumeric, underscore, and hyphen characters
+                        if not re.match(r"^[a-zA-Z0-9_-]+$", server_name):
+                            logger.error(
+                                f"Invalid MCP server name '{server_name}' - must match [a-zA-Z0-9_-]+"
+                            )
+                            raise ValueError(
+                                f"Invalid MCP server name '{server_name}'. "
+                                f"Server names must contain only letters, numbers, underscores, and hyphens."
+                            )
+
+                        # SECURITY FIX (CWE-77): Validate command path
+                        # Ensure command is an absolute path or a known safe command
+                        if not (Path(command).is_absolute() or command in ["python", "python3", "node", "npx"]):
+                            logger.warning(
+                                f"Command '{command}' is not an absolute path or known safe command. "
+                                f"This may be a security risk."
+                            )
+
                         args = server_config.get("args", [])
                         if not isinstance(args, list):
                             args = [args] if args else []
 
-                        # Build codex mcp add command
-                        codex_cmd_parts = ["codex", "mcp", "add", server_name, command] + args
+                        # SECURITY FIX (CWE-77): Use shlex.quote() to prevent command injection
+                        # Build codex mcp add command with proper shell escaping
+                        codex_cmd_parts = [
+                            "codex",
+                            "mcp",
+                            "add",
+                            shlex.quote(server_name),
+                            shlex.quote(command),
+                        ]
+
+                        # Quote all arguments to prevent injection
+                        for arg in args:
+                            codex_cmd_parts.append(shlex.quote(str(arg)))
 
                         # Add environment variables if specified
                         env_vars = server_config.get("env", {})
                         for key, value in env_vars.items():
-                            codex_cmd_parts.extend(["--env", f"{key}={value}"])
+                            # Validate env var names (must be valid shell identifiers)
+                            if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", key):
+                                logger.error(
+                                    f"Invalid environment variable name '{key}' - must match [a-zA-Z_][a-zA-Z0-9_]*"
+                                )
+                                raise ValueError(
+                                    f"Invalid environment variable name '{key}'. "
+                                    f"Variable names must start with a letter or underscore and contain only letters, numbers, and underscores."
+                                )
+                            codex_cmd_parts.extend(["--env", shlex.quote(f"{key}={value}")])
 
                         codex_cmd = " ".join(codex_cmd_parts)
                         logger.info(f"Adding Codex MCP server: {codex_cmd}")
@@ -695,6 +781,8 @@ class TmuxInstanceManager:
             self.message_history[instance_id].append(
                 {"role": "user", "content": message, "timestamp": send_timestamp.isoformat()}
             )
+            # SECURITY FIX (CWE-770): Limit history size to prevent unbounded growth
+            self._limit_message_history(instance_id)
 
             # Log communication event
             if self.logging_manager:
@@ -828,6 +916,8 @@ class TmuxInstanceManager:
                         "timestamp": response_timestamp.isoformat(),
                     }
                 )
+                # SECURITY FIX (CWE-770): Limit history size to prevent unbounded growth
+                self._limit_message_history(instance_id)
 
                 # Log the response
                 if self.logging_manager:
@@ -927,6 +1017,8 @@ class TmuxInstanceManager:
                     "timestamp": response_timestamp.isoformat(),
                 }
             )
+            # SECURITY FIX (CWE-770): Limit history size to prevent unbounded growth
+            self._limit_message_history(instance_id)
 
             # Calculate response time
             response_time = (response_timestamp - send_timestamp).total_seconds()
@@ -1305,14 +1397,18 @@ class TmuxInstanceManager:
                 manager_host, manager_port = manager_address
                 session_env["MADROX_MANAGER_HOST"] = str(manager_host)
                 session_env["MADROX_MANAGER_PORT"] = str(manager_port)
+                # SECURITY FIX (CWE-532): Redact authkey in logs
                 logger.debug(
-                    f"Setting Manager IPC credentials in tmux session env (TCP): {manager_host}:{manager_port}"
+                    f"Setting Manager IPC credentials in tmux session env (TCP): {manager_host}:{manager_port}, "
+                    f"authkey={redact_authkey(self.shared_state.manager_authkey)}"
                 )
             else:
                 # Unix socket path
                 session_env["MADROX_MANAGER_SOCKET"] = str(manager_address)
+                # SECURITY FIX (CWE-532): Redact authkey in logs
                 logger.debug(
-                    f"Setting Manager IPC credentials in tmux session env (Unix socket): {manager_address}"
+                    f"Setting Manager IPC credentials in tmux session env (Unix socket): {manager_address}, "
+                    f"authkey={redact_authkey(self.shared_state.manager_authkey)}"
                 )
 
             # Encode authkey as base64

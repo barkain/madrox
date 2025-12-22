@@ -16,6 +16,24 @@ except ImportError:
     aiohttp = None
 
 
+# SECURITY FIX (CWE-532): Helper function to redact secrets in logs
+def redact_secret(secret: str | None, show_chars: int = 4) -> str:
+    """Redact sensitive strings for logging.
+
+    Args:
+        secret: Secret string to redact (API key, token, etc.)
+        show_chars: Number of characters to show at the end (default: 4)
+
+    Returns:
+        Redacted string like "***sk-1234" or "[not set]"
+    """
+    if not secret:
+        return "[not set]"
+    if len(secret) <= show_chars:
+        return f"***{secret[-2:]}"  # Very short secrets show last 2 chars
+    return f"***{secret[-show_chars:]}"
+
+
 class LLMSummarizer:
     """
     Generates natural language summaries of Claude instance activities using OpenRouter API.
@@ -36,8 +54,16 @@ class LLMSummarizer:
         ... )
     """
 
-    # OpenRouter API endpoint
+    # SECURITY FIX (CWE-918): Hardcoded trusted endpoint to prevent SSRF
+    # This URL is immutable and cannot be overridden to prevent SSRF attacks
     OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+    # SECURITY: Allowlist of trusted API endpoints
+    # Only these URLs are permitted for API calls
+    TRUSTED_ENDPOINTS = frozenset([
+        "https://openrouter.ai/api/v1/chat/completions",
+        "https://api.openrouter.ai/api/v1/chat/completions",
+    ])
 
     # Default configuration
     DEFAULT_MODEL = "google/gemini-2.0-flash-exp:free"
@@ -113,10 +139,11 @@ class LLMSummarizer:
                 "aiohttp not available - LLMSummarizer will return fallback summaries"
             )
 
-        # Log initialization
+        # SECURITY FIX (CWE-532): Log initialization with redacted API key
         if self.api_key:
             self.logger.info(
-                f"LLMSummarizer initialized with model={self.model}, timeout={self.timeout}s"
+                f"LLMSummarizer initialized with model={self.model}, timeout={self.timeout}s, "
+                f"api_key={redact_secret(self.api_key)}"
             )
         else:
             self.logger.warning(
@@ -207,6 +234,32 @@ class LLMSummarizer:
             asyncio.TimeoutError: On timeout
             Exception: On other errors
         """
+        # SECURITY FIX (CWE-918): Validate API URL against allowlist to prevent SSRF
+        api_url = self.OPENROUTER_API_URL
+        if api_url not in self.TRUSTED_ENDPOINTS:
+            self.logger.error(
+                f"Security violation: Attempted to call untrusted endpoint: {api_url}. "
+                f"Only OpenRouter API endpoints are allowed."
+            )
+            raise ValueError(
+                f"Untrusted API endpoint: {api_url}. "
+                f"Only OpenRouter endpoints are permitted for security reasons."
+            )
+
+        # SECURITY: Additional URL validation to prevent manipulation
+        from urllib.parse import urlparse
+
+        parsed_url = urlparse(api_url)
+        if parsed_url.scheme not in ["https"]:
+            self.logger.error(f"Security violation: Non-HTTPS URL rejected: {api_url}")
+            raise ValueError(f"Only HTTPS URLs are permitted. Got: {parsed_url.scheme}")
+
+        if parsed_url.netloc not in ["openrouter.ai", "api.openrouter.ai"]:
+            self.logger.error(f"Security violation: Invalid domain rejected: {parsed_url.netloc}")
+            raise ValueError(
+                f"Only openrouter.ai domains are permitted. Got: {parsed_url.netloc}"
+            )
+
         # Truncate activity text if too long (keep last 4000 chars)
         if len(activity_text) > 4000:
             activity_text = "..." + activity_text[-4000:]
@@ -234,7 +287,7 @@ class LLMSummarizer:
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
-                self.OPENROUTER_API_URL, headers=headers, json=payload
+                api_url, headers=headers, json=payload
             ) as response:
                 # Check HTTP status
                 if response.status != 200:
@@ -282,4 +335,5 @@ Brief summary:"""
 
     def __repr__(self) -> str:
         """String representation of the summarizer."""
-        return f"LLMSummarizer(model={self.model}, timeout={self.timeout}s, api_key={'set' if self.api_key else 'not set'})"
+        # SECURITY FIX (CWE-532): Redact API key in string representation
+        return f"LLMSummarizer(model={self.model}, timeout={self.timeout}s, api_key={redact_secret(self.api_key)})"

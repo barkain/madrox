@@ -43,7 +43,33 @@ class MCPConfigLoader:
         Returns:
             Configuration dict with 'name', 'description', 'config', etc., or None if not found
         """
+        # SECURITY FIX (CWE-22): Sanitize name to prevent path traversal attacks
+        # Only allow alphanumeric characters, hyphens, and underscores
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_-]+$", name):
+            logger.error(
+                f"Invalid MCP config name '{name}': contains illegal characters. "
+                f"Only alphanumeric, hyphens, and underscores are allowed."
+            )
+            return None
+
+        # Ensure the resolved path stays within configs_dir
         config_path = self.configs_dir / f"{name}.json"
+        try:
+            # resolve() canonicalizes the path and resolves symlinks
+            resolved_path = config_path.resolve()
+            resolved_configs_dir = self.configs_dir.resolve()
+
+            # Check if resolved path is within configs_dir
+            if not str(resolved_path).startswith(str(resolved_configs_dir)):
+                logger.error(
+                    f"Path traversal attempt detected: '{name}' resolves outside configs directory"
+                )
+                return None
+        except (OSError, RuntimeError) as e:
+            logger.error(f"Error validating config path for '{name}': {e}")
+            return None
 
         if not config_path.exists():
             logger.error(f"MCP config not found: {name}")
