@@ -6,9 +6,10 @@ Tests for critical security vulnerabilities fixed in the orchestrator package:
 3. Unbounded memory growth (CWE-770) in shared_state_manager.py and tmux_instance_manager.py
 """
 
-import pytest
 import shlex
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
+import pytest
 
 
 class TestCommandInjectionFix:
@@ -108,10 +109,10 @@ class TestSSRFFix:
 
         for url in untrusted_urls:
             parsed = urlparse(url)
-            is_valid = (
-                parsed.scheme == "https"
-                and parsed.netloc in ["openrouter.ai", "api.openrouter.ai"]
-            )
+            is_valid = parsed.scheme == "https" and parsed.netloc in [
+                "openrouter.ai",
+                "api.openrouter.ai",
+            ]
             assert not is_valid, f"Untrusted URL incorrectly validated: {url}"
 
 
@@ -124,7 +125,7 @@ class TestUnboundedMemoryGrowthFix:
         message_registry = {}
 
         # Old message (25 hours ago - should be cleaned)
-        old_time = datetime.now(timezone.utc) - timedelta(hours=25)
+        old_time = datetime.now(UTC) - timedelta(hours=25)
         message_registry["old_msg"] = {
             "message_id": "old_msg",
             "sender_id": "instance1",
@@ -134,7 +135,7 @@ class TestUnboundedMemoryGrowthFix:
         }
 
         # Recent message (1 hour ago - should be kept)
-        recent_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        recent_time = datetime.now(UTC) - timedelta(hours=1)
         message_registry["recent_msg"] = {
             "message_id": "recent_msg",
             "sender_id": "instance1",
@@ -145,7 +146,7 @@ class TestUnboundedMemoryGrowthFix:
 
         # Check cleanup logic
         retention_hours = 24
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=retention_hours)
+        cutoff_time = datetime.now(UTC) - timedelta(hours=retention_hours)
 
         messages_to_remove = []
         for msg_id, envelope in message_registry.items():
@@ -156,7 +157,9 @@ class TestUnboundedMemoryGrowthFix:
                     messages_to_remove.append(msg_id)
 
         assert "old_msg" in messages_to_remove, "Old message not marked for removal"
-        assert "recent_msg" not in messages_to_remove, "Recent message incorrectly marked for removal"
+        assert "recent_msg" not in messages_to_remove, (
+            "Recent message incorrectly marked for removal"
+        )
 
     def test_message_history_size_limit(self):
         """Test that message history is limited to prevent unbounded growth."""
@@ -172,13 +175,17 @@ class TestUnboundedMemoryGrowthFix:
             message_history = message_history[-MAX_MESSAGE_HISTORY:]
 
         assert len(message_history) == MAX_MESSAGE_HISTORY, "History not limited correctly"
-        assert message_history[0]["content"] == "Message 100", "Wrong messages kept (should keep last 500)"
-        assert message_history[-1]["content"] == "Message 599", "Wrong messages kept (should keep last 500)"
+        assert message_history[0]["content"] == "Message 100", (
+            "Wrong messages kept (should keep last 500)"
+        )
+        assert message_history[-1]["content"] == "Message 599", (
+            "Wrong messages kept (should keep last 500)"
+        )
 
     def test_completed_messages_cleanup(self):
         """Test that completed messages are cleaned up after retention period."""
         # Completed message (2 hours ago - should be removed after 1 hour retention)
-        completed_time = datetime.now(timezone.utc) - timedelta(hours=2)
+        completed_time = datetime.now(UTC) - timedelta(hours=2)
         message = {
             "message_id": "completed_msg",
             "status": "replied",
@@ -191,7 +198,7 @@ class TestUnboundedMemoryGrowthFix:
             updated_at_str = message.get("updated_at")
             if updated_at_str:
                 updated_at = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
-                cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+                cutoff = datetime.now(UTC) - timedelta(hours=1)
                 should_remove = updated_at < cutoff
 
         assert should_remove, "Completed message not marked for removal"
