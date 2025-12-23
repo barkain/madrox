@@ -29,7 +29,9 @@ async def instance_manager(mock_config):
         mock_validate.side_effect = lambda provider, model: model or "claude-sonnet-4-5"
         with patch("src.orchestrator.instance_manager.LoggingManager"):
             with patch("src.orchestrator.shared_state_manager.SharedStateManager"):
-                with patch("src.orchestrator.instance_manager.TmuxInstanceManager") as mock_tmux_mgr_class:
+                with patch(
+                    "src.orchestrator.instance_manager.TmuxInstanceManager"
+                ) as mock_tmux_mgr_class:
                     # Setup mock tmux manager
                     mock_tmux_mgr = MagicMock()
                     mock_tmux_mgr.message_history = {}
@@ -258,9 +260,7 @@ class TestMainInstanceMonitoring:
                 raise Exception("Test error")
             return []
 
-        instance_manager._get_output_messages = AsyncMock(
-            side_effect=mock_get_messages_error
-        )
+        instance_manager._get_output_messages = AsyncMock(side_effect=mock_get_messages_error)
 
         # Start monitor
         monitor_task = asyncio.create_task(instance_manager._monitor_main_messages())

@@ -408,6 +408,7 @@ class TestGlobalNameGenerator:
     def test_global_name_generator_is_singleton(self):
         """Test that global name_generator maintains state across imports."""
         from orchestrator.name_generator import name_generator as ng2
+
         assert name_generator is ng2
 
 

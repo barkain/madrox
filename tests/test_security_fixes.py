@@ -108,10 +108,10 @@ class TestSSRFFix:
 
         for url in untrusted_urls:
             parsed = urlparse(url)
-            is_valid = (
-                parsed.scheme == "https"
-                and parsed.netloc in ["openrouter.ai", "api.openrouter.ai"]
-            )
+            is_valid = parsed.scheme == "https" and parsed.netloc in [
+                "openrouter.ai",
+                "api.openrouter.ai",
+            ]
             assert not is_valid, f"Untrusted URL incorrectly validated: {url}"
 
 
@@ -156,7 +156,9 @@ class TestUnboundedMemoryGrowthFix:
                     messages_to_remove.append(msg_id)
 
         assert "old_msg" in messages_to_remove, "Old message not marked for removal"
-        assert "recent_msg" not in messages_to_remove, "Recent message incorrectly marked for removal"
+        assert "recent_msg" not in messages_to_remove, (
+            "Recent message incorrectly marked for removal"
+        )
 
     def test_message_history_size_limit(self):
         """Test that message history is limited to prevent unbounded growth."""
@@ -172,8 +174,12 @@ class TestUnboundedMemoryGrowthFix:
             message_history = message_history[-MAX_MESSAGE_HISTORY:]
 
         assert len(message_history) == MAX_MESSAGE_HISTORY, "History not limited correctly"
-        assert message_history[0]["content"] == "Message 100", "Wrong messages kept (should keep last 500)"
-        assert message_history[-1]["content"] == "Message 599", "Wrong messages kept (should keep last 500)"
+        assert message_history[0]["content"] == "Message 100", (
+            "Wrong messages kept (should keep last 500)"
+        )
+        assert message_history[-1]["content"] == "Message 599", (
+            "Wrong messages kept (should keep last 500)"
+        )
 
     def test_completed_messages_cleanup(self):
         """Test that completed messages are cleaned up after retention period."""

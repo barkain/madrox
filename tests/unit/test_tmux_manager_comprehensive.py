@@ -91,9 +91,9 @@ def tmux_manager(mock_config, mock_libtmux_server):
                     manager.tmux_server._test_pane = mock_pane
 
                     # Use setattr to bypass type checking - these are test-only attributes
-                    object.__setattr__(manager, '_mock_server', mock_server)
-                    object.__setattr__(manager, '_mock_session', mock_session)
-                    object.__setattr__(manager, '_mock_pane', mock_pane)
+                    object.__setattr__(manager, "_mock_server", mock_server)
+                    object.__setattr__(manager, "_mock_session", mock_session)
+                    object.__setattr__(manager, "_mock_pane", mock_pane)
 
                     yield manager
 
@@ -308,7 +308,7 @@ class TestMessageCommunication:
         tmux_manager.message_history[instance_id] = []
 
         # Mock response queue behavior
-        with patch.object(tmux_manager, 'response_queues', {}):
+        with patch.object(tmux_manager, "response_queues", {}):
             tmux_manager.response_queues[instance_id] = asyncio.Queue()
 
             # Execute
@@ -444,10 +444,12 @@ class TestMessageCommunication:
         tmux_manager.response_queues[instance_id] = asyncio.Queue()
 
         # Queue a response
-        await tmux_manager.response_queues[instance_id].put({
-            "reply_message": "Response text",
-            "correlation_id": "msg-123",
-        })
+        await tmux_manager.response_queues[instance_id].put(
+            {
+                "reply_message": "Response text",
+                "correlation_id": "msg-123",
+            }
+        )
 
         # Execute
         result = await tmux_manager.send_message(
@@ -481,9 +483,7 @@ class TestMessageCommunication:
         # No response queued - will timeout
 
         # Mock stable pane output for fallback
-        tmux_manager._mock_pane.cmd = MagicMock(
-            return_value=MagicMock(stdout=["Output"] * 100)
-        )
+        tmux_manager._mock_pane.cmd = MagicMock(return_value=MagicMock(stdout=["Output"] * 100))
 
         # Execute
         result = await tmux_manager.send_message(
@@ -870,7 +870,10 @@ class TestMCPServerConfiguration:
         )
 
         # Assert
-        assert tmux_manager.instances[instance_id]["mcp_servers"]["my_server"]["url"] == "http://localhost:9000/mcp"
+        assert (
+            tmux_manager.instances[instance_id]["mcp_servers"]["my_server"]["url"]
+            == "http://localhost:9000/mcp"
+        )
 
     @pytest.mark.asyncio
     async def test_mcp_server_codex_config(self, tmux_manager):
@@ -954,9 +957,7 @@ class TestPaneContent:
         instance_id = await tmux_manager.spawn_instance(name="pane-test")
 
         mock_output = ["Line 1", "Line 2", "Line 3"]
-        tmux_manager._mock_pane.cmd = MagicMock(
-            return_value=MagicMock(stdout=mock_output)
-        )
+        tmux_manager._mock_pane.cmd = MagicMock(return_value=MagicMock(stdout=mock_output))
 
         # Execute
         content = await tmux_manager.get_tmux_pane_content(instance_id, lines=100)
@@ -973,9 +974,7 @@ class TestPaneContent:
 
         # Mock large output
         large_output = [f"Line {i}" for i in range(1000)]
-        tmux_manager._mock_pane.cmd = MagicMock(
-            return_value=MagicMock(stdout=large_output)
-        )
+        tmux_manager._mock_pane.cmd = MagicMock(return_value=MagicMock(stdout=large_output))
 
         # Execute
         content = await tmux_manager.get_tmux_pane_content(instance_id, lines=500)
@@ -989,9 +988,7 @@ class TestPaneContent:
         # Setup
         instance_id = await tmux_manager.spawn_instance(name="empty-pane-test")
 
-        tmux_manager._mock_pane.cmd = MagicMock(
-            return_value=MagicMock(stdout=[])
-        )
+        tmux_manager._mock_pane.cmd = MagicMock(return_value=MagicMock(stdout=[]))
 
         # Execute
         content = await tmux_manager.get_tmux_pane_content(instance_id, lines=100)
@@ -1006,9 +1003,7 @@ class TestPaneContent:
         instance_id = await tmux_manager.spawn_instance(name="history-test")
 
         history_output = [f"History line {i}" for i in range(100)]
-        tmux_manager._mock_pane.cmd = MagicMock(
-            return_value=MagicMock(stdout=history_output)
-        )
+        tmux_manager._mock_pane.cmd = MagicMock(return_value=MagicMock(stdout=history_output))
 
         # Execute - capture all history
         content = await tmux_manager.get_tmux_pane_content(instance_id, lines=-1)
@@ -1068,9 +1063,7 @@ class TestErrorHandling:
         tmux_manager.instances[instance_id] = instance
 
         # Mock pane to never show ready state
-        tmux_manager._mock_pane.cmd = MagicMock(
-            return_value=MagicMock(stdout=["Loading..."] * 100)
-        )
+        tmux_manager._mock_pane.cmd = MagicMock(return_value=MagicMock(stdout=["Loading..."] * 100))
 
         # Execute - should complete despite timeout warning
         await tmux_manager._initialize_tmux_session(instance_id)
@@ -1167,9 +1160,7 @@ class TestErrorHandling:
         instance_id = await tmux_manager.spawn_instance(name="resource-test")
 
         # Set resource limits
-        tmux_manager.instances[instance_id]["resource_limits"] = {
-            "max_total_tokens": 100
-        }
+        tmux_manager.instances[instance_id]["resource_limits"] = {"max_total_tokens": 100}
         tmux_manager.instances[instance_id]["total_tokens_used"] = 150  # Exceeded
 
         # Execute health check
@@ -1212,17 +1203,13 @@ class TestErrorHandling:
             instances.append(instance_id)
 
         # Terminate all concurrently
-        tasks = [
-            tmux_manager.terminate_instance(inst_id, force=True)
-            for inst_id in instances
-        ]
+        tasks = [tmux_manager.terminate_instance(inst_id, force=True) for inst_id in instances]
         results = await asyncio.gather(*tasks)
 
         # Assert
         assert all(results)
         assert all(
-            tmux_manager.instances[inst_id]["state"] == "terminated"
-            for inst_id in instances
+            tmux_manager.instances[inst_id]["state"] == "terminated" for inst_id in instances
         )
 
 
@@ -1280,9 +1267,7 @@ class TestCriticalFunctions:
         """Test _extract_response function."""
         # Setup instance
         instance_id = await tmux_manager.spawn_instance(name="extract-test")
-        tmux_manager.message_history[instance_id] = [
-            {"role": "user", "content": "Question"}
-        ]
+        tmux_manager.message_history[instance_id] = [{"role": "user", "content": "Question"}]
 
         # Mock output with UI chrome
         full_output = """

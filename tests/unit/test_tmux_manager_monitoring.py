@@ -60,9 +60,7 @@ class TestMonitoringServiceInitialization:
         """Test that monitoring service is enabled when OPENROUTER_API_KEY is set."""
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
             with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
-                with patch(
-                    "src.orchestrator.tmux_instance_manager.LLMSummarizer"
-                ) as mock_llm:
+                with patch("src.orchestrator.tmux_instance_manager.LLMSummarizer") as mock_llm:
                     with patch(
                         "src.orchestrator.tmux_instance_manager.MonitoringService"
                     ) as mock_mon:
@@ -92,9 +90,7 @@ class TestMonitoringServiceInitialization:
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
             with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
                 with patch("src.orchestrator.tmux_instance_manager.LLMSummarizer"):
-                    with patch(
-                        "src.orchestrator.tmux_instance_manager.MonitoringService"
-                    ):
+                    with patch("src.orchestrator.tmux_instance_manager.MonitoringService"):
                         with patch(
                             "src.orchestrator.tmux_instance_manager.logging.getLogger"
                         ) as mock_get_logger:
@@ -287,9 +283,7 @@ class TestLoggingManagerIntegration:
         mock_logging_manager = MagicMock()
 
         with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
-            manager = TmuxInstanceManager(
-                mock_config, logging_manager=mock_logging_manager
-            )
+            manager = TmuxInstanceManager(mock_config, logging_manager=mock_logging_manager)
 
             assert manager.logging_manager is mock_logging_manager
 
@@ -309,9 +303,7 @@ class TestSharedStateManagerIntegration:
         mock_shared_state = MagicMock()
 
         with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
-            manager = TmuxInstanceManager(
-                mock_config, shared_state_manager=mock_shared_state
-            )
+            manager = TmuxInstanceManager(mock_config, shared_state_manager=mock_shared_state)
 
             assert manager.shared_state is mock_shared_state
 
@@ -353,9 +345,7 @@ class TestTmuxServerConnection:
 
     def test_tmux_server_connection(self, mock_config):
         """Test that tmux server is connected."""
-        with patch(
-            "src.orchestrator.tmux_instance_manager.libtmux.Server"
-        ) as mock_server_class:
+        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server") as mock_server_class:
             mock_server = MagicMock()
             mock_server_class.return_value = mock_server
 

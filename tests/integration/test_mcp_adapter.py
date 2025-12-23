@@ -28,8 +28,8 @@ def mock_instance_manager():
                 "name": {"type": "string"},
                 "role": {"type": "string"},
             },
-            "required": ["name"]
-        }
+            "required": ["name"],
+        },
     )
 
     mock_tool2 = MagicMock()
@@ -41,8 +41,8 @@ def mock_instance_manager():
             "properties": {
                 "instance_id": {"type": "string"},
             },
-            "required": ["instance_id"]
-        }
+            "required": ["instance_id"],
+        },
     )
 
     async def mock_get_tools():
@@ -182,6 +182,7 @@ class TestMCPRequestHandling:
     @pytest.mark.asyncio
     async def test_handle_mcp_request_spawn_claude(self, mcp_adapter, mock_instance_manager):
         """Test handling spawn_claude tool call."""
+
         # Mock spawn_claude method
         async def mock_spawn_claude(**kwargs):
             return {"instance_id": "test-123", "status": "spawned", "name": kwargs.get("name")}
@@ -198,7 +199,7 @@ class TestMCPRequestHandling:
         """Test _inject_main_messages adds main instance info when parent exists."""
         result = {"instance_id": "child-123"}
 
-        with patch.object(mcp_adapter, '_detect_caller_instance', return_value="parent-123"):
+        with patch.object(mcp_adapter, "_detect_caller_instance", return_value="parent-123"):
             injected = mcp_adapter._inject_main_messages(result)
 
         # Should have main instance info injected
@@ -209,7 +210,7 @@ class TestMCPRequestHandling:
         """Test _inject_main_messages when no parent detected."""
         result = {"instance_id": "standalone-123"}
 
-        with patch.object(mcp_adapter, '_detect_caller_instance', return_value=None):
+        with patch.object(mcp_adapter, "_detect_caller_instance", return_value=None):
             injected = mcp_adapter._inject_main_messages(result)
 
         # Should return result unchanged or with minimal modifications
@@ -283,7 +284,7 @@ class TestTemplateOperations:
 
     def test_detect_caller_instance_without_env(self, mcp_adapter):
         """Test detecting caller instance when no environment variable set."""
-        with patch('os.getenv', return_value=None):
+        with patch("os.getenv", return_value=None):
             caller = mcp_adapter._detect_caller_instance()
             assert caller is None
 

@@ -969,9 +969,7 @@ class TestHealthCheckErrorPaths:
         # Mock to raise unexpected exception
         original_process = manager.manager._process
         manager.manager._process = MagicMock()
-        manager.manager._process.is_alive = MagicMock(
-            side_effect=Exception("Unexpected error")
-        )
+        manager.manager._process.is_alive = MagicMock(side_effect=Exception("Unexpected error"))
 
         result = manager.health_check(timeout=1.0)
 

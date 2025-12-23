@@ -63,8 +63,12 @@ async def instance_manager(mock_config):
     with patch("src.orchestrator.instance_manager.validate_model") as mock_validate:
         mock_validate.side_effect = lambda provider, model: model or "claude-sonnet-4-5"
         with patch("src.orchestrator.instance_manager.LoggingManager") as mock_log_mgr_class:
-            with patch("src.orchestrator.shared_state_manager.SharedStateManager") as mock_state_mgr_class:
-                with patch("src.orchestrator.instance_manager.TmuxInstanceManager") as mock_tmux_mgr_class:
+            with patch(
+                "src.orchestrator.shared_state_manager.SharedStateManager"
+            ) as mock_state_mgr_class:
+                with patch(
+                    "src.orchestrator.instance_manager.TmuxInstanceManager"
+                ) as mock_tmux_mgr_class:
                     # Setup mocks
                     mock_log_mgr = MagicMock()
                     mock_state_mgr = MagicMock()
@@ -107,7 +111,7 @@ async def instance_manager(mock_config):
                     yield manager
 
                     # Cleanup
-                    if hasattr(manager, 'shutdown'):
+                    if hasattr(manager, "shutdown"):
                         try:
                             await manager.shutdown()
                         except:
@@ -122,10 +126,7 @@ class TestInstanceSpawning:
         """Test successful Claude instance spawning."""
         # Execute - use .fn to access the actual function from FunctionTool
         result = await instance_manager.spawn_claude.fn(
-            instance_manager,
-            name="test-instance",
-            role="general",
-            model="claude-sonnet-4-5"
+            instance_manager, name="test-instance", role="general", model="claude-sonnet-4-5"
         )
 
         # Assert
@@ -137,14 +138,10 @@ class TestInstanceSpawning:
     @pytest.mark.asyncio
     async def test_spawn_claude_with_custom_model(self, instance_manager):
         """Test spawning Claude with specific model."""
-        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(
-            return_value="inst-456"
-        )
+        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(return_value="inst-456")
 
-        result = await instance_manager.spawn_claude.fn(instance_manager, 
-            name="haiku-instance",
-            role="general",
-            model="claude-haiku-4-5"
+        result = await instance_manager.spawn_claude.fn(
+            instance_manager, name="haiku-instance", role="general", model="claude-haiku-4-5"
         )
 
         assert "instance_id" in result
@@ -157,13 +154,14 @@ class TestInstanceSpawning:
         instance_manager.instances["parent-123"] = {
             "instance_id": "parent-123",
             "name": "parent",
-            "status": "running"
+            "status": "running",
         }
 
-        result = await instance_manager.spawn_claude.fn(instance_manager,
+        result = await instance_manager.spawn_claude.fn(
+            instance_manager,
             name="child-instance",
             role="backend_developer",
-            parent_instance_id="parent-123"
+            parent_instance_id="parent-123",
         )
 
         assert "instance_id" in result
@@ -174,14 +172,11 @@ class TestInstanceSpawning:
     @pytest.mark.asyncio
     async def test_spawn_claude_with_system_prompt(self, instance_manager):
         """Test spawning with custom system prompt."""
-        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(
-            return_value="custom-123"
-        )
+        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(return_value="custom-123")
 
         custom_prompt = "You are a specialized testing agent."
-        result = await instance_manager.spawn_claude.fn(instance_manager, 
-            name="custom-agent",
-            system_prompt=custom_prompt
+        result = await instance_manager.spawn_claude.fn(
+            instance_manager, name="custom-agent", system_prompt=custom_prompt
         )
 
         assert "instance_id" in result
@@ -189,13 +184,10 @@ class TestInstanceSpawning:
     @pytest.mark.asyncio
     async def test_spawn_claude_with_initial_prompt(self, instance_manager):
         """Test spawning with initial prompt."""
-        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(
-            return_value="init-123"
-        )
+        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(return_value="init-123")
 
-        result = await instance_manager.spawn_claude.fn(instance_manager, 
-            name="init-instance",
-            initial_prompt="Start working on task X"
+        result = await instance_manager.spawn_claude.fn(
+            instance_manager, name="init-instance", initial_prompt="Start working on task X"
         )
 
         assert "instance_id" in result
@@ -203,20 +195,14 @@ class TestInstanceSpawning:
     @pytest.mark.asyncio
     async def test_spawn_claude_with_mcp_servers(self, instance_manager):
         """Test spawning with MCP server configuration."""
-        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(
-            return_value="mcp-123"
+        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(return_value="mcp-123")
+
+        mcp_config = json.dumps(
+            {"test_server": {"transport": "http", "url": "http://localhost:8000/mcp"}}
         )
 
-        mcp_config = json.dumps({
-            "test_server": {
-                "transport": "http",
-                "url": "http://localhost:8000/mcp"
-            }
-        })
-
-        result = await instance_manager.spawn_claude.fn(instance_manager, 
-            name="mcp-instance",
-            mcp_servers=mcp_config
+        result = await instance_manager.spawn_claude.fn(
+            instance_manager, name="mcp-instance", mcp_servers=mcp_config
         )
 
         assert "instance_id" in result
@@ -224,13 +210,10 @@ class TestInstanceSpawning:
     @pytest.mark.asyncio
     async def test_spawn_claude_bypass_isolation(self, instance_manager):
         """Test spawning with bypass_isolation flag."""
-        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(
-            return_value="bypass-123"
-        )
+        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(return_value="bypass-123")
 
-        result = await instance_manager.spawn_claude.fn(instance_manager, 
-            name="bypass-instance",
-            bypass_isolation=True
+        result = await instance_manager.spawn_claude.fn(
+            instance_manager, name="bypass-instance", bypass_isolation=True
         )
 
         assert "instance_id" in result
@@ -238,9 +221,7 @@ class TestInstanceSpawning:
     @pytest.mark.asyncio
     async def test_spawn_multiple_instances_success(self, instance_manager):
         """Test spawning multiple instances in parallel."""
-        instance_manager.spawn_instance = AsyncMock(
-            side_effect=["inst-1", "inst-2", "inst-3"]
-        )
+        instance_manager.spawn_instance = AsyncMock(side_effect=["inst-1", "inst-2", "inst-3"])
 
         instances_config = [
             {"name": "instance-1", "role": "general"},
@@ -248,7 +229,9 @@ class TestInstanceSpawning:
             {"name": "instance-3", "role": "testing_specialist"},
         ]
 
-        result = await instance_manager.spawn_multiple_instances.fn(instance_manager, instances_config)
+        result = await instance_manager.spawn_multiple_instances.fn(
+            instance_manager, instances_config
+        )
 
         assert len(result["spawned"]) == 3
         assert len(result["errors"]) == 0
@@ -269,7 +252,9 @@ class TestInstanceSpawning:
             {"name": "instance-3", "role": "testing_specialist"},
         ]
 
-        result = await instance_manager.spawn_multiple_instances.fn(instance_manager, instances_config)
+        result = await instance_manager.spawn_multiple_instances.fn(
+            instance_manager, instances_config
+        )
 
         assert len(result["spawned"]) == 2
         assert len(result["errors"]) == 1
@@ -278,13 +263,10 @@ class TestInstanceSpawning:
     @pytest.mark.asyncio
     async def test_spawn_codex_success(self, instance_manager):
         """Test successful Codex instance spawning."""
-        instance_manager.tmux_manager.spawn_codex_instance = AsyncMock(
-            return_value="codex-123"
-        )
+        instance_manager.tmux_manager.spawn_codex_instance = AsyncMock(return_value="codex-123")
 
-        result = await instance_manager.spawn_codex.fn(instance_manager, 
-            name="codex-instance",
-            model="gpt-5-codex"
+        result = await instance_manager.spawn_codex.fn(
+            instance_manager, name="codex-instance", model="gpt-5-codex"
         )
 
         assert "instance_id" in result
@@ -293,13 +275,10 @@ class TestInstanceSpawning:
     @pytest.mark.asyncio
     async def test_spawn_codex_with_sandbox_mode(self, instance_manager):
         """Test spawning Codex with sandbox mode."""
-        instance_manager.tmux_manager.spawn_codex_instance = AsyncMock(
-            return_value="sandbox-123"
-        )
+        instance_manager.tmux_manager.spawn_codex_instance = AsyncMock(return_value="sandbox-123")
 
-        result = await instance_manager.spawn_codex.fn(instance_manager, 
-            name="sandbox-codex",
-            sandbox_mode="workspace-write"
+        result = await instance_manager.spawn_codex.fn(
+            instance_manager, name="sandbox-codex", sandbox_mode="workspace-write"
         )
 
         assert "instance_id" in result
@@ -307,14 +286,11 @@ class TestInstanceSpawning:
     @pytest.mark.asyncio
     async def test_spawn_instance_validates_model(self, instance_manager):
         """Test that spawn_claude validates model names."""
-        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(
-            return_value="valid-123"
-        )
+        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(return_value="valid-123")
 
         # Valid model should work
-        result = await instance_manager.spawn_claude.fn(instance_manager, 
-            name="test",
-            model="claude-sonnet-4-5"
+        result = await instance_manager.spawn_claude.fn(
+            instance_manager, name="test", model="claude-sonnet-4-5"
         )
         assert "instance_id" in result
 
@@ -329,13 +305,10 @@ class TestInstanceSpawning:
     @pytest.mark.asyncio
     async def test_spawn_claude_wait_for_ready(self, instance_manager):
         """Test spawning with wait_for_ready flag."""
-        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(
-            return_value="ready-123"
-        )
+        instance_manager.tmux_manager.spawn_claude_instance = AsyncMock(return_value="ready-123")
 
-        result = await instance_manager.spawn_claude.fn(instance_manager, 
-            name="ready-instance",
-            wait_for_ready=True
+        result = await instance_manager.spawn_claude.fn(
+            instance_manager, name="ready-instance", wait_for_ready=True
         )
 
         assert "instance_id" in result
@@ -351,16 +324,15 @@ class TestMessageSending:
         instance_manager.instances["inst-123"] = {
             "instance_id": "inst-123",
             "instance_type": "claude",
-            "status": "running"
+            "status": "running",
         }
 
         instance_manager.tmux_manager.send_message = AsyncMock(
             return_value={"status": "message_sent", "response": "OK"}
         )
 
-        result = await instance_manager.send_to_instance.fn(instance_manager, 
-            instance_id="inst-123",
-            message="Test message"
+        result = await instance_manager.send_to_instance.fn(
+            instance_manager, instance_id="inst-123", message="Test message"
         )
 
         assert result["status"] == "message_sent"
@@ -370,9 +342,8 @@ class TestMessageSending:
     async def test_send_to_instance_not_found(self, instance_manager):
         """Test sending message to non-existent instance."""
         with pytest.raises(ValueError, match="not found"):
-            await instance_manager.send_to_instance.fn(instance_manager, 
-                instance_id="nonexistent",
-                message="Test"
+            await instance_manager.send_to_instance.fn(
+                instance_manager, instance_id="nonexistent", message="Test"
             )
 
     @pytest.mark.asyncio
@@ -381,21 +352,19 @@ class TestMessageSending:
         instance_manager.instances["inst-456"] = {
             "instance_id": "inst-456",
             "instance_type": "claude",
-            "status": "running"
+            "status": "running",
         }
 
         instance_manager.tmux_manager.send_message = AsyncMock(
-            return_value={
-                "status": "response_received",
-                "response": "Task completed successfully"
-            }
+            return_value={"status": "response_received", "response": "Task completed successfully"}
         )
 
-        result = await instance_manager.send_to_instance.fn(instance_manager, 
+        result = await instance_manager.send_to_instance.fn(
+            instance_manager,
             instance_id="inst-456",
             message="Complete task",
             wait_for_response=True,
-            timeout_seconds=30
+            timeout_seconds=30,
         )
 
         assert "response" in result
@@ -406,13 +375,12 @@ class TestMessageSending:
         instance_manager.instances["unknown-123"] = {
             "instance_id": "unknown-123",
             "instance_type": "unknown",
-            "status": "running"
+            "status": "running",
         }
 
         with pytest.raises(ValueError, match="Unsupported instance type"):
-            await instance_manager.send_to_instance.fn(instance_manager, 
-                instance_id="unknown-123",
-                message="Test"
+            await instance_manager.send_to_instance.fn(
+                instance_manager, instance_id="unknown-123", message="Test"
             )
 
     @pytest.mark.asyncio
@@ -423,7 +391,7 @@ class TestMessageSending:
             instance_manager.instances[f"inst-{i}"] = {
                 "instance_id": f"inst-{i}",
                 "instance_type": "claude",
-                "status": "running"
+                "status": "running",
             }
 
         instance_manager.tmux_manager.send_message = AsyncMock(
@@ -434,10 +402,11 @@ class TestMessageSending:
         async def mock_send_to_instance(**kwargs):
             return {"status": "sent", "instance_id": kwargs["instance_id"]}
 
-        with patch.object(instance_manager, 'send_to_instance', side_effect=mock_send_to_instance):
-            result = await instance_manager.send_to_multiple_instances.fn(instance_manager,
+        with patch.object(instance_manager, "send_to_instance", side_effect=mock_send_to_instance):
+            result = await instance_manager.send_to_multiple_instances.fn(
+                instance_manager,
                 instance_ids=["inst-1", "inst-2", "inst-3"],
-                message="Broadcast message"
+                message="Broadcast message",
             )
 
             assert len(result["sent"]) == 3
@@ -449,13 +418,13 @@ class TestMessageSending:
         instance_manager.instances["inst-1"] = {
             "instance_id": "inst-1",
             "instance_type": "claude",
-            "status": "running"
+            "status": "running",
         }
         # inst-2 doesn't exist
         instance_manager.instances["inst-3"] = {
             "instance_id": "inst-3",
             "instance_type": "claude",
-            "status": "running"
+            "status": "running",
         }
 
         instance_manager.tmux_manager.send_message = AsyncMock(
@@ -468,10 +437,11 @@ class TestMessageSending:
                 raise ValueError("Instance not found")
             return {"status": "sent"}
 
-        with patch.object(instance_manager, 'send_to_instance', side_effect=mock_send_to_instance):
-            result = await instance_manager.send_to_multiple_instances.fn(instance_manager,
+        with patch.object(instance_manager, "send_to_instance", side_effect=mock_send_to_instance):
+            result = await instance_manager.send_to_multiple_instances.fn(
+                instance_manager,
                 instance_ids=["inst-1", "inst-2", "inst-3"],
-                message="Test message"
+                message="Test message",
             )
 
             assert len(result["sent"]) == 2
@@ -480,9 +450,8 @@ class TestMessageSending:
     @pytest.mark.asyncio
     async def test_send_to_multiple_instances_empty_list(self, instance_manager):
         """Test sending to empty instance list."""
-        result = await instance_manager.send_to_multiple_instances.fn(instance_manager, 
-            instance_ids=[],
-            message="Test"
+        result = await instance_manager.send_to_multiple_instances.fn(
+            instance_manager, instance_ids=[], message="Test"
         )
 
         assert result["sent"] == []
@@ -494,16 +463,15 @@ class TestMessageSending:
         instance_manager.instances["codex-1"] = {
             "instance_id": "codex-1",
             "instance_type": "codex",
-            "status": "running"
+            "status": "running",
         }
 
         instance_manager.tmux_manager.send_message = AsyncMock(
             return_value={"status": "message_sent"}
         )
 
-        result = await instance_manager.send_to_instance.fn(instance_manager, 
-            instance_id="codex-1",
-            message="Test codex message"
+        result = await instance_manager.send_to_instance.fn(
+            instance_manager, instance_id="codex-1", message="Test codex message"
         )
 
         assert "status" in result
@@ -514,17 +482,18 @@ class TestMessageSending:
         instance_manager.instances["inst-timeout"] = {
             "instance_id": "inst-timeout",
             "instance_type": "claude",
-            "status": "running"
+            "status": "running",
         }
 
         instance_manager.tmux_manager.send_message = AsyncMock(
             return_value={"status": "message_sent"}
         )
 
-        result = await instance_manager.send_to_instance.fn(instance_manager, 
+        result = await instance_manager.send_to_instance.fn(
+            instance_manager,
             instance_id="inst-timeout",
             message="Long running task",
-            timeout_seconds=300
+            timeout_seconds=300,
         )
 
         assert result is not None
@@ -535,15 +504,16 @@ class TestMessageSending:
         instance_manager.instances["child-1"] = {
             "instance_id": "child-1",
             "parent_id": "parent-1",
-            "status": "running"
+            "status": "running",
         }
 
         instance_manager.shared_state_manager.add_pending_reply = AsyncMock()
 
-        result = await instance_manager.reply_to_caller.fn(instance_manager,
+        result = await instance_manager.reply_to_caller.fn(
+            instance_manager,
             instance_id="child-1",
             reply_message="Task completed",
-            correlation_id="corr-123"
+            correlation_id="corr-123",
         )
 
         assert "success" in result
@@ -555,7 +525,7 @@ class TestMessageSending:
             instance_manager.instances[f"inst-{i}"] = {
                 "instance_id": f"inst-{i}",
                 "instance_type": "claude",
-                "status": "running"
+                "status": "running",
             }
 
         instance_manager.tmux_manager.send_message = AsyncMock(
@@ -566,11 +536,12 @@ class TestMessageSending:
         async def mock_send_to_instance(**kwargs):
             return {"status": "sent", "response": "Done"}
 
-        with patch.object(instance_manager, 'send_to_instance', side_effect=mock_send_to_instance):
-            result = await instance_manager.send_to_multiple_instances.fn(instance_manager,
+        with patch.object(instance_manager, "send_to_instance", side_effect=mock_send_to_instance):
+            result = await instance_manager.send_to_multiple_instances.fn(
+                instance_manager,
                 instance_ids=["inst-1", "inst-2"],
                 message="Execute task",
-                wait_for_responses=True
+                wait_for_responses=True,
             )
 
             assert len(result["sent"]) == 2
@@ -581,14 +552,13 @@ class TestMessageSending:
         instance_manager.instances["inst-none"] = {
             "instance_id": "inst-none",
             "instance_type": "claude",
-            "status": "running"
+            "status": "running",
         }
 
         instance_manager.tmux_manager.send_message = AsyncMock(return_value=None)
 
-        result = await instance_manager.send_to_instance.fn(instance_manager, 
-            instance_id="inst-none",
-            message="Test"
+        result = await instance_manager.send_to_instance.fn(
+            instance_manager, instance_id="inst-none", message="Test"
         )
 
         assert result["status"] == "message_sent"
@@ -626,13 +596,14 @@ class TestTeamCoordination:
 
         with patch("pathlib.Path.exists", return_value=True):
             with patch("pathlib.Path.read_text", return_value=template_content):
-                result = await instance_manager.spawn_team_from_template.fn(instance_manager,
-                    template_name="test_team",
-                    task_description="Build a web app"
+                result = await instance_manager.spawn_team_from_template.fn(
+                    instance_manager, template_name="test_team", task_description="Build a web app"
                 )
 
                 # Should have supervisor ID in the formatted message or be an error dict
-                assert (isinstance(result, str) and "Supervisor ID:" in result) or (isinstance(result, dict) and ("supervisor_id" in result or "error" in result))
+                assert (isinstance(result, str) and "Supervisor ID:" in result) or (
+                    isinstance(result, dict) and ("supervisor_id" in result or "error" in result)
+                )
 
     @pytest.mark.asyncio
     async def test_coordinate_instances_sequential(self, instance_manager):
@@ -642,15 +613,14 @@ class TestTeamCoordination:
         instance_manager.instances["p1"] = {"instance_id": "p1", "state": "running"}
         instance_manager.instances["p2"] = {"instance_id": "p2", "state": "running"}
 
-        instance_manager.send_to_instance = AsyncMock(
-            return_value={"status": "completed"}
-        )
+        instance_manager.send_to_instance = AsyncMock(return_value={"status": "completed"})
 
-        result = await instance_manager.coordinate_instances.fn(instance_manager, 
+        result = await instance_manager.coordinate_instances.fn(
+            instance_manager,
             coordinator_id="coord-1",
             participant_ids=["p1", "p2"],
             task_description="Sequential task",
-            coordination_type="sequential"
+            coordination_type="sequential",
         )
 
         assert "task_id" in result or "status" in result
@@ -663,15 +633,14 @@ class TestTeamCoordination:
         instance_manager.instances["p2"] = {"instance_id": "p2", "state": "running"}
         instance_manager.instances["p3"] = {"instance_id": "p3", "state": "running"}
 
-        instance_manager.send_to_instance = AsyncMock(
-            return_value={"status": "completed"}
-        )
+        instance_manager.send_to_instance = AsyncMock(return_value={"status": "completed"})
 
-        result = await instance_manager.coordinate_instances.fn(instance_manager, 
+        result = await instance_manager.coordinate_instances.fn(
+            instance_manager,
             coordinator_id="coord-1",
             participant_ids=["p1", "p2", "p3"],
             task_description="Parallel task",
-            coordination_type="parallel"
+            coordination_type="parallel",
         )
 
         assert "task_id" in result or "status" in result
@@ -682,26 +651,25 @@ class TestTeamCoordination:
         # Setup parent and children
         instance_manager.instances["parent-1"] = {
             "instance_id": "parent-1",
-            "children": ["child-1", "child-2"]
+            "children": ["child-1", "child-2"],
         }
         instance_manager.instances["child-1"] = {
             "instance_id": "child-1",
             "parent_id": "parent-1",
-            "instance_type": "claude"
+            "instance_type": "claude",
         }
         instance_manager.instances["child-2"] = {
             "instance_id": "child-2",
             "parent_id": "parent-1",
-            "instance_type": "claude"
+            "instance_type": "claude",
         }
 
         instance_manager.tmux_manager.send_message = AsyncMock(
             return_value={"status": "message_sent"}
         )
 
-        result = await instance_manager.broadcast_to_children.fn(instance_manager,
-            parent_id="parent-1",
-            message="Broadcast to all children"
+        result = await instance_manager.broadcast_to_children.fn(
+            instance_manager, parent_id="parent-1", message="Broadcast to all children"
         )
 
         assert "children_count" in result or "error" in result
@@ -715,14 +683,14 @@ class TestTeamCoordination:
             "id": "child-1",
             "parent_instance_id": "parent-1",
             "name": "child-1",
-            "status": "running"
+            "status": "running",
         }
         instance_manager.instances["child-2"] = {
             "instance_id": "child-2",
             "id": "child-2",
             "parent_instance_id": "parent-1",
             "name": "child-2",
-            "status": "running"
+            "status": "running",
         }
 
         result = instance_manager.get_children.fn(instance_manager, "parent-1")
@@ -733,9 +701,7 @@ class TestTeamCoordination:
     @pytest.mark.asyncio
     async def test_get_children_empty(self, instance_manager):
         """Test getting children when parent has none."""
-        instance_manager.instances["parent-no-kids"] = {
-            "instance_id": "parent-no-kids"
-        }
+        instance_manager.instances["parent-no-kids"] = {"instance_id": "parent-no-kids"}
 
         result = instance_manager.get_children.fn(instance_manager, "parent-no-kids")
 
@@ -748,22 +714,24 @@ class TestTeamCoordination:
         instance_manager.instances["root"] = {
             "instance_id": "root",
             "name": "root",
-            "status": "running"
+            "status": "running",
         }
         instance_manager.instances["child1"] = {
             "instance_id": "child1",
             "parent_id": "root",
             "name": "child1",
-            "status": "running"
+            "status": "running",
         }
         instance_manager.instances["grandchild"] = {
             "instance_id": "grandchild",
             "parent_id": "child1",
             "name": "grandchild",
-            "status": "running"
+            "status": "running",
         }
 
-        tree = instance_manager.get_instance_tree.fn(instance_manager, )
+        tree = instance_manager.get_instance_tree.fn(
+            instance_manager,
+        )
 
         assert isinstance(tree, str)
         assert "root" in tree
@@ -775,15 +743,14 @@ class TestTeamCoordination:
             instance_manager.instances[f"p{i}"] = {"instance_id": f"p{i}", "state": "running"}
         instance_manager.instances["coord"] = {"instance_id": "coord", "state": "running"}
 
-        instance_manager.send_to_instance = AsyncMock(
-            return_value={"status": "completed"}
-        )
+        instance_manager.send_to_instance = AsyncMock(return_value={"status": "completed"})
 
-        result = await instance_manager.coordinate_instances.fn(instance_manager, 
+        result = await instance_manager.coordinate_instances.fn(
+            instance_manager,
             coordinator_id="coord",
             participant_ids=["p1", "p2", "p3"],
             task_description="Consensus task",
-            coordination_type="consensus"
+            coordination_type="consensus",
         )
 
         assert "task_id" in result or "status" in result
@@ -795,17 +762,15 @@ class TestTeamCoordination:
         instance_manager.instances["child-1"] = {
             "instance_id": "child-1",
             "parent_id": "parent-1",
-            "instance_type": "claude"
+            "instance_type": "claude",
         }
 
         instance_manager.tmux_manager.send_message = AsyncMock(
             return_value={"status": "message_sent", "response": "Done"}
         )
 
-        result = await instance_manager.broadcast_to_children.fn(instance_manager,
-            parent_id="parent-1",
-            message="Execute task",
-            wait_for_responses=True
+        result = await instance_manager.broadcast_to_children.fn(
+            instance_manager, parent_id="parent-1", message="Execute task", wait_for_responses=True
         )
 
         assert "children_count" in result or "error" in result
@@ -815,9 +780,8 @@ class TestTeamCoordination:
         """Test spawning team when template doesn't exist."""
         with patch("pathlib.Path.exists", return_value=False):
             with pytest.raises(ValueError, match="Template not found"):
-                await instance_manager.spawn_team_from_template.fn(instance_manager,
-                    template_name="nonexistent",
-                    task_description="Test task"
+                await instance_manager.spawn_team_from_template.fn(
+                    instance_manager, template_name="nonexistent", task_description="Test task"
                 )
 
 
@@ -827,6 +791,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_spawn_instance_failure(self, instance_manager):
         """Test handling spawn failure."""
+
         # Override spawn_instance (which is called by spawn_claude) to raise an exception
         async def mock_spawn_fail(*args, **kwargs):
             raise Exception("Spawn failed")
@@ -834,9 +799,8 @@ class TestErrorHandling:
         instance_manager.spawn_instance = mock_spawn_fail
 
         with pytest.raises(Exception, match="Spawn failed"):
-            await instance_manager.spawn_claude.fn(instance_manager,
-                name="fail-instance",
-                role="general"
+            await instance_manager.spawn_claude.fn(
+                instance_manager, name="fail-instance", role="general"
             )
 
     @pytest.mark.asyncio
@@ -844,33 +808,32 @@ class TestErrorHandling:
         """Test sending message to terminated instance."""
         # Instance exists but not in running state
         with pytest.raises(ValueError, match="not found"):
-            await instance_manager.send_to_instance.fn(instance_manager, 
-                instance_id="terminated-inst",
-                message="Test"
+            await instance_manager.send_to_instance.fn(
+                instance_manager, instance_id="terminated-inst", message="Test"
             )
 
     @pytest.mark.asyncio
     async def test_get_instance_output_not_found(self, instance_manager):
         """Test getting output from non-existent instance."""
         with pytest.raises(ValueError, match="not found"):
-            await instance_manager.get_instance_output.fn(instance_manager, 
-                instance_id="nonexistent"
+            await instance_manager.get_instance_output.fn(
+                instance_manager, instance_id="nonexistent"
             )
 
     @pytest.mark.asyncio
     async def test_terminate_instance_not_found(self, instance_manager):
         """Test terminating non-existent instance."""
         with pytest.raises(ValueError, match="not found"):
-            await instance_manager.terminate_instance.fn(instance_manager,
-                instance_id="nonexistent"
+            await instance_manager.terminate_instance.fn(
+                instance_manager, instance_id="nonexistent"
             )
 
     @pytest.mark.asyncio
     async def test_interrupt_instance_not_found(self, instance_manager):
         """Test interrupting non-existent instance."""
         with pytest.raises(ValueError, match="not found"):
-            await instance_manager.interrupt_instance.fn(instance_manager,
-                instance_id="nonexistent"
+            await instance_manager.interrupt_instance.fn(
+                instance_manager, instance_id="nonexistent"
             )
 
     @pytest.mark.asyncio
@@ -886,10 +849,11 @@ class TestErrorHandling:
 
         # Should raise ValueError for non-existent participant
         with pytest.raises(ValueError, match="not found"):
-            await instance_manager.coordinate_instances.fn(instance_manager,
+            await instance_manager.coordinate_instances.fn(
+                instance_manager,
                 coordinator_id="coord",
                 participant_ids=["p1", "p2"],
-                task_description="Test coordination"
+                task_description="Test coordination",
             )
 
     def test_get_instance_status_not_found(self, instance_manager):
@@ -900,6 +864,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_invalid_model_name(self, instance_manager):
         """Test spawning with invalid model name."""
+
         # Override the fixture's validate_model mock to actually validate
         def validate_model_strict(provider, model):
             valid_models = ["claude-sonnet-4-5", "claude-opus-4", "claude-haiku-4-5"]
@@ -907,11 +872,12 @@ class TestErrorHandling:
                 raise ValueError(f"Invalid model: {model}")
             return model or "claude-sonnet-4-5"
 
-        with patch("src.orchestrator.instance_manager.validate_model", side_effect=validate_model_strict):
+        with patch(
+            "src.orchestrator.instance_manager.validate_model", side_effect=validate_model_strict
+        ):
             with pytest.raises(ValueError, match="Invalid model"):
-                await instance_manager.spawn_claude.fn(instance_manager,
-                    name="test",
-                    model="invalid-model-name"
+                await instance_manager.spawn_claude.fn(
+                    instance_manager, name="test", model="invalid-model-name"
                 )
 
 
@@ -941,7 +907,9 @@ class TestInstanceOutput:
         ]
 
         # Execute
-        result = await instance_manager.get_instance_output.fn(instance_manager, instance_id, limit=100)
+        result = await instance_manager.get_instance_output.fn(
+            instance_manager, instance_id, limit=100
+        )
 
         # Assert
         assert "instance_id" in result
@@ -964,7 +932,9 @@ class TestInstanceOutput:
         ]
 
         # Execute
-        result = await instance_manager.get_instance_output.fn(instance_manager, instance_id, limit=3)
+        result = await instance_manager.get_instance_output.fn(
+            instance_manager, instance_id, limit=3
+        )
 
         # Assert - should respect limit
         assert len(result["output"]) <= 3
@@ -1039,7 +1009,9 @@ class TestInstanceTermination:
             mock_terminate.return_value = True
 
             # Execute
-            result = await instance_manager.terminate_instance.fn(instance_manager, instance_id, force=False)
+            result = await instance_manager.terminate_instance.fn(
+                instance_manager, instance_id, force=False
+            )
 
             # Assert
             assert result["instance_id"] == instance_id
@@ -1058,7 +1030,9 @@ class TestInstanceTermination:
             mock_terminate.return_value = True
 
             # Execute
-            result = await instance_manager.terminate_instance.fn(instance_manager, instance_id, force=True)
+            result = await instance_manager.terminate_instance.fn(
+                instance_manager, instance_id, force=True
+            )
 
             # Assert
             assert result["success"] is True
@@ -1143,7 +1117,8 @@ class TestInstanceTermination:
             mock_handler.return_value = {"status": "success"}
 
             # Execute
-            result = await instance_manager.reply_to_caller.fn(instance_manager, 
+            result = await instance_manager.reply_to_caller.fn(
+                instance_manager,
                 instance_id=instance_id,
                 reply_message=reply_message,
                 correlation_id=correlation_id,
@@ -1170,7 +1145,9 @@ class TestFileOperations:
             mock_retrieve.return_value = destination
 
             # Execute
-            result = await instance_manager.retrieve_instance_file.fn(instance_manager, instance_id, filename, destination)
+            result = await instance_manager.retrieve_instance_file.fn(
+                instance_manager, instance_id, filename, destination
+            )
 
             # Assert
             assert result == destination
@@ -1185,7 +1162,9 @@ class TestFileOperations:
             mock_retrieve.return_value = None
 
             # Execute
-            result = await instance_manager.retrieve_instance_file.fn(instance_manager, "inst-123", "missing.txt")
+            result = await instance_manager.retrieve_instance_file.fn(
+                instance_manager, "inst-123", "missing.txt"
+            )
 
             # Assert
             assert result is None
@@ -1205,7 +1184,9 @@ class TestFileOperations:
             mock_retrieve.side_effect = ["/tmp/file1.txt", "/tmp/file2.json"]
 
             # Execute
-            result = await instance_manager.retrieve_multiple_instance_files.fn(instance_manager, retrievals)
+            result = await instance_manager.retrieve_multiple_instance_files.fn(
+                instance_manager, retrievals
+            )
 
             # Assert
             assert len(result["retrieved"]) == 2
@@ -1239,7 +1220,9 @@ class TestFileOperations:
             mock_list.return_value = None
 
             # Execute
-            files = await instance_manager.list_instance_files.fn(instance_manager, "nonexistent-inst")
+            files = await instance_manager.list_instance_files.fn(
+                instance_manager, "nonexistent-inst"
+            )
 
             # Assert
             assert files is None
@@ -1406,6 +1389,7 @@ class TestStatusManagement:
         # Setup
         instance_id = "inst-123"
         from orchestrator.compat import UTC
+
         created_at = datetime.now(UTC)
         instance_manager.instances[instance_id] = {
             "id": instance_id,

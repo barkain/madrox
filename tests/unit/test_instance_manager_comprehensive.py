@@ -73,16 +73,10 @@ async def instance_manager(mock_config):
                         return instance_id
 
                     mock_tmux_mgr.spawn_instance = AsyncMock(side_effect=mock_spawn_instance)
-                    mock_tmux_mgr.send_message = AsyncMock(
-                        return_value={"status": "message_sent"}
-                    )
+                    mock_tmux_mgr.send_message = AsyncMock(return_value={"status": "message_sent"})
                     mock_tmux_mgr.terminate_instance = AsyncMock(return_value=True)
-                    mock_tmux_mgr.interrupt_instance = AsyncMock(
-                        return_value={"success": True}
-                    )
-                    mock_tmux_mgr.handle_reply_to_caller = AsyncMock(
-                        return_value={"success": True}
-                    )
+                    mock_tmux_mgr.interrupt_instance = AsyncMock(return_value={"success": True})
+                    mock_tmux_mgr.handle_reply_to_caller = AsyncMock(return_value={"success": True})
 
                     mock_log_mgr_class.return_value = mock_log_mgr
                     mock_state_mgr_class.return_value = mock_state_mgr
@@ -113,9 +107,7 @@ class TestInstanceManagerInitialization:
                         manager = InstanceManager(mock_config)
 
                         # Verify workspace was created
-                        assert manager.workspace_base == Path(
-                            mock_config["workspace_base_dir"]
-                        )
+                        assert manager.workspace_base == Path(mock_config["workspace_base_dir"])
 
     def test_initialization_sets_config(self, instance_manager, mock_config):
         """Test that config is properly stored."""
@@ -148,9 +140,7 @@ class TestSpawnInstance:
     @pytest.mark.asyncio
     async def test_spawn_instance_basic(self, instance_manager):
         """Test basic instance spawning."""
-        instance_id = await instance_manager.spawn_instance(
-            name="test-basic", role="general"
-        )
+        instance_id = await instance_manager.spawn_instance(name="test-basic", role="general")
 
         assert instance_id.startswith("inst-")
         assert instance_id in instance_manager.instances
@@ -689,9 +679,7 @@ class TestJobStatus:
     @pytest.mark.asyncio
     async def test_get_job_status_not_found(self, instance_manager):
         """Test getting status for non-existent job."""
-        result = await instance_manager.get_job_status.fn(
-            instance_manager, job_id="nonexistent"
-        )
+        result = await instance_manager.get_job_status.fn(instance_manager, job_id="nonexistent")
 
         assert result is None
 
@@ -886,9 +874,7 @@ class TestGetPendingReplies:
 
         instance_manager.tmux_manager.response_queues[instance_id] = queue
 
-        replies = await instance_manager._get_pending_replies_internal(
-            instance_id, wait_timeout=0
-        )
+        replies = await instance_manager._get_pending_replies_internal(instance_id, wait_timeout=0)
 
         assert len(replies) == 2
 
@@ -914,7 +900,7 @@ class TestBroadcastToChildren:
             return {"status": "sent"}
 
         # Patch the internal method being called
-        with patch.object(instance_manager, 'send_to_instance', side_effect=mock_send):
+        with patch.object(instance_manager, "send_to_instance", side_effect=mock_send):
             result = await instance_manager.broadcast_to_children.fn(
                 instance_manager, parent_id=parent_id, message="Broadcast message"
             )
@@ -1110,7 +1096,7 @@ class TestTemplateOperations:
         assert "Content here" in section
         # The extraction stops at the next ## header, so check it properly
         # Based on the implementation, it should break at the next ##
-        lines = section.split('\n')
+        lines = section.split("\n")
         # First line should have content
         assert any("Content here" in line for line in lines)
 

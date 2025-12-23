@@ -82,7 +82,7 @@ async def call_mcp_handler(mcp_adapter, body: dict):
 
     # Find the POST route handler (can be "/" or any path)
     for route in mcp_adapter.router.routes:
-        if hasattr(route, 'methods') and "POST" in route.methods:
+        if hasattr(route, "methods") and "POST" in route.methods:
             return await route.endpoint(mock_request)
 
     raise RuntimeError("MCP POST route not found")
@@ -121,7 +121,7 @@ async def test_malformed_json_with_invalid_syntax(mcp_adapter):
     # Find the POST route handler
     handler = None
     for route in mcp_adapter.router.routes:
-        if hasattr(route, 'methods') and "POST" in route.methods:
+        if hasattr(route, "methods") and "POST" in route.methods:
             handler = route.endpoint
             break
 
@@ -365,6 +365,7 @@ async def test_binary_data_in_string_fields(mcp_adapter):
 @pytest.mark.asyncio
 async def test_concurrent_requests_to_same_tool(mcp_adapter, mock_instance_manager):
     """Concurrent requests to same tool should not interfere with each other."""
+
     # Create 10 concurrent spawn requests
     async def make_request(idx):
         body = {
@@ -639,11 +640,11 @@ async def test_health_endpoint(mcp_adapter):
     """Health endpoint should return server status."""
     # Get health endpoint (router has /mcp prefix, so route is at /health relative to router)
     health_routes = [
-        r
-        for r in mcp_adapter.router.routes
-        if hasattr(r, "path") and r.path.endswith("/health")
+        r for r in mcp_adapter.router.routes if hasattr(r, "path") and r.path.endswith("/health")
     ]
-    assert len(health_routes) == 1, f"Health routes found: {[r.path for r in mcp_adapter.router.routes if hasattr(r, 'path')]}"
+    assert len(health_routes) == 1, (
+        f"Health routes found: {[r.path for r in mcp_adapter.router.routes if hasattr(r, 'path')]}"
+    )
 
     health_handler = health_routes[0].endpoint
 

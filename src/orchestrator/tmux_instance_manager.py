@@ -349,7 +349,10 @@ class TmuxInstanceManager:
 
                         # SECURITY FIX (CWE-77): Validate command path
                         # Ensure command is an absolute path or a known safe command
-                        if not (Path(command).is_absolute() or command in ["python", "python3", "node", "npx"]):
+                        if not (
+                            Path(command).is_absolute()
+                            or command in ["python", "python3", "node", "npx"]
+                        ):
                             logger.warning(
                                 f"Command '{command}' is not an absolute path or known safe command. "
                                 f"This may be a security risk."

@@ -96,7 +96,11 @@ class TestInitialization:
     def test_init_with_monitoring_service(self, mock_config: dict[str, Any]) -> None:
         """Test initialization with OPENROUTER_API_KEY."""
         with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
-            with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001", "OPENROUTER_API_KEY": "test-key"}, clear=False):
+            with patch.dict(
+                "os.environ",
+                {"ORCHESTRATOR_PORT": "8001", "OPENROUTER_API_KEY": "test-key"},
+                clear=False,
+            ):
                 with patch("src.orchestrator.tmux_instance_manager.LLMSummarizer"):
                     with patch("src.orchestrator.tmux_instance_manager.MonitoringService"):
                         manager = TmuxInstanceManager(mock_config)
@@ -126,7 +130,9 @@ class TestSessionManagement:
         """Test successful tmux session initialization."""
         mocks = create_mock_libtmux()
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]):
+        with patch(
+            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+        ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -152,7 +158,9 @@ class TestSessionManagement:
                 assert mocks["server"].new_session.called
 
     @pytest.mark.asyncio
-    async def test_initialize_session_kills_existing(self, mock_config: dict[str, Any], tmp_path: Path) -> None:
+    async def test_initialize_session_kills_existing(
+        self, mock_config: dict[str, Any], tmp_path: Path
+    ) -> None:
         """Test that existing session is killed before creating new one."""
         mocks = create_mock_libtmux()
 
@@ -165,7 +173,9 @@ class TestSessionManagement:
         workspace_dir = tmp_path / "test_workspace"
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]):
+        with patch(
+            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+        ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -191,7 +201,9 @@ class TestSessionManagement:
         """Test initializing a Codex instance."""
         mocks = create_mock_libtmux()
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]):
+        with patch(
+            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+        ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -231,7 +243,9 @@ class TestMessageSending:
         """Test basic message sending."""
         mocks = create_mock_libtmux()
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]):
+        with patch(
+            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+        ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -266,7 +280,9 @@ class TestMessageSending:
         """Test _send_multiline_message_to_pane with newlines."""
         mocks = create_mock_libtmux()
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]):
+        with patch(
+            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+        ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -297,7 +313,9 @@ class TestOutputCapture:
         """Test capturing pane content with default line limit."""
         mocks = create_mock_libtmux()
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]):
+        with patch(
+            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+        ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -307,9 +325,7 @@ class TestOutputCapture:
                 manager.tmux_sessions[instance_id] = mocks["session"]
 
                 mock_output = ["Line 1", "Line 2", "Line 3"]
-                mocks["pane"].cmd = MagicMock(
-                    return_value=MagicMock(stdout=mock_output)
-                )
+                mocks["pane"].cmd = MagicMock(return_value=MagicMock(stdout=mock_output))
 
                 # Execute
                 content = await manager.get_tmux_pane_content(instance_id, lines=100)
@@ -442,7 +458,9 @@ class TestMCPConfiguration:
         workspace_dir = tmp_path / "mcp_http"
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]):
+        with patch(
+            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+        ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -466,7 +484,9 @@ class TestMCPConfiguration:
                 # Assert
                 assert "_mcp_config_path" in instance
 
-    def test_configure_mcp_servers_auto_madrox(self, mock_config: dict[str, Any], tmp_path: Path) -> None:
+    def test_configure_mcp_servers_auto_madrox(
+        self, mock_config: dict[str, Any], tmp_path: Path
+    ) -> None:
         """Test auto-addition of madrox MCP server."""
         mocks = create_mock_libtmux()
 
@@ -474,7 +494,9 @@ class TestMCPConfiguration:
         workspace_dir = tmp_path / "auto_madrox"
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]):
+        with patch(
+            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+        ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -493,7 +515,9 @@ class TestMCPConfiguration:
                 # Assert
                 assert "madrox" in instance["mcp_servers"]
 
-    def test_configure_mcp_servers_invalid_json(self, mock_config: dict[str, Any], tmp_path: Path) -> None:
+    def test_configure_mcp_servers_invalid_json(
+        self, mock_config: dict[str, Any], tmp_path: Path
+    ) -> None:
         """Test handling invalid JSON string for mcp_servers."""
         mocks = create_mock_libtmux()
 
@@ -501,7 +525,9 @@ class TestMCPConfiguration:
         workspace_dir = tmp_path / "invalid"
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]):
+        with patch(
+            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+        ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 

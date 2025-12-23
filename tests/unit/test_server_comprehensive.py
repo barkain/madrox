@@ -123,10 +123,12 @@ def mock_mcp_adapter():
 @pytest.fixture
 def server(mock_config, mock_instance_manager, mock_mcp_adapter):
     """Create server instance with mocked dependencies."""
-    with patch("src.orchestrator.server.InstanceManager", return_value=mock_instance_manager), \
-         patch("src.orchestrator.server.MCPAdapter", return_value=mock_mcp_adapter), \
-         patch("src.orchestrator.server.LoggingManager"), \
-         patch("src.orchestrator.server.ClaudeOrchestratorServer._cleanup_orphaned_tmux_sessions"):
+    with (
+        patch("src.orchestrator.server.InstanceManager", return_value=mock_instance_manager),
+        patch("src.orchestrator.server.MCPAdapter", return_value=mock_mcp_adapter),
+        patch("src.orchestrator.server.LoggingManager"),
+        patch("src.orchestrator.server.ClaudeOrchestratorServer._cleanup_orphaned_tmux_sessions"),
+    ):
         server_instance = ClaudeOrchestratorServer(mock_config)
         server_instance.instance_manager = mock_instance_manager
         server_instance.mcp_adapter = mock_mcp_adapter
@@ -471,6 +473,7 @@ class TestLogsEndpoints:
     def test_get_communication_logs_http_endpoint(self, client, tmp_path, server):
         """Test GET /logs/communication/{id} HTTP endpoint."""
         import json
+
         # Create communication log file
         instance_dir = tmp_path / "instances" / "inst-123"
         instance_dir.mkdir(parents=True)
@@ -783,8 +786,10 @@ class TestLogsWebSocket:
         log_file = tmp_path / "orchestrator.log"
         log_file.write_text("")
 
-        with patch("src.orchestrator.server.get_log_stream_handler") as mock_handler, \
-             patch("src.orchestrator.server.get_audit_log_stream_handler") as mock_audit_handler:
+        with (
+            patch("src.orchestrator.server.get_log_stream_handler") as mock_handler,
+            patch("src.orchestrator.server.get_audit_log_stream_handler") as mock_audit_handler,
+        ):
             mock_handler.return_value = MagicMock()
             mock_audit_handler.return_value = MagicMock()
 
@@ -808,8 +813,10 @@ class TestLogsWebSocket:
             for entry in log_entries:
                 f.write(json.dumps(entry) + "\n")
 
-        with patch("src.orchestrator.server.get_log_stream_handler") as mock_handler, \
-             patch("src.orchestrator.server.get_audit_log_stream_handler") as mock_audit_handler:
+        with (
+            patch("src.orchestrator.server.get_log_stream_handler") as mock_handler,
+            patch("src.orchestrator.server.get_audit_log_stream_handler") as mock_audit_handler,
+        ):
             mock_handler.return_value = MagicMock()
             mock_audit_handler.return_value = MagicMock()
 
@@ -827,8 +834,10 @@ class TestLogsWebSocket:
         log_file = tmp_path / "orchestrator.log"
         log_file.write_text("")
 
-        with patch("src.orchestrator.server.get_log_stream_handler") as mock_handler, \
-             patch("src.orchestrator.server.get_audit_log_stream_handler") as mock_audit_handler:
+        with (
+            patch("src.orchestrator.server.get_log_stream_handler") as mock_handler,
+            patch("src.orchestrator.server.get_audit_log_stream_handler") as mock_audit_handler,
+        ):
             mock_log_handler = MagicMock()
             mock_audit_log_handler = MagicMock()
             mock_handler.return_value = mock_log_handler
@@ -989,10 +998,14 @@ class TestServerLifecycle:
     @pytest.mark.asyncio
     async def test_server_initialization(self, mock_config):
         """Test that server initializes correctly."""
-        with patch("src.orchestrator.server.InstanceManager"), \
-             patch("src.orchestrator.server.MCPAdapter"), \
-             patch("src.orchestrator.server.LoggingManager"), \
-             patch("src.orchestrator.server.ClaudeOrchestratorServer._cleanup_orphaned_tmux_sessions"):
+        with (
+            patch("src.orchestrator.server.InstanceManager"),
+            patch("src.orchestrator.server.MCPAdapter"),
+            patch("src.orchestrator.server.LoggingManager"),
+            patch(
+                "src.orchestrator.server.ClaudeOrchestratorServer._cleanup_orphaned_tmux_sessions"
+            ),
+        ):
             server = ClaudeOrchestratorServer(mock_config)
             assert server.config == mock_config
             assert server.app is not None
@@ -1000,6 +1013,7 @@ class TestServerLifecycle:
     @pytest.mark.asyncio
     async def test_health_check_loop_runs(self, server):
         """Test that health check loop runs periodically."""
+
         async def run_limited_health_check():
             """Run health check loop with timeout."""
             try:
@@ -1033,17 +1047,13 @@ class TestServerLifecycle:
         with patch("subprocess.run") as mock_run:
             # Mock tmux list-sessions returning madrox sessions
             mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout="madrox-inst-123\nmadrox-inst-456\nother-session\n"
+                returncode=0, stdout="madrox-inst-123\nmadrox-inst-456\nother-session\n"
             )
 
             server._cleanup_orphaned_tmux_sessions()
 
             # Verify kill-session was called for madrox sessions
-            kill_calls = [
-                call for call in mock_run.call_args_list
-                if "kill-session" in call[0][0]
-            ]
+            kill_calls = [call for call in mock_run.call_args_list if "kill-session" in call[0][0]]
             assert len(kill_calls) == 2
 
     def test_cleanup_handles_no_tmux_sessions(self, server):
@@ -1099,9 +1109,7 @@ class TestPrivateMethods:
     async def test_send_to_instance_with_response(self, server):
         """Test _send_to_instance with wait_for_response."""
         result = await server._send_to_instance(
-            instance_id="inst-123",
-            message="Hello",
-            wait_for_response=True
+            instance_id="inst-123", message="Hello", wait_for_response=True
         )
         assert result["success"] is True
         assert "response" in result
@@ -1111,9 +1119,7 @@ class TestPrivateMethods:
         """Test _send_to_instance without waiting for response."""
         server.instance_manager.send_to_instance.return_value = None
         result = await server._send_to_instance(
-            instance_id="inst-123",
-            message="Hello",
-            wait_for_response=False
+            instance_id="inst-123", message="Hello", wait_for_response=False
         )
         assert result["success"] is True
         assert "no response requested" in result["message"]
@@ -1138,7 +1144,7 @@ class TestPrivateMethods:
         result = await server._coordinate_instances(
             coordinator_id="inst-1",
             participant_ids=["inst-2", "inst-3"],
-            task_description="Test task"
+            task_description="Test task",
         )
         assert result["success"] is True
         assert result["task_id"] == "task-123"
@@ -1209,9 +1215,7 @@ class TestPrivateMethods:
     async def test_coordinate_instances_handles_exceptions(self, server):
         """Test _coordinate_instances handles exceptions."""
         server.instance_manager.coordinate_instances.side_effect = Exception("Coordination failed")
-        result = await server._coordinate_instances(
-            "inst-1", ["inst-2"], "Test task"
-        )
+        result = await server._coordinate_instances("inst-1", ["inst-2"], "Test task")
         assert result["success"] is False
         assert "Coordination failed" in result["error"]
 
@@ -1260,7 +1264,6 @@ class TestEdgeCases:
                 websocket.close()
                 # Should not raise exception when trying to send
 
-
     @pytest.mark.asyncio
     async def test_audit_log_corruption_handling(self, server, tmp_path):
         """Test that corrupted audit logs are handled gracefully."""
@@ -1272,7 +1275,7 @@ class TestEdgeCases:
 
         with open(audit_file, "w") as f:
             f.write('{"valid": "entry", "timestamp": "2025-01-01T10:00:00"}\n')
-            f.write('this is not json\n')  # Corrupt entry
+            f.write("this is not json\n")  # Corrupt entry
             f.write('{"another": "valid", "timestamp": "2025-01-01T10:00:01"}\n')
 
         server.config.log_dir = str(tmp_path)

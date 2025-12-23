@@ -35,12 +35,14 @@ def mock_instance_manager():
     mock.tmux_manager = mock_tmux
 
     # Mock internal methods
-    mock._get_instance_status_internal = MagicMock(return_value={
-        "instance_id": "inst-123",
-        "state": "running",
-        "created_at": datetime.now().isoformat(),
-        "last_activity": datetime.now().isoformat()
-    })
+    mock._get_instance_status_internal = MagicMock(
+        return_value={
+            "instance_id": "inst-123",
+            "state": "running",
+            "created_at": datetime.now().isoformat(),
+            "last_activity": datetime.now().isoformat(),
+        }
+    )
     mock._get_children_internal = MagicMock(return_value=[])
     mock._get_output_messages = AsyncMock(return_value=[])
     mock._interrupt_instance_internal = AsyncMock(return_value={"success": True})
@@ -83,7 +85,10 @@ async def async_client(app):
 # A. SSE Connection Tests (8 tests)
 # ============================================================================
 
-@pytest.mark.skip(reason="SSE endpoint hangs indefinitely - needs timeout handling or mock SSE server")
+
+@pytest.mark.skip(
+    reason="SSE endpoint hangs indefinitely - needs timeout handling or mock SSE server"
+)
 class TestSSEConnection:
     """Test SSE endpoint connection and streaming behavior."""
 
@@ -208,6 +213,7 @@ class TestSSEConnection:
 # B. Request Routing Tests (10 tests)
 # ============================================================================
 
+
 class TestRequestRouting:
     """Test MCP request routing to correct handlers."""
 
@@ -221,12 +227,9 @@ class TestRequestRouting:
             "method": "tools/call",
             "params": {
                 "name": "spawn_claude",
-                "arguments": {
-                    "name": "test-instance",
-                    "role": "general"
-                }
+                "arguments": {"name": "test-instance", "role": "general"},
             },
-            "id": 1
+            "id": 1,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -240,7 +243,9 @@ class TestRequestRouting:
     @pytest.mark.asyncio
     async def test_route_send_message_request(self, async_client, mock_instance_manager):
         """Test routing send_to_instance tool call."""
-        mock_instance_manager.instances = {"inst-123": {"state": "running", "instance_type": "claude"}}
+        mock_instance_manager.instances = {
+            "inst-123": {"state": "running", "instance_type": "claude"}
+        }
         mock_instance_manager.tmux_manager.send_message = AsyncMock(
             return_value={"response": "Test response"}
         )
@@ -253,10 +258,10 @@ class TestRequestRouting:
                 "arguments": {
                     "instance_id": "inst-123",
                     "message": "Hello",
-                    "wait_for_response": True
-                }
+                    "wait_for_response": True,
+                },
             },
-            "id": 2
+            "id": 2,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -276,12 +281,9 @@ class TestRequestRouting:
             "method": "tools/call",
             "params": {
                 "name": "terminate_instance",
-                "arguments": {
-                    "instance_id": "inst-123",
-                    "force": False
-                }
+                "arguments": {"instance_id": "inst-123", "force": False},
             },
-            "id": 3
+            "id": 3,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -297,11 +299,8 @@ class TestRequestRouting:
         request = {
             "jsonrpc": "2.0",
             "method": "tools/call",
-            "params": {
-                "name": "nonexistent_tool",
-                "arguments": {}
-            },
-            "id": 4
+            "params": {"name": "nonexistent_tool", "arguments": {}},
+            "id": 4,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -317,9 +316,7 @@ class TestRequestRouting:
         """Test malformed JSON request handling."""
         # Invalid JSON
         response = await async_client.post(
-            "/mcp/",
-            content=b"{invalid json}",
-            headers={"content-type": "application/json"}
+            "/mcp/", content=b"{invalid json}", headers={"content-type": "application/json"}
         )
 
         # Should return error response
@@ -339,9 +336,9 @@ class TestRequestRouting:
                 "name": "send_to_instance",
                 "arguments": {
                     # Missing instance_id and message
-                }
+                },
             },
-            "id": 5
+            "id": 5,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -365,10 +362,10 @@ class TestRequestRouting:
                     "name": "test-instance",
                     "role": "general",
                     "extra_param": "should_be_ignored",
-                    "another_extra": 123
-                }
+                    "another_extra": 123,
+                },
             },
-            "id": 6
+            "id": 6,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -392,9 +389,9 @@ class TestRequestRouting:
                 "method": "tools/call",
                 "params": {
                     "name": "spawn_claude",
-                    "arguments": {"name": f"instance-{i}", "role": "general"}
+                    "arguments": {"name": f"instance-{i}", "role": "general"},
                 },
-                "id": i
+                "id": i,
             }
             for i in range(5)
         ]
@@ -413,7 +410,9 @@ class TestRequestRouting:
     @pytest.mark.asyncio
     async def test_route_request_timeout(self, async_client, mock_instance_manager):
         """Test request with timeout parameter."""
-        mock_instance_manager.instances = {"inst-123": {"state": "running", "instance_type": "claude"}}
+        mock_instance_manager.instances = {
+            "inst-123": {"state": "running", "instance_type": "claude"}
+        }
 
         # Mock send_message to simulate timeout
         mock_instance_manager.tmux_manager.send_message = AsyncMock(
@@ -429,10 +428,10 @@ class TestRequestRouting:
                     "instance_id": "inst-123",
                     "message": "Long running task",
                     "wait_for_response": True,
-                    "timeout_seconds": 5
-                }
+                    "timeout_seconds": 5,
+                },
             },
-            "id": 7
+            "id": 7,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -460,10 +459,10 @@ class TestRequestRouting:
                 "arguments": {
                     "name": "large-instance",
                     "role": "general",
-                    "system_prompt": large_prompt
-                }
+                    "system_prompt": large_prompt,
+                },
             },
-            "id": 8
+            "id": 8,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -477,6 +476,7 @@ class TestRequestRouting:
 # C. Error Propagation Tests (7 tests)
 # ============================================================================
 
+
 class TestErrorPropagation:
     """Test error handling and propagation through MCP adapter."""
 
@@ -484,9 +484,7 @@ class TestErrorPropagation:
     async def test_error_json_parse_failure(self, async_client):
         """Test JSON parse error handling."""
         response = await async_client.post(
-            "/mcp/",
-            content=b"not valid json at all",
-            headers={"content-type": "application/json"}
+            "/mcp/", content=b"not valid json at all", headers={"content-type": "application/json"}
         )
 
         assert response.status_code == 200
@@ -500,11 +498,8 @@ class TestErrorPropagation:
         request = {
             "jsonrpc": "2.0",
             "method": "tools/call",
-            "params": {
-                "name": "completely_invalid_tool",
-                "arguments": {}
-            },
-            "id": 10
+            "params": {"name": "completely_invalid_tool", "arguments": {}},
+            "id": 10,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -525,12 +520,9 @@ class TestErrorPropagation:
             "method": "tools/call",
             "params": {
                 "name": "send_to_instance",
-                "arguments": {
-                    "instance_id": "nonexistent-inst",
-                    "message": "Hello"
-                }
+                "arguments": {"instance_id": "nonexistent-inst", "message": "Hello"},
             },
-            "id": 11
+            "id": 11,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -543,14 +535,16 @@ class TestErrorPropagation:
     @pytest.mark.asyncio
     async def test_error_timeout_propagation(self, async_client, mock_instance_manager):
         """Test timeout error propagation."""
-        mock_instance_manager.instances = {"inst-123": {"state": "running", "instance_type": "claude"}}
+        mock_instance_manager.instances = {
+            "inst-123": {"state": "running", "instance_type": "claude"}
+        }
 
         # Mock timeout scenario
         mock_instance_manager.tmux_manager.send_message = AsyncMock(
             return_value={
                 "status": "timeout",
                 "job_id": "job-timeout",
-                "estimated_wait_seconds": 30
+                "estimated_wait_seconds": 30,
             }
         )
 
@@ -563,10 +557,10 @@ class TestErrorPropagation:
                     "instance_id": "inst-123",
                     "message": "Slow task",
                     "wait_for_response": True,
-                    "timeout_seconds": 1
-                }
+                    "timeout_seconds": 1,
+                },
             },
-            "id": 12
+            "id": 12,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -582,21 +576,16 @@ class TestErrorPropagation:
     async def test_error_internal_server_error(self, async_client, mock_instance_manager):
         """Test internal server error handling."""
         # Force an exception in spawn_instance
-        mock_instance_manager.spawn_instance = AsyncMock(
-            side_effect=Exception("Internal error")
-        )
+        mock_instance_manager.spawn_instance = AsyncMock(side_effect=Exception("Internal error"))
 
         request = {
             "jsonrpc": "2.0",
             "method": "tools/call",
             "params": {
                 "name": "spawn_claude",
-                "arguments": {
-                    "name": "error-instance",
-                    "role": "general"
-                }
+                "arguments": {"name": "error-instance", "role": "general"},
             },
-            "id": 13
+            "id": 13,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -619,12 +608,9 @@ class TestErrorPropagation:
             "method": "tools/call",
             "params": {
                 "name": "spawn_claude",
-                "arguments": {
-                    "name": "limit-test",
-                    "role": "general"
-                }
+                "arguments": {"name": "limit-test", "role": "general"},
             },
-            "id": 14
+            "id": 14,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -637,12 +623,7 @@ class TestErrorPropagation:
     @pytest.mark.asyncio
     async def test_error_response_format(self, async_client):
         """Test error response follows JSON-RPC format."""
-        request = {
-            "jsonrpc": "2.0",
-            "method": "invalid_method",
-            "params": {},
-            "id": 15
-        }
+        request = {"jsonrpc": "2.0", "method": "invalid_method", "params": {}, "id": 15}
 
         response = await async_client.post("/mcp/", json=request)
         assert response.status_code == 200
@@ -667,18 +648,14 @@ class TestErrorPropagation:
 # Additional Edge Case Tests
 # ============================================================================
 
+
 class TestEdgeCases:
     """Test edge cases and special scenarios."""
 
     @pytest.mark.asyncio
     async def test_initialize_method(self, async_client):
         """Test initialize MCP method."""
-        request = {
-            "jsonrpc": "2.0",
-            "method": "initialize",
-            "params": {},
-            "id": 100
-        }
+        request = {"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 100}
 
         response = await async_client.post("/mcp/", json=request)
         assert response.status_code == 200
@@ -702,16 +679,9 @@ class TestEdgeCases:
         mock_tool = MagicMock()
         mock_tool.to_mcp_tool = MagicMock(return_value=mock_mcp_tool)
 
-        mock_instance_manager.mcp.get_tools = AsyncMock(
-            return_value={"test_tool": mock_tool}
-        )
+        mock_instance_manager.mcp.get_tools = AsyncMock(return_value={"test_tool": mock_tool})
 
-        request = {
-            "jsonrpc": "2.0",
-            "method": "tools/list",
-            "params": {},
-            "id": 101
-        }
+        request = {"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 101}
 
         response = await async_client.post("/mcp/", json=request)
         assert response.status_code == 200
@@ -737,10 +707,7 @@ class TestEdgeCases:
         """Test automatic parent_instance_id injection."""
         # Setup: one busy instance
         mock_instance_manager.instances = {
-            "parent-inst": {
-                "state": "busy",
-                "last_activity": datetime.now().isoformat()
-            }
+            "parent-inst": {"state": "busy", "last_activity": datetime.now().isoformat()}
         }
         mock_instance_manager.spawn_instance = AsyncMock(return_value="child-inst")
 
@@ -751,11 +718,11 @@ class TestEdgeCases:
                 "name": "spawn_claude",
                 "arguments": {
                     "name": "child",
-                    "role": "general"
+                    "role": "general",
                     # parent_instance_id NOT provided
-                }
+                },
             },
-            "id": 102
+            "id": 102,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -770,9 +737,9 @@ class TestEdgeCases:
     async def test_main_inbox_message_injection(self, async_client, mock_instance_manager):
         """Test pending main inbox messages are injected into responses."""
         # Setup main inbox with messages
-        mock_instance_manager.get_and_clear_main_inbox = MagicMock(return_value=[
-            {"content": "Message from child instance"}
-        ])
+        mock_instance_manager.get_and_clear_main_inbox = MagicMock(
+            return_value=[{"content": "Message from child instance"}]
+        )
         mock_instance_manager._get_instance_status_internal = MagicMock(
             return_value={"instance_id": "inst-123", "state": "running"}
         )
@@ -780,11 +747,8 @@ class TestEdgeCases:
         request = {
             "jsonrpc": "2.0",
             "method": "tools/call",
-            "params": {
-                "name": "get_instance_status",
-                "arguments": {"instance_id": "inst-123"}
-            },
-            "id": 103
+            "params": {"name": "get_instance_status", "arguments": {"instance_id": "inst-123"}},
+            "id": 103,
         }
 
         response = await async_client.post("/mcp/", json=request)
@@ -804,11 +768,8 @@ class TestEdgeCases:
         request = {
             "jsonrpc": "2.0",
             "method": "tools/call",
-            "params": {
-                "name": "get_main_instance_id",
-                "arguments": {}
-            },
-            "id": 104
+            "params": {"name": "get_main_instance_id", "arguments": {}},
+            "id": 104,
         }
 
         response = await async_client.post("/mcp/", json=request)

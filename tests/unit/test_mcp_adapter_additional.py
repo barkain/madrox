@@ -132,7 +132,7 @@ class TestAutoParentInjection:
                 "name": "spawn_claude",
                 "arguments": {
                     "name": "child",
-                    "role": "general"
+                    "role": "general",
                     # parent_instance_id NOT provided
                 },
             },
@@ -185,9 +185,7 @@ class TestAutoParentInjection:
             assert call_item[1]["parent_instance_id"] == "parent-busy"
 
     @pytest.mark.asyncio
-    async def test_spawn_multiple_instances_with_errors(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_spawn_multiple_instances_with_errors(self, async_client, mock_instance_manager):
         """Test spawn_multiple_instances handles partial failures."""
         mock_instance_manager.spawn_instance.side_effect = [
             "child-1",
@@ -233,9 +231,7 @@ class TestMessagingTimeoutAndJobs:
     """Test messaging tools with timeout and job tracking."""
 
     @pytest.mark.asyncio
-    async def test_send_to_instance_timeout_response(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_send_to_instance_timeout_response(self, async_client, mock_instance_manager):
         """Test send_to_instance returns timeout with job_id."""
         mock_instance_manager.instances["inst-123"] = {
             "instance_type": "claude",
@@ -273,9 +269,7 @@ class TestMessagingTimeoutAndJobs:
         assert "60" in text  # estimated_wait_seconds
 
     @pytest.mark.asyncio
-    async def test_send_to_instance_pending_status(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_send_to_instance_pending_status(self, async_client, mock_instance_manager):
         """Test send_to_instance with pending status (non-blocking)."""
         mock_instance_manager.instances["inst-123"] = {
             "instance_type": "claude",
@@ -309,9 +303,7 @@ class TestMessagingTimeoutAndJobs:
         assert "pending" in text.lower()
 
     @pytest.mark.asyncio
-    async def test_send_to_instance_no_response(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_send_to_instance_no_response(self, async_client, mock_instance_manager):
         """Test send_to_instance when response is None."""
         mock_instance_manager.instances["inst-123"] = {
             "instance_type": "claude",
@@ -340,9 +332,7 @@ class TestMessagingTimeoutAndJobs:
         assert "message_sent" in text.lower() or "no response" in text.lower()
 
     @pytest.mark.asyncio
-    async def test_send_to_instance_not_found_error(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_send_to_instance_not_found_error(self, async_client, mock_instance_manager):
         """Test send_to_instance with non-existent instance."""
         mock_instance_manager.instances = {}  # No instances
 
@@ -508,9 +498,7 @@ class TestCoordinationAndJobStatus:
     """Test coordinate_instances and get_job_status tools."""
 
     @pytest.mark.asyncio
-    async def test_coordinate_instances_sequential(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_coordinate_instances_sequential(self, async_client, mock_instance_manager):
         """Test coordinate_instances with sequential coordination."""
         mock_instance_manager.instances = {
             "coord-123": {"state": "running"},
@@ -575,9 +563,7 @@ class TestCoordinationAndJobStatus:
         assert "not found" in data["error"]["message"].lower()
 
     @pytest.mark.asyncio
-    async def test_get_job_status_pending_no_wait(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_job_status_pending_no_wait(self, async_client, mock_instance_manager):
         """Test get_job_status for pending job without waiting."""
         mock_instance_manager.jobs["job-123"] = {
             "job_id": "job-123",
@@ -607,9 +593,7 @@ class TestCoordinationAndJobStatus:
         assert job_data["status"] == "pending"
 
     @pytest.mark.asyncio
-    async def test_get_job_status_completed_with_wait(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_job_status_completed_with_wait(self, async_client, mock_instance_manager):
         """Test get_job_status for completed job (returns immediately)."""
         mock_instance_manager.jobs["job-456"] = {
             "job_id": "job-456",
@@ -673,12 +657,11 @@ class TestLiveInstanceStatus:
     """Test get_live_instance_status tool."""
 
     @pytest.mark.asyncio
-    async def test_get_live_instance_status_with_output(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_live_instance_status_with_output(self, async_client, mock_instance_manager):
         """Test get_live_instance_status with message history."""
         # Use UTC timezone for consistency
         from datetime import timezone
+
         now = datetime.now(timezone.utc)
         past_time = now  # Same time to avoid negative execution time
         mock_instance_manager._get_instance_status_internal.return_value = {
@@ -722,9 +705,7 @@ class TestLiveInstanceStatus:
         assert status["execution_time"] >= 0  # Can be 0 or positive
 
     @pytest.mark.asyncio
-    async def test_get_live_instance_status_no_output(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_live_instance_status_no_output(self, async_client, mock_instance_manager):
         """Test get_live_instance_status with no message history."""
         mock_instance_manager.tmux_manager.message_history["inst-456"] = []
 
@@ -759,9 +740,7 @@ class TestHierarchyTools:
     """Test broadcast_to_children and get_instance_tree."""
 
     @pytest.mark.asyncio
-    async def test_broadcast_to_children_success(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_broadcast_to_children_success(self, async_client, mock_instance_manager):
         """Test broadcast_to_children sends to all children."""
         children = [
             {"id": "child-1", "name": "worker-1"},
@@ -772,9 +751,7 @@ class TestHierarchyTools:
             "child-1": {"instance_type": "claude", "state": "running"},
             "child-2": {"instance_type": "claude", "state": "running"},
         }
-        mock_instance_manager.tmux_manager.send_message.return_value = {
-            "status": "message_sent"
-        }
+        mock_instance_manager.tmux_manager.send_message.return_value = {"status": "message_sent"}
 
         request = {
             "jsonrpc": "2.0",
@@ -800,9 +777,7 @@ class TestHierarchyTools:
         assert "worker-2" in text
 
     @pytest.mark.asyncio
-    async def test_broadcast_to_children_no_children(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_broadcast_to_children_no_children(self, async_client, mock_instance_manager):
         """Test broadcast_to_children when no children exist."""
         mock_instance_manager._get_children_internal.return_value = []
 
@@ -827,9 +802,7 @@ class TestHierarchyTools:
         assert "0 children" in text
 
     @pytest.mark.asyncio
-    async def test_broadcast_to_children_with_errors(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_broadcast_to_children_with_errors(self, async_client, mock_instance_manager):
         """Test broadcast_to_children with some send failures."""
         children = [
             {"id": "child-1", "name": "worker-1"},
@@ -872,9 +845,7 @@ class TestHierarchyTools:
         assert "error" in text.lower()
 
     @pytest.mark.asyncio
-    async def test_get_instance_tree_with_instances(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_instance_tree_with_instances(self, async_client, mock_instance_manager):
         """Test get_instance_tree builds hierarchy."""
         mock_instance_manager.instances = {
             "root-1": {"parent_instance_id": None, "state": "running", "name": "root"},
@@ -904,9 +875,7 @@ class TestHierarchyTools:
         assert mock_instance_manager._build_tree_recursive.called
 
     @pytest.mark.asyncio
-    async def test_get_instance_tree_no_instances(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_instance_tree_no_instances(self, async_client, mock_instance_manager):
         """Test get_instance_tree when no instances running."""
         mock_instance_manager.instances = {}
 
@@ -948,9 +917,7 @@ class TestFileOperations:
                 return None  # File not found
             return f"/tmp/{filename}"
 
-        mock_instance_manager._retrieve_instance_file_internal.side_effect = (
-            mock_retrieve
-        )
+        mock_instance_manager._retrieve_instance_file_internal.side_effect = mock_retrieve
 
         request = {
             "jsonrpc": "2.0",
@@ -981,9 +948,7 @@ class TestFileOperations:
         assert "File not found" in text
 
     @pytest.mark.asyncio
-    async def test_list_multiple_instance_files_success(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_list_multiple_instance_files_success(self, async_client, mock_instance_manager):
         """Test list_multiple_instance_files for multiple instances."""
 
         async def mock_list(**kwargs):
@@ -1024,9 +989,7 @@ class TestGetOutputMessages:
     """Test get_instance_output and get_multiple_instance_outputs."""
 
     @pytest.mark.asyncio
-    async def test_get_multiple_instance_outputs_success(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_multiple_instance_outputs_success(self, async_client, mock_instance_manager):
         """Test get_multiple_instance_outputs returns all outputs."""
 
         async def mock_get_output(**kwargs):
@@ -1074,9 +1037,7 @@ class TestTemplateSpawning:
     """Test spawn_team_from_template tool."""
 
     @pytest.mark.asyncio
-    async def test_spawn_team_from_template_success(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_spawn_team_from_template_success(self, async_client, mock_instance_manager):
         """Test spawn_team_from_template spawns supervisor."""
         # Create a mock template file
         template_content = """
@@ -1127,9 +1088,7 @@ Use reply_to_caller for updates
                 assert "2-4 hours" in text
 
     @pytest.mark.asyncio
-    async def test_spawn_team_from_template_not_found(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_spawn_team_from_template_not_found(self, async_client, mock_instance_manager):
         """Test spawn_team_from_template with non-existent template."""
         with patch("pathlib.Path.exists", return_value=False):
             request = {
@@ -1162,9 +1121,7 @@ class TestMonitoringServiceTools:
     """Test get_agent_summary and get_all_agent_summaries."""
 
     @pytest.mark.asyncio
-    async def test_get_agent_summary_success(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_agent_summary_success(self, async_client, mock_instance_manager):
         """Test get_agent_summary returns summary."""
         mock_monitoring = MagicMock()
         mock_monitoring.is_running.return_value = True
@@ -1200,9 +1157,7 @@ class TestMonitoringServiceTools:
         assert "summary" in summary
 
     @pytest.mark.asyncio
-    async def test_get_agent_summary_not_running(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_agent_summary_not_running(self, async_client, mock_instance_manager):
         """Test get_agent_summary when service not running."""
         mock_monitoring = MagicMock()
         mock_monitoring.is_running.return_value = False
@@ -1230,13 +1185,11 @@ class TestMonitoringServiceTools:
         assert "not running" in data["result"]["error"]["message"].lower()
 
     @pytest.mark.asyncio
-    async def test_get_agent_summary_not_available(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_agent_summary_not_available(self, async_client, mock_instance_manager):
         """Test get_agent_summary when service not available."""
         # Set both potential locations to None
         mock_instance_manager.monitoring_service = None
-        if hasattr(mock_instance_manager, 'tmux_manager'):
+        if hasattr(mock_instance_manager, "tmux_manager"):
             mock_instance_manager.tmux_manager.monitoring_service = None
 
         request = {
@@ -1257,16 +1210,20 @@ class TestMonitoringServiceTools:
         data = response.json()
         # Could be error at top level or in result
         if "error" in data:
-            assert "available" in data["error"]["message"].lower() or "await" in data["error"]["message"].lower()
+            assert (
+                "available" in data["error"]["message"].lower()
+                or "await" in data["error"]["message"].lower()
+            )
         else:
             assert "result" in data
             assert "error" in data["result"]
-            assert "available" in data["result"]["error"]["message"].lower() or "await" in data["result"]["error"]["message"].lower()
+            assert (
+                "available" in data["result"]["error"]["message"].lower()
+                or "await" in data["result"]["error"]["message"].lower()
+            )
 
     @pytest.mark.asyncio
-    async def test_get_all_agent_summaries_success(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_all_agent_summaries_success(self, async_client, mock_instance_manager):
         """Test get_all_agent_summaries returns all summaries."""
         mock_monitoring = MagicMock()
         mock_monitoring.is_running.return_value = True
@@ -1300,9 +1257,7 @@ class TestMonitoringServiceTools:
         assert "inst-2" in response_data["summaries"]
 
     @pytest.mark.asyncio
-    async def test_get_all_agent_summaries_with_filter(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_all_agent_summaries_with_filter(self, async_client, mock_instance_manager):
         """Test get_all_agent_summaries with status filter."""
         mock_monitoring = MagicMock()
         mock_monitoring.is_running.return_value = True
@@ -1336,9 +1291,7 @@ class TestMonitoringServiceTools:
 
         # Should filter to only active instances
         assert response_data["count"] == 2  # inst-1 and inst-3
-        assert all(
-            s["status"] == "active" for s in response_data["summaries"].values()
-        )
+        assert all(s["status"] == "active" for s in response_data["summaries"].values())
 
 
 # ============================================================================
@@ -1350,9 +1303,7 @@ class TestTmuxPaneContent:
     """Test get_tmux_pane_content tool."""
 
     @pytest.mark.asyncio
-    async def test_get_tmux_pane_content_success(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_tmux_pane_content_success(self, async_client, mock_instance_manager):
         """Test get_tmux_pane_content retrieves pane output."""
         mock_pane = MagicMock()
         mock_pane.cmd.return_value = MagicMock(stdout=["Line 1", "Line 2", "Line 3"])
@@ -1388,9 +1339,7 @@ class TestTmuxPaneContent:
         assert "Line 2" in text
 
     @pytest.mark.asyncio
-    async def test_get_tmux_pane_content_all_lines(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_get_tmux_pane_content_all_lines(self, async_client, mock_instance_manager):
         """Test get_tmux_pane_content with lines=-1 (all lines)."""
         mock_pane = MagicMock()
         mock_pane.cmd.return_value = MagicMock(stdout=["Full", "History"])
@@ -1433,9 +1382,7 @@ class TestReplyTools:
     """Test reply_to_caller and get_pending_replies."""
 
     @pytest.mark.asyncio
-    async def test_reply_to_caller_with_short_id(
-        self, async_client, mock_instance_manager
-    ):
+    async def test_reply_to_caller_with_short_id(self, async_client, mock_instance_manager):
         """Test reply_to_caller with long delivered_to ID (shows first 8 chars)."""
         mock_instance_manager.handle_reply_to_caller.return_value = {
             "success": True,

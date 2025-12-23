@@ -89,18 +89,22 @@ def mock_instance_manager():
     manager._terminate_instance_internal = AsyncMock(return_value=True)
     manager._interrupt_instance_internal = AsyncMock(return_value={"success": True})
     manager._get_output_messages = AsyncMock(return_value=[])
-    manager._get_instance_status_internal = MagicMock(return_value={
-        "instance_id": "inst-123",
-        "state": "running",
-        "created_at": datetime.now().isoformat(),
-        "last_activity": datetime.now().isoformat(),
-    })
+    manager._get_instance_status_internal = MagicMock(
+        return_value={
+            "instance_id": "inst-123",
+            "state": "running",
+            "created_at": datetime.now().isoformat(),
+            "last_activity": datetime.now().isoformat(),
+        }
+    )
     manager._get_children_internal = MagicMock(return_value=[])
     manager._retrieve_instance_file_internal = AsyncMock(return_value="/tmp/file.txt")
     manager._list_instance_files_internal = AsyncMock(return_value=["file1.txt", "file2.txt"])
     manager._get_pending_replies_internal = AsyncMock(return_value=[])
     manager.get_and_clear_main_inbox = MagicMock(return_value=[])
-    manager.handle_reply_to_caller = AsyncMock(return_value={"success": True, "delivered_to": "caller"})
+    manager.handle_reply_to_caller = AsyncMock(
+        return_value={"success": True, "delivered_to": "caller"}
+    )
     manager._build_tree_recursive = MagicMock()
     manager._execute_coordination = AsyncMock()
 
@@ -364,6 +368,7 @@ class TestSpawnTools:
     @pytest.mark.asyncio
     async def test_spawn_multiple_instances_success(self, mcp_adapter, mock_instance_manager):
         """Test spawn_multiple_instances with all successes."""
+
         async def mock_spawn(*args, **kwargs):
             return f"inst-{kwargs.get('name')}"
 
@@ -374,17 +379,20 @@ class TestSpawnTools:
             {"name": "worker-2", "role": "frontend_developer"},
         ]
 
-        results = await asyncio.gather(*[
-            mock_instance_manager.spawn_instance(**cfg) for cfg in configs
-        ])
+        results = await asyncio.gather(
+            *[mock_instance_manager.spawn_instance(**cfg) for cfg in configs]
+        )
 
         assert len(results) == 2
         assert results[0] == "inst-worker-1"
         assert results[1] == "inst-worker-2"
 
     @pytest.mark.asyncio
-    async def test_spawn_multiple_instances_partial_failure(self, mcp_adapter, mock_instance_manager):
+    async def test_spawn_multiple_instances_partial_failure(
+        self, mcp_adapter, mock_instance_manager
+    ):
         """Test spawn_multiple_instances with some failures."""
+
         async def mock_spawn(*args, **kwargs):
             if kwargs.get("name") == "worker-2":
                 raise RuntimeError("Spawn failed")
@@ -397,9 +405,10 @@ class TestSpawnTools:
             {"name": "worker-2", "role": "frontend_developer"},
         ]
 
-        results = await asyncio.gather(*[
-            mock_instance_manager.spawn_instance(**cfg) for cfg in configs
-        ], return_exceptions=True)
+        results = await asyncio.gather(
+            *[mock_instance_manager.spawn_instance(**cfg) for cfg in configs],
+            return_exceptions=True,
+        )
 
         assert len(results) == 2
         assert results[0] == "inst-worker-1"
@@ -515,10 +524,9 @@ class TestMessagingTools:
             {"instance_id": "inst-2", "message": "Task 2"},
         ]
 
-        results = await asyncio.gather(*[
-            mock_instance_manager.tmux_manager.send_message(**msg)
-            for msg in messages
-        ])
+        results = await asyncio.gather(
+            *[mock_instance_manager.tmux_manager.send_message(**msg) for msg in messages]
+        )
 
         assert len(results) == 2
 
@@ -535,9 +543,7 @@ class TestMessagingTools:
             "child-2": {"instance_type": "claude", "state": "running"},
         }
 
-        mock_instance_manager.tmux_manager.send_message.return_value = {
-            "status": "message_sent"
-        }
+        mock_instance_manager.tmux_manager.send_message.return_value = {"status": "message_sent"}
 
         # Simulate broadcast
         tasks = [
@@ -571,9 +577,7 @@ class TestStatusMonitoringTools:
 
     def test_get_instance_status_single(self, mcp_adapter, mock_instance_manager):
         """Test get_instance_status for single instance."""
-        status = mock_instance_manager._get_instance_status_internal(
-            instance_id="inst-123"
-        )
+        status = mock_instance_manager._get_instance_status_internal(instance_id="inst-123")
 
         assert status["instance_id"] == "inst-123"
         assert status["state"] == "running"
@@ -621,6 +625,7 @@ class TestStatusMonitoringTools:
     @pytest.mark.asyncio
     async def test_get_multiple_instance_outputs(self, mcp_adapter, mock_instance_manager):
         """Test get_multiple_instance_outputs."""
+
         async def mock_get_output(*args, **kwargs):
             return [{"role": "assistant", "content": f"Output from {kwargs['instance_id']}"}]
 
@@ -631,10 +636,9 @@ class TestStatusMonitoringTools:
             {"instance_id": "inst-2", "limit": 100},
         ]
 
-        results = await asyncio.gather(*[
-            mock_instance_manager._get_output_messages(**req)
-            for req in requests
-        ])
+        results = await asyncio.gather(
+            *[mock_instance_manager._get_output_messages(**req) for req in requests]
+        )
 
         assert len(results) == 2
 
@@ -674,16 +678,19 @@ class TestTerminationTools:
     @pytest.mark.asyncio
     async def test_terminate_multiple_instances(self, mcp_adapter, mock_instance_manager):
         """Test terminate_multiple_instances with all successes."""
+
         async def mock_terminate(*args, **kwargs):
             return True
 
         mock_instance_manager._terminate_instance_internal.side_effect = mock_terminate
 
         instance_ids = ["inst-1", "inst-2", "inst-3"]
-        results = await asyncio.gather(*[
-            mock_instance_manager._terminate_instance_internal(instance_id=iid)
-            for iid in instance_ids
-        ])
+        results = await asyncio.gather(
+            *[
+                mock_instance_manager._terminate_instance_internal(instance_id=iid)
+                for iid in instance_ids
+            ]
+        )
 
         assert all(results)
         assert len(results) == 3
@@ -691,13 +698,9 @@ class TestTerminationTools:
     @pytest.mark.asyncio
     async def test_interrupt_instance_success(self, mcp_adapter, mock_instance_manager):
         """Test interrupt_instance succeeds."""
-        mock_instance_manager._interrupt_instance_internal.return_value = {
-            "success": True
-        }
+        mock_instance_manager._interrupt_instance_internal.return_value = {"success": True}
 
-        result = await mock_instance_manager._interrupt_instance_internal(
-            instance_id="inst-123"
-        )
+        result = await mock_instance_manager._interrupt_instance_internal(instance_id="inst-123")
 
         assert result["success"] is True
 
@@ -709,9 +712,7 @@ class TestTerminationTools:
             "error": "Instance not found",
         }
 
-        result = await mock_instance_manager._interrupt_instance_internal(
-            instance_id="nonexistent"
-        )
+        result = await mock_instance_manager._interrupt_instance_internal(instance_id="nonexistent")
 
         assert result["success"] is False
         assert "error" in result
@@ -719,6 +720,7 @@ class TestTerminationTools:
     @pytest.mark.asyncio
     async def test_interrupt_multiple_instances(self, mcp_adapter, mock_instance_manager):
         """Test interrupt_multiple_instances with mixed results."""
+
         async def mock_interrupt(*args, **kwargs):
             instance_id = kwargs["instance_id"]
             if instance_id == "inst-2":
@@ -728,10 +730,13 @@ class TestTerminationTools:
         mock_instance_manager._interrupt_instance_internal.side_effect = mock_interrupt
 
         instance_ids = ["inst-1", "inst-2", "inst-3"]
-        results = await asyncio.gather(*[
-            mock_instance_manager._interrupt_instance_internal(instance_id=iid)
-            for iid in instance_ids
-        ], return_exceptions=True)
+        results = await asyncio.gather(
+            *[
+                mock_instance_manager._interrupt_instance_internal(instance_id=iid)
+                for iid in instance_ids
+            ],
+            return_exceptions=True,
+        )
 
         assert len(results) == 3
 
@@ -777,9 +782,7 @@ class TestFileOperationsTools:
             "folder/file3.md",
         ]
 
-        files = await mock_instance_manager._list_instance_files_internal(
-            instance_id="inst-123"
-        )
+        files = await mock_instance_manager._list_instance_files_internal(instance_id="inst-123")
 
         assert len(files) == 3
         assert "file1.txt" in files
@@ -787,6 +790,7 @@ class TestFileOperationsTools:
     @pytest.mark.asyncio
     async def test_retrieve_multiple_instance_files(self, mcp_adapter, mock_instance_manager):
         """Test retrieve_multiple_instance_files."""
+
         async def mock_retrieve(*args, **kwargs):
             filename = kwargs["filename"]
             return f"/tmp/{filename}"
@@ -798,10 +802,9 @@ class TestFileOperationsTools:
             {"instance_id": "inst-2", "filename": "file2.txt"},
         ]
 
-        results = await asyncio.gather(*[
-            mock_instance_manager._retrieve_instance_file_internal(**req)
-            for req in requests
-        ])
+        results = await asyncio.gather(
+            *[mock_instance_manager._retrieve_instance_file_internal(**req) for req in requests]
+        )
 
         assert len(results) == 2
         assert results[0] == "/tmp/file1.txt"
@@ -809,6 +812,7 @@ class TestFileOperationsTools:
     @pytest.mark.asyncio
     async def test_list_multiple_instance_files(self, mcp_adapter, mock_instance_manager):
         """Test list_multiple_instance_files."""
+
         async def mock_list(*args, **kwargs):
             instance_id = kwargs["instance_id"]
             return [f"{instance_id}-file1.txt", f"{instance_id}-file2.txt"]
@@ -816,10 +820,12 @@ class TestFileOperationsTools:
         mock_instance_manager._list_instance_files_internal.side_effect = mock_list
 
         instance_ids = ["inst-1", "inst-2"]
-        results = await asyncio.gather(*[
-            mock_instance_manager._list_instance_files_internal(instance_id=iid)
-            for iid in instance_ids
-        ])
+        results = await asyncio.gather(
+            *[
+                mock_instance_manager._list_instance_files_internal(instance_id=iid)
+                for iid in instance_ids
+            ]
+        )
 
         assert len(results) == 2
         assert len(results[0]) == 2
@@ -1055,9 +1061,7 @@ class TestTemplateTools:
         """
 
         task_description = "Build a web app"
-        instruction = mcp_adapter._build_template_instruction(
-            template_content, task_description
-        )
+        instruction = mcp_adapter._build_template_instruction(template_content, task_description)
 
         assert isinstance(instruction, str)
         assert "Build a web app" in instruction
@@ -1172,10 +1176,12 @@ class TestMonitoringServiceTools:
         """Test get_agent_summary when service is running."""
         mock_monitoring = MagicMock()
         mock_monitoring.is_running.return_value = True
-        mock_monitoring.get_summary = AsyncMock(return_value={
-            "instance_id": "inst-123",
-            "summary": "Test summary",
-        })
+        mock_monitoring.get_summary = AsyncMock(
+            return_value={
+                "instance_id": "inst-123",
+                "summary": "Test summary",
+            }
+        )
         mock_instance_manager.monitoring_service = mock_monitoring
 
         summary = await mock_monitoring.get_summary("inst-123")
@@ -1196,10 +1202,12 @@ class TestMonitoringServiceTools:
         """Test get_all_agent_summaries returns all summaries."""
         mock_monitoring = MagicMock()
         mock_monitoring.is_running.return_value = True
-        mock_monitoring.get_all_summaries = AsyncMock(return_value={
-            "inst-1": {"summary": "Summary 1"},
-            "inst-2": {"summary": "Summary 2"},
-        })
+        mock_monitoring.get_all_summaries = AsyncMock(
+            return_value={
+                "inst-1": {"summary": "Summary 1"},
+                "inst-2": {"summary": "Summary 2"},
+            }
+        )
         mock_instance_manager.monitoring_service = mock_monitoring
 
         summaries = await mock_monitoring.get_all_summaries()
@@ -1239,9 +1247,7 @@ class TestTmuxPaneContent:
 
         mock_window.panes = [mock_pane]
         mock_session.windows = [mock_window]
-        mock_instance_manager.tmux_manager.tmux_sessions = {
-            "inst-123": mock_session
-        }
+        mock_instance_manager.tmux_manager.tmux_sessions = {"inst-123": mock_session}
         mock_instance_manager.instances["inst-123"] = {"state": "running"}
 
         # Would normally capture pane content
@@ -1430,9 +1436,7 @@ class TestIntegrationScenarios:
         }
 
         # Send message
-        mock_instance_manager.tmux_manager.send_message.return_value = {
-            "response": "Done"
-        }
+        mock_instance_manager.tmux_manager.send_message.return_value = {"response": "Done"}
         response = await mock_instance_manager.tmux_manager.send_message(
             instance_id=instance_id,
             message="Do work",
@@ -1442,9 +1446,7 @@ class TestIntegrationScenarios:
 
         # Terminate
         mock_instance_manager._terminate_instance_internal.return_value = True
-        success = await mock_instance_manager._terminate_instance_internal(
-            instance_id=instance_id
-        )
+        success = await mock_instance_manager._terminate_instance_internal(instance_id=instance_id)
         assert success is True
 
     @pytest.mark.asyncio

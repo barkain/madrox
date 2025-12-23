@@ -60,10 +60,12 @@ class LLMSummarizer:
 
     # SECURITY: Allowlist of trusted API endpoints
     # Only these URLs are permitted for API calls
-    TRUSTED_ENDPOINTS = frozenset([
-        "https://openrouter.ai/api/v1/chat/completions",
-        "https://api.openrouter.ai/api/v1/chat/completions",
-    ])
+    TRUSTED_ENDPOINTS = frozenset(
+        [
+            "https://openrouter.ai/api/v1/chat/completions",
+            "https://api.openrouter.ai/api/v1/chat/completions",
+        ]
+    )
 
     # Default configuration
     DEFAULT_MODEL = "google/gemini-2.0-flash-exp:free"
@@ -256,9 +258,7 @@ class LLMSummarizer:
 
         if parsed_url.netloc not in ["openrouter.ai", "api.openrouter.ai"]:
             self.logger.error(f"Security violation: Invalid domain rejected: {parsed_url.netloc}")
-            raise ValueError(
-                f"Only openrouter.ai domains are permitted. Got: {parsed_url.netloc}"
-            )
+            raise ValueError(f"Only openrouter.ai domains are permitted. Got: {parsed_url.netloc}")
 
         # Truncate activity text if too long (keep last 4000 chars)
         if len(activity_text) > 4000:
@@ -286,9 +286,7 @@ class LLMSummarizer:
         timeout = aiohttp.ClientTimeout(total=self.timeout)
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                api_url, headers=headers, json=payload
-            ) as response:
+            async with session.post(api_url, headers=headers, json=payload) as response:
                 # Check HTTP status
                 if response.status != 200:
                     error_text = await response.text()

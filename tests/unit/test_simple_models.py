@@ -314,9 +314,7 @@ class TestSendMessageRequest:
 
     def test_negative_priority(self):
         """Test with negative priority value."""
-        request = SendMessageRequest(
-            instance_id="test", message="Low priority", priority=-5
-        )
+        request = SendMessageRequest(instance_id="test", message="Low priority", priority=-5)
         assert request.priority == -5
 
 

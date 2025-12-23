@@ -81,17 +81,17 @@ class TestServerInitialization:
 
     def test_logging_manager_setup(self, server):
         """Test logging manager is configured."""
-        assert hasattr(server, 'logging_manager')
+        assert hasattr(server, "logging_manager")
 
     def test_session_id_generation(self, server):
         """Test unique session ID is generated."""
-        assert hasattr(server, 'session_id')
-        assert server.session_id.startswith('session_')
+        assert hasattr(server, "session_id")
+        assert server.session_id.startswith("session_")
         assert len(server.session_id) > 8
 
     def test_artifacts_directory_configuration(self, server):
         """Test artifacts directory is configured."""
-        assert hasattr(server, 'artifacts_base_dir')
+        assert hasattr(server, "artifacts_base_dir")
         assert server.preserve_artifacts is True
         assert len(server.artifact_patterns) > 0
 
@@ -105,11 +105,11 @@ class TestServerInitialization:
         # Check that middleware is configured
         # user_middleware contains Middleware objects with a .cls attribute
         middleware_classes = [m.cls.__name__ for m in server.app.user_middleware]
-        assert any('CORS' in name for name in middleware_classes)
+        assert any("CORS" in name for name in middleware_classes)
 
     def test_mcp_adapter_initialized(self, server):
         """Test MCP adapter is initialized and mounted."""
-        assert hasattr(server, 'mcp_adapter')
+        assert hasattr(server, "mcp_adapter")
         assert server.mcp_adapter is not None
 
     def test_routes_registered(self, server):
@@ -118,7 +118,7 @@ class TestServerInitialization:
         assert len(routes) > 0
 
         # Check for specific routes
-        paths = [route.path for route in routes if hasattr(route, 'path')]
+        paths = [route.path for route in routes if hasattr(route, "path")]
         assert "/" in paths or any(p == "/" for p in paths)
 
 
@@ -236,7 +236,7 @@ class TestMCPAdapterIntegration:
         # The MCP adapter should be mounted at /mcp
         # We can't test all routes without a full setup, but we can verify the prefix exists
         routes = test_client.app.routes
-        mcp_routes = [r for r in routes if hasattr(r, 'path') and '/mcp' in r.path]
+        mcp_routes = [r for r in routes if hasattr(r, "path") and "/mcp" in r.path]
         assert len(mcp_routes) > 0
 
     def test_mcp_health_endpoint(self, test_client):
@@ -259,11 +259,11 @@ class TestServerConfiguration:
     def test_session_workspace_directory(self, server):
         """Test session workspace directory is configured."""
         # Verify session_id is generated
-        assert hasattr(server, 'session_id')
-        assert server.session_id.startswith('session_')
+        assert hasattr(server, "session_id")
+        assert server.session_id.startswith("session_")
         # Verify instance manager was called with session workspace configuration
         # Check that session_id was used in the artifacts directory path
-        assert hasattr(server, 'artifacts_base_dir')
+        assert hasattr(server, "artifacts_base_dir")
 
     def test_preserve_artifacts_flag(self, server):
         """Test preserve artifacts flag is set."""
@@ -271,7 +271,7 @@ class TestServerConfiguration:
 
     def test_server_start_time_recorded(self, server):
         """Test server start time is recorded."""
-        assert hasattr(server, 'server_start_time')
+        assert hasattr(server, "server_start_time")
         assert isinstance(server.server_start_time, str)
         # Should be valid ISO format
         datetime.fromisoformat(server.server_start_time)
@@ -300,7 +300,7 @@ class TestServerLifecycle:
         with patch("src.orchestrator.server.LoggingManager"):
             with patch("src.orchestrator.server.InstanceManager"):
                 with patch.object(
-                    ClaudeOrchestratorServer, '_cleanup_orphaned_tmux_sessions'
+                    ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"
                 ) as mock_cleanup:
                     server = ClaudeOrchestratorServer(orchestrator_config)
                     mock_cleanup.assert_called_once()
@@ -308,7 +308,9 @@ class TestServerLifecycle:
     def test_instance_manager_configured_with_session_id(self, server):
         """Test instance manager receives session configuration."""
         # The instance manager should have session_id in its config
-        assert hasattr(server.instance_manager, '__dict__') or hasattr(server.instance_manager, '_mock_name')
+        assert hasattr(server.instance_manager, "__dict__") or hasattr(
+            server.instance_manager, "_mock_name"
+        )
 
 
 class TestConcurrency:

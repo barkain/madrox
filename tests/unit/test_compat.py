@@ -351,6 +351,7 @@ class TestBackwardCompatibility:
 
     def test_code_using_utc_is_version_agnostic(self):
         """Test that code using UTC doesn't need version checks."""
+
         # This simulates user code that just uses UTC
         def get_current_utc_time():
             """Example function using UTC."""
