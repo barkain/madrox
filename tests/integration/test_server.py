@@ -1,10 +1,7 @@
 """Integration tests for Claude Orchestrator Server."""
 
-import asyncio
-import json
-import os
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -302,7 +299,7 @@ class TestServerLifecycle:
                 with patch.object(
                     ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"
                 ) as mock_cleanup:
-                    server = ClaudeOrchestratorServer(orchestrator_config)
+                    ClaudeOrchestratorServer(orchestrator_config)
                     mock_cleanup.assert_called_once()
 
     def test_instance_manager_configured_with_session_id(self, server):

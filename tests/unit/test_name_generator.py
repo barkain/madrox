@@ -1,6 +1,5 @@
 """Comprehensive unit tests for name_generator module."""
 
-import pytest
 from unittest.mock import patch
 
 from orchestrator.name_generator import (

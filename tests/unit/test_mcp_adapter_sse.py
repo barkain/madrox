@@ -1,9 +1,8 @@
 """Unit tests for MCP Adapter SSE streaming and request handling."""
 
 import asyncio
-import json
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -172,7 +171,6 @@ class TestSSEConnection:
     async def test_sse_multiple_clients(self, async_client):
         """Test SSE endpoint supports multiple concurrent clients."""
         # Start two concurrent connections
-        tasks = []
 
         async def connect_and_read():
             async with async_client.stream("GET", "/mcp/sse", timeout=2.0) as response:

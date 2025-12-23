@@ -17,7 +17,7 @@ from orchestrator.monitoring.summary_generator import SummaryGenerator
 @pytest.fixture
 def summary_generator():
     """Create a SummaryGenerator instance with mocked Anthropic client."""
-    with patch("orchestrator.monitoring.summary_generator.AsyncAnthropic") as mock_anthropic:
+    with patch("orchestrator.monitoring.summary_generator.AsyncAnthropic"):
         generator = SummaryGenerator(api_key="test-key")
         generator.anthropic_client = AsyncMock()
         yield generator

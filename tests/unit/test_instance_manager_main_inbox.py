@@ -3,6 +3,7 @@
 import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from src.orchestrator.compat import UTC
@@ -68,7 +69,7 @@ async def instance_manager(mock_config):
                     if hasattr(manager, "shutdown"):
                         try:
                             await manager.shutdown()
-                        except:
+                        except Exception:  # noqa: E722
                             pass
 
 
@@ -177,7 +178,7 @@ class TestMainInstanceMonitoring:
     async def test_monitor_main_instance_processes_messages(self, instance_manager):
         """Test monitor processes new messages."""
         # Spawn main instance
-        main_id = await instance_manager.ensure_main_instance()
+        await instance_manager.ensure_main_instance()
 
         # Mock _get_output_messages to return test messages
         test_messages = [
@@ -216,7 +217,7 @@ class TestMainInstanceMonitoring:
     @pytest.mark.asyncio
     async def test_monitor_main_instance_updates_last_index(self, instance_manager):
         """Test monitor updates last message index."""
-        main_id = await instance_manager.ensure_main_instance()
+        await instance_manager.ensure_main_instance()
 
         test_messages = [
             {"type": "user", "content": "Message", "message_index": 5},
@@ -249,7 +250,7 @@ class TestMainInstanceMonitoring:
     @pytest.mark.asyncio
     async def test_monitor_main_instance_handles_errors(self, instance_manager):
         """Test monitor handles errors gracefully."""
-        main_id = await instance_manager.ensure_main_instance()
+        await instance_manager.ensure_main_instance()
 
         # Mock _get_output_messages to raise error
         call_count = {"count": 0}
@@ -279,7 +280,7 @@ class TestMainInstanceMonitoring:
     @pytest.mark.asyncio
     async def test_monitor_main_instance_skips_duplicate_messages(self, instance_manager):
         """Test monitor skips already-processed messages."""
-        main_id = await instance_manager.ensure_main_instance()
+        await instance_manager.ensure_main_instance()
 
         # Set last message index
         instance_manager._last_main_message_index = 5
@@ -319,7 +320,7 @@ class TestMainInstanceMonitoring:
     @pytest.mark.asyncio
     async def test_monitor_main_instance_skips_non_user_messages(self, instance_manager):
         """Test monitor only processes user-type messages."""
-        main_id = await instance_manager.ensure_main_instance()
+        await instance_manager.ensure_main_instance()
 
         test_messages = [
             {"type": "assistant", "content": "Response", "message_index": 1},

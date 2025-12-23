@@ -3,8 +3,7 @@
 import asyncio
 import json
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -114,7 +113,7 @@ async def instance_manager(mock_config):
                     if hasattr(manager, "shutdown"):
                         try:
                             await manager.shutdown()
-                        except:
+                        except Exception:  # noqa: E722
                             pass
 
 

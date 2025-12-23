@@ -1,7 +1,8 @@
 """Test MCP Adapter message injection and template metadata parsing."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
 from src.orchestrator.mcp_adapter import MCPAdapter
 

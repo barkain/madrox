@@ -1,7 +1,7 @@
 """Unit tests for simple_models.py - Simple data models without SQLAlchemy dependency."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
 

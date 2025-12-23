@@ -1,13 +1,10 @@
 """Test TmuxInstanceManager monitoring service and health checks."""
 
-import asyncio
-import logging
 import os
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, AsyncMock, patch, Mock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
-from src.orchestrator.compat import UTC
 from src.orchestrator.tmux_instance_manager import TmuxInstanceManager
 
 
@@ -64,7 +61,7 @@ class TestMonitoringServiceInitialization:
                     with patch(
                         "src.orchestrator.tmux_instance_manager.MonitoringService"
                     ) as mock_mon:
-                        manager = TmuxInstanceManager(mock_config)
+                        TmuxInstanceManager(mock_config)
 
                         # Should have created LLMSummarizer
                         mock_llm.assert_called_once()
@@ -98,7 +95,7 @@ class TestMonitoringServiceInitialization:
                             mock_logger = MagicMock()
                             mock_get_logger.return_value = mock_logger
 
-                            manager = TmuxInstanceManager(mock_config)
+                            TmuxInstanceManager(mock_config)
 
                             # Should have configured loggers
                             # (called multiple times for different logger names)
@@ -226,7 +223,7 @@ class TestWorkspaceConfiguration:
         """Test that workspace directory is created."""
         with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
             with patch("pathlib.Path.mkdir") as mock_mkdir:
-                manager = TmuxInstanceManager(mock_config)
+                TmuxInstanceManager(mock_config)
 
                 # Should have called mkdir with parents=True, exist_ok=True
                 mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)

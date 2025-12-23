@@ -2,7 +2,8 @@
 
 import os
 from datetime import datetime
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from src.orchestrator.server import ClaudeOrchestratorServer
@@ -131,7 +132,7 @@ class TestServerLoggingConfiguration:
             with patch("src.orchestrator.server.LoggingManager") as mock_logging:
                 mock_logging.return_value.orchestrator_logger = MagicMock()
                 with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
-                    server = ClaudeOrchestratorServer(mock_config)
+                    ClaudeOrchestratorServer(mock_config)
 
                     # Check LoggingManager was called
                     mock_logging.assert_called_once()
@@ -146,7 +147,7 @@ class TestServerLoggingConfiguration:
                 with patch("src.orchestrator.server.LoggingManager") as mock_logging:
                     mock_logging.return_value.orchestrator_logger = MagicMock()
                     with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
-                        server = ClaudeOrchestratorServer(mock_config)
+                        ClaudeOrchestratorServer(mock_config)
 
                         call_kwargs = mock_logging.call_args[1]
                         assert call_kwargs["log_dir"] == "/custom/logs"
@@ -158,7 +159,7 @@ class TestServerLoggingConfiguration:
                 with patch("src.orchestrator.server.LoggingManager") as mock_logging:
                     mock_logging.return_value.orchestrator_logger = MagicMock()
                     with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
-                        server = ClaudeOrchestratorServer(mock_config)
+                        ClaudeOrchestratorServer(mock_config)
 
                         call_kwargs = mock_logging.call_args[1]
                         assert call_kwargs["log_level"] == "DEBUG"
@@ -251,7 +252,7 @@ class TestServerInitializationOrder:
         with patch("src.orchestrator.server.LoggingManager", MockLoggingManager):
             with patch("src.orchestrator.server.InstanceManager", MockInstanceManager):
                 with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
-                    server = ClaudeOrchestratorServer(mock_config)
+                    ClaudeOrchestratorServer(mock_config)
 
                     # Logging should be initialized before instance manager
                     assert init_order.index("logging") < init_order.index("instance_manager")

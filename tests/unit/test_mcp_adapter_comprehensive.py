@@ -7,17 +7,13 @@ Coverage target: 85% of src/orchestrator/mcp_adapter.py
 """
 
 import asyncio
-import json
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import Request
-from fastapi.testclient import TestClient
 
 from src.orchestrator.mcp_adapter import MCPAdapter
-
 
 # ============================================================================
 # FIXTURES

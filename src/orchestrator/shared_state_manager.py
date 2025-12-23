@@ -9,7 +9,7 @@ limitation of asyncio.Queue which is local to a single process.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from multiprocessing import Lock, Manager, Queue
 from multiprocessing.managers import DictProxy
 from typing import Any
@@ -388,9 +388,9 @@ class SharedStateManager:
             >>> print(f"Removed {removed} old messages")
         """
         try:
-            from datetime import datetime, timezone
+            from datetime import datetime
 
-            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=retention_hours)
+            cutoff_time = datetime.now(UTC) - timedelta(hours=retention_hours)
             messages_to_remove = []
 
             # Iterate through message registry
@@ -421,7 +421,7 @@ class SharedStateManager:
                                 updated_at_str.replace("Z", "+00:00")
                             )
                             # Remove completed messages after 1 hour
-                            if updated_at < datetime.now(timezone.utc) - timedelta(hours=1):
+                            if updated_at < datetime.now(UTC) - timedelta(hours=1):
                                 messages_to_remove.append(message_id)
 
                 except (ValueError, AttributeError, KeyError) as e:

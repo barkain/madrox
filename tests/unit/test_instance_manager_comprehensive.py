@@ -1,10 +1,9 @@
 """Comprehensive unit tests for instance_manager.py to achieve 85%+ coverage."""
 
 import asyncio
-import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -91,7 +90,7 @@ async def instance_manager(mock_config):
                     if hasattr(manager, "shutdown"):
                         try:
                             await manager.shutdown()
-                        except:
+                        except Exception:  # noqa: E722
                             pass
 
 
@@ -100,7 +99,7 @@ class TestInstanceManagerInitialization:
 
     def test_initialization_creates_workspace(self, mock_config):
         """Test that initialization creates workspace directory."""
-        with patch("pathlib.Path.mkdir") as mock_mkdir:
+        with patch("pathlib.Path.mkdir"):
             with patch("src.orchestrator.instance_manager.LoggingManager"):
                 with patch("src.orchestrator.shared_state_manager.SharedStateManager"):
                     with patch("src.orchestrator.instance_manager.TmuxInstanceManager"):
@@ -888,10 +887,10 @@ class TestBroadcastToChildren:
         parent_id = await instance_manager.spawn_instance(name="parent", role="general")
 
         # Add children
-        child_id_1 = await instance_manager.spawn_instance(
+        await instance_manager.spawn_instance(
             name="child-1", role="general", parent_instance_id=parent_id
         )
-        child_id_2 = await instance_manager.spawn_instance(
+        await instance_manager.spawn_instance(
             name="child-2", role="general", parent_instance_id=parent_id
         )
 

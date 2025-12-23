@@ -1,6 +1,5 @@
 """Comprehensive unit tests for logging_manager module."""
 
-import asyncio
 import json
 import logging
 import tempfile
@@ -10,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 from orchestrator.logging_manager import (
-    LogStreamHandler,
     LoggingManager,
+    LogStreamHandler,
     get_audit_log_stream_handler,
     get_log_stream_handler,
 )
@@ -610,7 +609,7 @@ class TestLogRetrieval:
             logger = manager.get_instance_logger(instance_id)
             logger.info("Test")
 
-            log_file = Path(tmpdir) / "instances" / instance_id / "instance.log"
+            Path(tmpdir) / "instances" / instance_id / "instance.log"
 
             # Execute - mock read to raise exception
             with patch.object(Path, "open", side_effect=PermissionError("Access denied")):
@@ -740,7 +739,7 @@ class TestLoggingManagerInitialization:
         """Test that initialization creates required directories."""
         # Setup & Execute
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager = LoggingManager(log_dir=tmpdir, log_level="INFO")
+            LoggingManager(log_dir=tmpdir, log_level="INFO")
 
             # Assert
             assert Path(tmpdir).exists()

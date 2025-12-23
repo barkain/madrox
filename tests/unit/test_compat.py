@@ -31,7 +31,7 @@ class TestUTCImport:
     def test_utc_is_timezone_aware(self):
         """Test that UTC is a timezone-aware object."""
         # UTC should have tzinfo-like properties
-        assert hasattr(UTC, "utcoffset") or UTC == timezone.utc
+        assert hasattr(UTC, "utcoffset") or UTC == timezone.utc  # noqa: UP017
 
 
 class TestUTCCompatibility:

@@ -2,11 +2,9 @@
 
 import base64
 import os
-import time
 from datetime import datetime
-from multiprocessing import Queue
 from queue import Empty
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -646,7 +644,7 @@ class TestConcurrency:
         """Test that multiple queues operate independently."""
         # Create multiple queues
         queue1 = manager.create_response_queue("inst-1")
-        queue2 = manager.create_response_queue("inst-2")
+        manager.create_response_queue("inst-2")
 
         # Add messages to queue1
         queue1.put("msg1")
@@ -872,7 +870,6 @@ class TestHealthCheckErrorPaths:
             return  # Skip for RemoteManager
 
         # Mock Queue to simulate timeout
-        from queue import Empty
 
         mock_queue = MagicMock()
         mock_queue.put = MagicMock()

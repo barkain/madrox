@@ -9,18 +9,15 @@ Focuses on uncovered code paths:
 - Monitoring service tools
 """
 
-import asyncio
 import json
-from datetime import datetime
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from src.orchestrator.mcp_adapter import MCPAdapter
-
 
 # ============================================================================
 # FIXTURES
@@ -660,9 +657,8 @@ class TestLiveInstanceStatus:
     async def test_get_live_instance_status_with_output(self, async_client, mock_instance_manager):
         """Test get_live_instance_status with message history."""
         # Use UTC timezone for consistency
-        from datetime import timezone
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         past_time = now  # Same time to avoid negative execution time
         mock_instance_manager._get_instance_status_internal.return_value = {
             "instance_id": "inst-123",

@@ -13,13 +13,10 @@ Current: 28% (230/813 statements)
 """
 
 import asyncio
-import json
 import threading
-import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from queue import Queue
-from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -78,12 +75,6 @@ def tmux_manager(mock_config, mock_libtmux_server):
 
                     # Store mock references in separate dict for test access (not on manager instance)
                     # This avoids type errors while allowing tests to access mocks
-                    test_mocks = {
-                        "server": mock_server,
-                        "session": mock_session,
-                        "window": mock_window,
-                        "pane": mock_pane,
-                    }
 
                     # Attach mocks to the manager's actual tmux_server for test access
                     manager.tmux_server._test_session = mock_session
@@ -719,8 +710,8 @@ class TestInstanceLifecycle:
         # Spawn up to limit
         tmux_manager.config["max_concurrent_instances"] = 2
 
-        instance1 = await tmux_manager.spawn_instance(name="inst-1")
-        instance2 = await tmux_manager.spawn_instance(name="inst-2")
+        await tmux_manager.spawn_instance(name="inst-1")
+        await tmux_manager.spawn_instance(name="inst-2")
 
         # Execute & Assert - should fail
         with pytest.raises(RuntimeError, match="Maximum concurrent instances"):
@@ -1083,7 +1074,7 @@ class TestErrorHandling:
         tmux_manager.shared_state = mock_shared_state
 
         # Execute & Assert
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             await tmux_manager._get_from_shared_queue("inst-123", timeout=1)
 
     @pytest.mark.asyncio
@@ -1248,7 +1239,7 @@ class TestCriticalFunctions:
     async def test_send_multiline_message_to_pane(self, tmux_manager):
         """Test _send_multiline_message_to_pane helper function."""
         # Setup
-        instance_id = await tmux_manager.spawn_instance(name="multiline-helper-test")
+        await tmux_manager.spawn_instance(name="multiline-helper-test")
 
         # Get pane
         pane = tmux_manager._mock_pane
