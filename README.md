@@ -2,8 +2,8 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/github/actions/workflow/status/nadavbarkai/madrox/test.yml?branch=main&label=tests)](https://github.com/nadavbarkai/madrox/actions/workflows/test.yml)
-[![Lint](https://img.shields.io/github/actions/workflow/status/nadavbarkai/madrox/lint.yml?branch=main&label=lint)](https://github.com/nadavbarkai/madrox/actions/workflows/lint.yml)
+[![Tests](https://github.com/barkain/madrox/actions/workflows/test.yml/badge.svg)](https://github.com/barkain/madrox/actions/workflows/test.yml)
+[![Lint](https://github.com/barkain/madrox/actions/workflows/lint.yml/badge.svg)](https://github.com/barkain/madrox/actions/workflows/lint.yml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
 <p align="center">
@@ -221,7 +221,7 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 
 **1. Clone and install:**
 ```bash
-git clone https://github.com/nadavbarkai/madrox.git
+git clone https://github.com/barkain/madrox.git
 cd madrox
 uv sync
 ```
