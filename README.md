@@ -262,6 +262,8 @@ spawn a madrox dev team from template
   <img src="resources/assets/spawn_from_template.png" alt="spawn from template" style="max-width:800px;width:100%;height:auto;"/>
 </p>
 
+Now you delegate tasks to the team and communicate with it through Claude code.
+
 ## 🧪 Testing
 
 ### Run the comprehensive test suite (86% coverage):
