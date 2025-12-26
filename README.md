@@ -258,7 +258,7 @@ For example, ask Claude Code
 spawn a madrox dev team from template
 ```
 <p align="center">
-  <img src="resources/assets/spawn_from_template.png" alt="spawn from template" width="800"/>
+  <img src="resources/assets/spawn_from_template.png" alt="spawn from template" style="max-width:800px;width:100%;height:auto;"/>
 </p>
 
 ## 🧪 Testing
