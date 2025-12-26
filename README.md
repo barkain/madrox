@@ -215,9 +215,17 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 
 ### Prerequisites
 - Python 3.11+
-- [uv](https://docs.astral.sh/uv/) package manager - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- [uv](https://docs.astral.sh/uv/) Python package manager - install:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+- [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) Node Package Manager - install:
+  ```bash
+  npm install -g npm
+  ```
 
-### Installation (3 steps)
+
+### Installation (4 steps)
 
 **1. Clone and install:**
 ```bash
@@ -231,12 +239,25 @@ uv sync
 MADROX_TRANSPORT=http python run_orchestrator.py
 ```
 
-**3. Connect to Claude Code:**
+**3. Add MCP to Claude Code:**
 ```bash
 claude mcp add madrox http://localhost:8001/mcp --transport http
 ```
 
+
+**4. Open madrox UI:**
+```bash
+cd frontend
+npm install  # install dependencies
+npm run dev  # start the UI
+```
+
 That's it! Start using Madrox tools in Claude Code to spawn and orchestrate AI instances.
+For example, ask Claude Code
+```bash
+spawn a madrox dev team from template
+```
+
 
 ## 🧪 Testing
 
