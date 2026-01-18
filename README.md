@@ -232,6 +232,7 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 git clone https://github.com/barkain/madrox.git
 cd madrox
 uv sync
+source .venv/bin/activate
 ```
 
 **2. Start the server:**
