@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Request, Response
 from sse_starlette.sse import EventSourceResponse
@@ -229,12 +230,18 @@ class MCPAdapter:
 
         Detection strategies (in order):
         1. Find busy instances (actively executing tools)
-        2. Find most recently active instance (ignoring request_count requirement)
-        3. If only one running instance exists, use that
+        2. Find instances that have children (coordinators/supervisors)
+        3. Find most recently active instance, excluding recently spawned ones
+        4. If only one running instance exists, use that
 
         Returns:
             Instance ID of caller, or None if detection fails
         """
+        current_time = datetime.now(UTC)
+        # Instances spawned in the last 15 seconds are excluded from caller detection
+        # because they wouldn't have had time to receive instructions and make tool calls
+        spawn_grace_period = timedelta(seconds=15)
+
         # Strategy 1: Busy instances
         busy_instances = []
         for instance_id, instance_data in self.manager.instances.items():
@@ -247,12 +254,57 @@ class MCPAdapter:
             logger.info(f"Auto-detected caller via busy state: {caller_id}")
             return caller_id
 
-        # Strategy 2: Most recently active (removed request_count > 0 requirement)
+        # Strategy 2: Prefer instances that have children (they're coordinators/supervisors)
+        # A coordinator that spawned children is more likely to be making spawn calls
+        instances_with_children = []
+        for instance_id, instance_data in self.manager.instances.items():
+            if instance_data.get("state") == "terminated":
+                continue
+            # Count children of this instance
+            child_count = sum(
+                1
+                for iid, inst in self.manager.instances.items()
+                if inst.get("parent_instance_id") == instance_id
+                and inst.get("state") != "terminated"
+            )
+            if child_count > 0:
+                instances_with_children.append(
+                    (instance_id, child_count, instance_data.get("last_activity"))
+                )
+
+        if instances_with_children:
+            # Sort by child count (desc), then by last_activity (desc)
+            instances_with_children.sort(
+                key=lambda x: (x[1], x[2] if x[2] else ""), reverse=True
+            )
+            caller_id = instances_with_children[0][0]
+            logger.info(
+                f"Auto-detected caller via child count: {caller_id} "
+                f"({instances_with_children[0][1]} children)"
+            )
+            return caller_id
+
+        # Strategy 3: Most recently active, excluding recently spawned instances
         latest_activity = None
         caller_id = None
         for instance_id, instance_data in self.manager.instances.items():
             if instance_data.get("state") == "terminated":
                 continue
+
+            # Skip instances that were created very recently (they can't be callers yet)
+            created_at_str = instance_data.get("created_at")
+            if created_at_str:
+                try:
+                    created_at = datetime.fromisoformat(created_at_str)
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=UTC)
+                    if current_time - created_at < spawn_grace_period:
+                        logger.debug(
+                            f"Skipping recently spawned instance {instance_id} in caller detection"
+                        )
+                        continue
+                except (ValueError, TypeError):
+                    pass  # If we can't parse created_at, don't skip
 
             last_activity = instance_data.get("last_activity")
             if last_activity and (latest_activity is None or last_activity > latest_activity):
@@ -263,7 +315,7 @@ class MCPAdapter:
             logger.info(f"Auto-detected caller via recent activity: {caller_id}")
             return caller_id
 
-        # Strategy 3: If only one running instance, it must be the caller
+        # Strategy 4: If only one running instance, it must be the caller
         running_instances = [
             iid
             for iid, inst in self.manager.instances.items()
