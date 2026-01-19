@@ -59,14 +59,17 @@ def validate_model(provider: str, model: str | None) -> str:
         raise ValueError(f"Unknown provider: {provider}")
 
     provider_config = model_config[provider]
+    allowed_models = provider_config.get("allowed_models", [])
 
     # Use default if no model specified
     if model is None:
-        return provider_config["default"]
+        default_model = provider_config.get("default")
+        # If default is None/null, return None to let CLI use its default
+        return default_model if default_model else None
 
-    # Validate model is in allowed list
-    if model not in provider_config["allowed_models"]:
-        allowed = ", ".join(provider_config["allowed_models"])
+    # Validate model is in allowed list (if list is non-empty)
+    if allowed_models and model not in allowed_models:
+        allowed = ", ".join(allowed_models)
         raise ValueError(
             f"Invalid model '{model}' for {provider} provider. Allowed models: {allowed}"
         )

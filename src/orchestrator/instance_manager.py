@@ -91,10 +91,8 @@ class InstanceManager:
             name: Instance name
             role: Predefined role for the instance
             system_prompt: Custom system prompt (overrides role)
-            model: Claude model to use. Options:
-                   - claude-sonnet-4-5 (default, recommended, smartest model for daily use)
-                   - claude-opus-4-1 (legacy, reaches usage limits faster)
-                   - claude-haiku-4-5 (fastest model for simple tasks)
+            model: Claude model to use. If None, uses Claude CLI default.
+                   Use full model identifiers (e.g., claude-sonnet-4-5-20250514)
             bypass_isolation: Allow full filesystem access (default: true)
             parent_instance_id: Parent instance ID for tracking bidirectional communication
             wait_for_ready: Wait for instance to initialize (default: true)

@@ -14,11 +14,11 @@ codex:
 # Claude provider (Anthropic Claude models)
 claude:
   # Default model when none is specified
-  # claude-sonnet-4-5 is recommended for daily use - smartest model with best performance
-  default: claude-sonnet-4-5
+  # Note: Omit the model parameter to let Claude CLI use its default
+  # If you need to specify a model, use the full model ID with date suffix
+  default: null
 
   # List of allowed Claude models
-  allowed_models:
-    - claude-sonnet-4-5   # Recommended: Smartest model for daily use
-    - claude-opus-4-1     # Legacy: Reaches usage limits faster, use sparingly
-    - claude-haiku-4-5    # Fastest: Best for simple, quick tasks
+  # Use full model identifiers with date suffix
+  # Set to empty list to allow any model (defer to Claude CLI defaults)
+  allowed_models: []
