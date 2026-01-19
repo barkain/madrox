@@ -719,8 +719,7 @@ class InstanceManager:
 
         Args:
             name: Instance name
-            model: OpenAI GPT model to use. Options:
-                   - gpt-5-codex (default and only allowed model)
+            model: OpenAI GPT model to use. If None, uses Codex CLI default.
             sandbox_mode: Sandbox policy for shell commands (read-only, workspace-write, danger-full-access)
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session

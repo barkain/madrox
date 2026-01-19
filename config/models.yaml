@@ -4,12 +4,12 @@
 # Codex provider (OpenAI GPT models)
 codex:
   # Default model when none is specified
-  default: gpt-5-codex
+  # Note: Omit the model parameter to let Codex CLI use its default
+  default: null
 
   # List of allowed Codex models
-  # Note: Currently only gpt-5-codex is supported by Codex CLI
-  allowed_models:
-    - gpt-5-codex
+  # Set to empty list to allow any model (defer to Codex CLI defaults)
+  allowed_models: []
 
 # Claude provider (Anthropic Claude models)
 claude:
