@@ -381,6 +381,38 @@ class InstanceManager:
                 results["failed"].append({"instance_id": iid, "error": str(e)})
         return results
 
+    def _get_all_instances(self) -> dict[str, dict[str, Any]]:
+        """Get merged view of all instances from all sources.
+
+        Combines instances from:
+        - self.instances (HTTP server local instances)
+        - self.shared_state_manager.instance_metadata (STDIO child processes)
+
+        Also ensures all instances have required fields with defaults.
+
+        Returns:
+            Dictionary of instance_id -> instance data
+        """
+        all_instances = dict(self.instances)
+
+        # Add instances from shared_state.instance_metadata (cross-process visibility)
+        if hasattr(self, "shared_state_manager") and self.shared_state_manager:
+            try:
+                for iid, metadata in self.shared_state_manager.instance_metadata.items():
+                    if iid not in all_instances:
+                        # Instance from STDIO child process - use shared metadata
+                        instance_data = dict(metadata)
+                        # Ensure required fields have defaults
+                        if "last_activity" not in instance_data:
+                            instance_data["last_activity"] = instance_data.get(
+                                "created_at", datetime.now(UTC).isoformat()
+                            )
+                        all_instances[iid] = instance_data
+            except Exception as e:
+                logger.warning(f"Failed to read shared instance metadata: {e}")
+
+        return all_instances
+
     def _get_instance_status_internal(
         self, instance_id: str | None = None, summary_only: bool = False
     ) -> dict[str, Any]:
@@ -393,18 +425,8 @@ class InstanceManager:
         Returns:
             Instance status data
         """
-        # Merge local instances with instances from shared_state (STDIO children)
-        all_instances = dict(self.instances)
-
-        # Add instances from shared_state.instance_metadata (cross-process visibility)
-        if hasattr(self, "shared_state_manager") and self.shared_state_manager:
-            try:
-                for iid, metadata in self.shared_state_manager.instance_metadata.items():
-                    if iid not in all_instances:
-                        # Instance from STDIO child process - use shared metadata
-                        all_instances[iid] = dict(metadata)
-            except Exception as e:
-                logger.warning(f"Failed to read shared instance metadata: {e}")
+        # Use unified instance view
+        all_instances = self._get_all_instances()
 
         if instance_id:
             if instance_id not in all_instances:
@@ -476,10 +498,12 @@ class InstanceManager:
         Returns:
             Dictionary with live status including execution_time, state, last_activity
         """
-        if instance_id not in self.instances:
+        # Use unified instance view to find instances from all sources
+        all_instances = self._get_all_instances()
+        if instance_id not in all_instances:
             raise ValueError(f"Instance {instance_id} not found")
 
-        instance = self.instances[instance_id]
+        instance = all_instances[instance_id]
 
         # Calculate execution time
         created_at = datetime.fromisoformat(instance["created_at"])
@@ -493,7 +517,7 @@ class InstanceManager:
             "instance_id": instance_id,
             "execution_time": execution_time,
             "state": instance["state"],
-            "last_activity": instance["last_activity"],
+            "last_activity": instance.get("last_activity", instance.get("created_at")),
             "name": instance.get("name"),
             "role": instance.get("role"),
         }
@@ -643,7 +667,9 @@ class InstanceManager:
             )
 
         # Validate that parent_instance_id exists (if provided)
-        if parent_id and parent_id not in self.instances:
+        # Use unified instance view to check all sources
+        all_instances = self._get_all_instances()
+        if parent_id and parent_id not in all_instances:
             raise ValueError(
                 f"Cannot spawn instance '{name}': parent_instance_id '{parent_id}' does not exist. "
                 f"The specified parent instance was not found in the managed instances. "
@@ -1332,17 +1358,27 @@ Begin execution now. Spawn your team and start the workflow."""
         Returns:
             True if terminated successfully
         """
-        if instance_id not in self.instances:
+        # Use unified instance view to find instances from all sources
+        all_instances = self._get_all_instances()
+        if instance_id not in all_instances:
             raise ValueError(f"Instance {instance_id} not found")
 
-        instance = self.instances[instance_id]
+        instance = all_instances[instance_id]
 
         # Delegate to TmuxInstanceManager for all instances
         if instance.get("instance_type") in ["claude", "codex"]:
             result = await self.tmux_manager.terminate_instance(instance_id, force)
             if result:
-                # Update main instances dict
-                self.instances[instance_id] = self.tmux_manager.instances[instance_id]
+                # Update main instances dict if instance exists there
+                if instance_id in self.tmux_manager.instances:
+                    self.instances[instance_id] = self.tmux_manager.instances[instance_id]
+                # Also clean up shared_state if applicable
+                if hasattr(self, "shared_state_manager") and self.shared_state_manager:
+                    try:
+                        if instance_id in self.shared_state_manager.instance_metadata:
+                            del self.shared_state_manager.instance_metadata[instance_id]
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up shared state for {instance_id}: {e}")
             return result
 
         # No other instance types supported
