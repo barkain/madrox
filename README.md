@@ -215,6 +215,13 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 
 ### Prerequisites
 - Python 3.11+
+- [Homebrew](https://brew.sh/) Package Manager for macOS (or Linux)
+- [tmux](https://github.com/tmux/tmux/) Terminal multiplexer
+  ```bash
+  brew install tmux  # macOS
+  tmux -V  # verify installation
+  ```
+  see [installation methods](https://github.com/tmux/tmux/wiki/Installing) for other OS.
 - [uv](https://docs.astral.sh/uv/) Python package manager - install:
   ```bash
   curl -LsSf https://astral.sh/uv/install.sh | sh
