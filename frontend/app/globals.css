@@ -60,7 +60,7 @@
   --secondary: oklch(0.22 0.02 265);
   --secondary-foreground: oklch(0.95 0 0);
   --muted: oklch(0.2 0.015 265);
-  --muted-foreground: oklch(0.65 0 0);
+  --muted-foreground: oklch(0.72 0 0);
   --accent: oklch(0.25 0.03 265);
   --accent-foreground: oklch(0.95 0 0);
   --destructive: oklch(0.55 0.22 25);
@@ -687,5 +687,37 @@
   75% {
     transform: translate(30px, -30px);
     opacity: 0.7;
+  }
+}
+
+/* ==========================================
+   Accessibility: Respect Reduced Motion Preference
+   ========================================== */
+@media (prefers-reduced-motion: reduce) {
+  .animate-aurora-1,
+  .animate-aurora-2,
+  .animate-aurora-3,
+  .animate-aurora-glow,
+  .animate-mesh-1,
+  .animate-mesh-2,
+  .animate-mesh-3,
+  .animate-mesh-4,
+  .animate-mesh-center,
+  .animate-beam-1,
+  .animate-beam-2,
+  .animate-beam-3,
+  .animate-beam-glow,
+  .animate-particle,
+  .animate-glow-pulse,
+  .animate-float,
+  .animate-shimmer,
+  .animate-float-diagonal,
+  .animate-float-diagonal-reverse,
+  .animate-float-vertical,
+  .animate-float-vertical-reverse,
+  .animate-float-horizontal,
+  .animate-mesh-float {
+    animation: none !important;
+    transform: none !important;
   }
 }

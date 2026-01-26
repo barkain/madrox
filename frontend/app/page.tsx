@@ -103,13 +103,13 @@ function SortableTerminal({ terminal, size, onExpand, onClose, onResizeStart }: 
             e.stopPropagation()
             onClose(terminal.id)
           }}
-          className="p-1 rounded hover:bg-muted transition-colors"
+          className="p-2 md:p-1 rounded hover:bg-muted transition-colors min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center"
           aria-label={`Close ${terminal.name} terminal`}
         >
           <X className="h-3 w-3" />
         </button>
       </div>
-      <div className="h-[calc(100%-2.5rem)] bg-[#1e1e1e]">
+      <div className="h-[calc(100%-2.5rem)] bg-slate-50 dark:bg-[#1e1e1e]">
         <TerminalViewer
           instanceId={terminal.id}
           instanceName={terminal.name}
@@ -119,7 +119,7 @@ function SortableTerminal({ terminal, size, onExpand, onClose, onResizeStart }: 
       </div>
       {/* Resize Handle */}
       <div
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize hover:bg-primary/50 transition-all z-10 group"
+        className="absolute bottom-0 right-0 w-11 h-11 md:w-4 md:h-4 cursor-nwse-resize hover:bg-primary/50 transition-all z-10 group flex items-center justify-center"
         onMouseDown={(e) => {
           e.stopPropagation()
           e.preventDefault()
@@ -136,7 +136,7 @@ function SortableTerminal({ terminal, size, onExpand, onClose, onResizeStart }: 
           }
         }}
       >
-        <svg className="w-full h-full text-muted-foreground group-hover:text-primary transition-colors" viewBox="0 0 16 16">
+        <svg className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" viewBox="0 0 16 16">
           <path d="M14,12 L12,14 M14,8 L8,14 M14,4 L4,14" stroke="currentColor" strokeWidth="1.5" fill="none" />
         </svg>
       </div>
