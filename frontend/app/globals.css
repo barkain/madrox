@@ -4,26 +4,26 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Dark monitoring theme inspired by Vercel observability */
-  --background: oklch(1 0 0);
+  /* Light theme - Clean and professional */
+  --background: oklch(0.99 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: oklch(0.45 0.2 265);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.5 0 0);
+  --accent: oklch(0.95 0.02 265);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.9 0 0);
+  --input: oklch(0.9 0 0);
+  --ring: oklch(0.45 0.2 265);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -32,47 +32,62 @@
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary: oklch(0.45 0.2 265);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent: oklch(0.95 0.02 265);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-border: oklch(0.9 0 0);
+  --sidebar-ring: oklch(0.45 0.2 265);
+
+  /* RGB values for glass and glow effects (light mode) */
+  --glass-bg: 255, 255, 255;
+  --primary-rgb: 99, 102, 241;
+  --success-rgb: 34, 197, 94;
+  --error-rgb: 239, 68, 68;
+  --warning-rgb: 245, 158, 11;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  /* Enhanced dark theme - Deep, rich backgrounds with subtle blue/purple tints */
+  --background: oklch(0.12 0.01 265);
+  --foreground: oklch(0.95 0 0);
+  --card: oklch(0.14 0.015 265);
+  --card-foreground: oklch(0.95 0 0);
+  --popover: oklch(0.13 0.012 265);
+  --popover-foreground: oklch(0.95 0 0);
+  --primary: oklch(0.65 0.22 265);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.22 0.02 265);
+  --secondary-foreground: oklch(0.95 0 0);
+  --muted: oklch(0.2 0.015 265);
+  --muted-foreground: oklch(0.65 0 0);
+  --accent: oklch(0.25 0.03 265);
+  --accent-foreground: oklch(0.95 0 0);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.25 0.02 265);
+  --input: oklch(0.2 0.015 265);
+  --ring: oklch(0.55 0.2 265);
+  --chart-1: oklch(0.6 0.24 265);
+  --chart-2: oklch(0.7 0.18 162);
+  --chart-3: oklch(0.75 0.19 85);
+  --chart-4: oklch(0.65 0.25 300);
+  --chart-5: oklch(0.65 0.24 20);
+  --sidebar: oklch(0.1 0.008 265);
+  --sidebar-foreground: oklch(0.95 0 0);
+  --sidebar-primary: oklch(0.6 0.22 265);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.22 0.025 265);
+  --sidebar-accent-foreground: oklch(0.95 0 0);
+  --sidebar-border: oklch(0.22 0.02 265);
+  --sidebar-ring: oklch(0.5 0.18 265);
+
+  /* RGB values for glass and glow effects (dark mode) */
+  --glass-bg: 20, 20, 35;
+  --primary-rgb: 129, 140, 248;
+  --success-rgb: 74, 222, 128;
+  --error-rgb: 248, 113, 113;
+  --warning-rgb: 251, 191, 36;
 }
 
 @theme inline {
@@ -121,5 +136,556 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* ==========================================
+   Glass Morphism Utilities
+   ========================================== */
+@layer utilities {
+  .glass {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(var(--glass-bg), 0.8);
+    border: 1px solid rgba(var(--glass-bg), 0.2);
+  }
+
+  .glass-subtle {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    background: rgba(var(--glass-bg), 0.6);
+    border: 1px solid rgba(var(--glass-bg), 0.15);
+  }
+
+  .glass-strong {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    background: rgba(var(--glass-bg), 0.9);
+    border: 1px solid rgba(var(--glass-bg), 0.25);
+  }
+
+  /* ==========================================
+     Glow Effect Utilities
+     ========================================== */
+  .glow-primary {
+    box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.3),
+                0 0 40px rgba(var(--primary-rgb), 0.1);
+  }
+
+  .glow-primary-intense {
+    box-shadow: 0 0 30px rgba(var(--primary-rgb), 0.5),
+                0 0 60px rgba(var(--primary-rgb), 0.2);
+  }
+
+  .glow-success {
+    box-shadow: 0 0 15px rgba(var(--success-rgb), 0.4),
+                0 0 30px rgba(var(--success-rgb), 0.15);
+  }
+
+  .glow-error {
+    box-shadow: 0 0 15px rgba(var(--error-rgb), 0.4),
+                0 0 30px rgba(var(--error-rgb), 0.15);
+  }
+
+  .glow-warning {
+    box-shadow: 0 0 15px rgba(var(--warning-rgb), 0.4),
+                0 0 30px rgba(var(--warning-rgb), 0.15);
+  }
+
+  /* Text glow variants */
+  .text-glow-primary {
+    text-shadow: 0 0 10px rgba(var(--primary-rgb), 0.5),
+                 0 0 20px rgba(var(--primary-rgb), 0.3);
+  }
+
+  .text-glow-success {
+    text-shadow: 0 0 10px rgba(var(--success-rgb), 0.5),
+                 0 0 20px rgba(var(--success-rgb), 0.3);
+  }
+
+  /* ==========================================
+     Gradient Text Utilities
+     ========================================== */
+  .gradient-text-primary {
+    background: linear-gradient(135deg,
+      oklch(0.65 0.22 265) 0%,
+      oklch(0.7 0.2 300) 50%,
+      oklch(0.65 0.22 265) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .gradient-text-rainbow {
+    background: linear-gradient(135deg,
+      oklch(0.7 0.22 25) 0%,
+      oklch(0.75 0.2 85) 25%,
+      oklch(0.7 0.18 162) 50%,
+      oklch(0.65 0.24 265) 75%,
+      oklch(0.65 0.25 300) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .gradient-text-subtle {
+    background: linear-gradient(135deg,
+      oklch(0.7 0.05 265) 0%,
+      oklch(0.8 0.03 265) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* ==========================================
+     Smooth Transition Utilities
+     ========================================== */
+  .transition-theme {
+    transition: background-color 0.3s ease,
+                color 0.3s ease,
+                border-color 0.3s ease,
+                box-shadow 0.3s ease;
+  }
+
+  .transition-all-smooth {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .transition-transform-smooth {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .transition-opacity-smooth {
+    transition: opacity 0.3s ease;
+  }
+
+  /* ==========================================
+     Animation Utilities
+     ========================================== */
+  .animate-glow-pulse {
+    animation: glow-pulse 2s ease-in-out infinite;
+  }
+
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  .animate-shimmer {
+    animation: shimmer 2s linear infinite;
+    background-size: 200% 100%;
+  }
+
+  /* Hover effect utilities */
+  .hover-lift {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2),
+                0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  }
+
+  .hover-scale {
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .hover-scale:hover {
+    transform: scale(1.02);
+  }
+
+  .hover-glow-primary {
+    transition: box-shadow 0.3s ease;
+  }
+
+  .hover-glow-primary:hover {
+    box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.3),
+                0 0 40px rgba(var(--primary-rgb), 0.1);
+  }
+}
+
+/* ==========================================
+   Keyframe Animations
+   ========================================== */
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.3),
+                0 0 40px rgba(var(--primary-rgb), 0.1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(var(--primary-rgb), 0.5),
+                0 0 60px rgba(var(--primary-rgb), 0.2);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* ==========================================
+   Dark Mode Specific Enhancements
+   ========================================== */
+.dark .glass {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark .glass-subtle {
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark .hover-lift:hover {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5),
+              0 8px 10px -6px rgba(0, 0, 0, 0.3),
+              0 0 20px rgba(var(--primary-rgb), 0.1);
+}
+
+/* ==========================================
+   Animated Background Keyframes
+   ========================================== */
+@keyframes float-diagonal {
+  0%, 100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(30px, 20px);
+  }
+  50% {
+    transform: translate(60px, 40px);
+  }
+  75% {
+    transform: translate(30px, 60px);
+  }
+}
+
+@keyframes float-vertical {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(40px);
+  }
+}
+
+@keyframes float-horizontal {
+  0%, 100% {
+    transform: translate(-50%, 0);
+  }
+  50% {
+    transform: translate(-50%, -30px);
+  }
+}
+
+@keyframes mesh-float {
+  0%, 100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  33% {
+    transform: translate(10px, -10px) rotate(1deg);
+  }
+  66% {
+    transform: translate(-10px, 10px) rotate(-1deg);
+  }
+}
+
+/* ==========================================
+   Animated Background Utility Classes
+   ========================================== */
+@layer utilities {
+  .animate-float-diagonal {
+    animation: float-diagonal 25s ease-in-out infinite;
+  }
+
+  .animate-float-diagonal-reverse {
+    animation: float-diagonal 18s ease-in-out infinite reverse;
+  }
+
+  .animate-float-vertical {
+    animation: float-vertical 15s ease-in-out infinite;
+  }
+
+  .animate-float-vertical-reverse {
+    animation: float-vertical 20s ease-in-out infinite reverse;
+  }
+
+  .animate-float-horizontal {
+    animation: float-horizontal 30s ease-in-out infinite;
+  }
+
+  .animate-mesh-float {
+    animation: mesh-float 20s ease-in-out infinite;
+  }
+
+  .bg-grid-pattern {
+    background-image:
+      linear-gradient(to right, var(--border) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+
+  .bg-mesh-pattern {
+    background-image:
+      linear-gradient(to right, var(--border) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+    background-size: 14px 24px;
+    mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, #000 70%, transparent 110%);
+  }
+
+  .bg-noise-texture {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  }
+
+  /* ==========================================
+     Aurora Background Animations
+     ========================================== */
+  .animate-aurora-1 {
+    animation: aurora-wave-1 20s ease-in-out infinite;
+  }
+
+  .animate-aurora-2 {
+    animation: aurora-wave-2 25s ease-in-out infinite;
+  }
+
+  .animate-aurora-3 {
+    animation: aurora-wave-3 18s ease-in-out infinite;
+  }
+
+  .animate-aurora-glow {
+    animation: aurora-glow 15s ease-in-out infinite;
+  }
+
+  /* Mesh Background Animations */
+  .animate-mesh-1 {
+    animation: mesh-move-1 20s ease-in-out infinite;
+  }
+
+  .animate-mesh-2 {
+    animation: mesh-move-2 25s ease-in-out infinite;
+  }
+
+  .animate-mesh-3 {
+    animation: mesh-move-3 22s ease-in-out infinite;
+  }
+
+  .animate-mesh-4 {
+    animation: mesh-move-4 28s ease-in-out infinite;
+  }
+
+  .animate-mesh-center {
+    animation: mesh-center-pulse 10s ease-in-out infinite;
+  }
+
+  /* Beam Background Animations */
+  .animate-beam-1 {
+    animation: beam-sweep-1 15s ease-in-out infinite;
+  }
+
+  .animate-beam-2 {
+    animation: beam-sweep-2 20s ease-in-out infinite;
+  }
+
+  .animate-beam-3 {
+    animation: beam-sweep-3 18s ease-in-out infinite;
+  }
+
+  .animate-beam-glow {
+    animation: beam-glow-pulse 8s ease-in-out infinite;
+  }
+
+  /* Particle Animation */
+  .animate-particle {
+    animation: particle-float 20s ease-in-out infinite;
+  }
+}
+
+/* ==========================================
+   Aurora Keyframe Animations
+   ========================================== */
+@keyframes aurora-wave-1 {
+  0%, 100% {
+    transform: rotate(-12deg) translateX(0) translateY(0);
+    opacity: 0.6;
+  }
+  25% {
+    transform: rotate(-10deg) translateX(5%) translateY(3%);
+    opacity: 0.8;
+  }
+  50% {
+    transform: rotate(-14deg) translateX(10%) translateY(-2%);
+    opacity: 0.5;
+  }
+  75% {
+    transform: rotate(-11deg) translateX(3%) translateY(5%);
+    opacity: 0.7;
+  }
+}
+
+@keyframes aurora-wave-2 {
+  0%, 100% {
+    transform: rotate(8deg) translateX(0) translateY(0);
+    opacity: 0.5;
+  }
+  33% {
+    transform: rotate(10deg) translateX(-8%) translateY(5%);
+    opacity: 0.7;
+  }
+  66% {
+    transform: rotate(6deg) translateX(5%) translateY(-3%);
+    opacity: 0.4;
+  }
+}
+
+@keyframes aurora-wave-3 {
+  0%, 100% {
+    transform: rotate(-5deg) translateX(0) translateY(0);
+    opacity: 0.4;
+  }
+  50% {
+    transform: rotate(-3deg) translateX(-10%) translateY(8%);
+    opacity: 0.6;
+  }
+}
+
+@keyframes aurora-glow {
+  0%, 100% {
+    transform: translateX(0) scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translateX(5%) scale(1.1);
+    opacity: 0.5;
+  }
+}
+
+/* ==========================================
+   Mesh Keyframe Animations
+   ========================================== */
+@keyframes mesh-move-1 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(10%, 10%) scale(1.1);
+  }
+}
+
+@keyframes mesh-move-2 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-10%, 10%) scale(1.15);
+  }
+}
+
+@keyframes mesh-move-3 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(10%, -10%) scale(1.1);
+  }
+}
+
+@keyframes mesh-move-4 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-10%, -10%) scale(1.05);
+  }
+}
+
+@keyframes mesh-center-pulse {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 0.5;
+  }
+}
+
+/* ==========================================
+   Beam Keyframe Animations
+   ========================================== */
+@keyframes beam-sweep-1 {
+  0%, 100% {
+    transform: rotate(35deg) translateX(0);
+    opacity: 0.4;
+  }
+  50% {
+    transform: rotate(35deg) translateX(100px);
+    opacity: 0.7;
+  }
+}
+
+@keyframes beam-sweep-2 {
+  0%, 100% {
+    transform: rotate(40deg) translateX(0);
+    opacity: 0.3;
+  }
+  50% {
+    transform: rotate(40deg) translateX(-80px);
+    opacity: 0.5;
+  }
+}
+
+@keyframes beam-sweep-3 {
+  0%, 100% {
+    transform: rotate(30deg) translateX(0);
+    opacity: 0.35;
+  }
+  50% {
+    transform: rotate(30deg) translateX(60px);
+    opacity: 0.55;
+  }
+}
+
+@keyframes beam-glow-pulse {
+  0%, 100% {
+    opacity: 0.2;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scaleY(1.2);
+  }
+}
+
+/* ==========================================
+   Particle Keyframe Animation
+   ========================================== */
+@keyframes particle-float {
+  0%, 100% {
+    transform: translate(0, 0);
+    opacity: 0.6;
+  }
+  25% {
+    transform: translate(20px, -30px);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translate(-10px, -60px);
+    opacity: 0.4;
+  }
+  75% {
+    transform: translate(30px, -30px);
+    opacity: 0.7;
   }
 }

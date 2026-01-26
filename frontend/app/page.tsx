@@ -7,6 +7,8 @@ import { StatsHeader } from "@/components/stats-header"
 import { FilterBar } from "@/components/filter-bar"
 import { NetworkGraph } from "@/components/network-graph"
 import { TerminalViewer } from "@/components/terminal-viewer"
+import { AnimatedBackground } from "@/components/animated-background"
+import { ThemeToggleDropdown } from "@/components/theme-toggle"
 import { useWebSocket } from "@/hooks/use-websocket"
 import type { MessageFlow } from "@/types"
 import {
@@ -237,12 +239,15 @@ export default function MadroxMonitor() {
         const newWidth = e.clientX - rect.left
         const newHeight = e.clientY - rect.top
 
-        // Min size: 650x500px (width increased from 400px to 600px for 150% scaling)
-        const minWidth = 650
-        const minHeight = 500
+        // Min size: allow shrinking to reasonable minimums (300x200)
+        // Max size: limit to container width and reasonable height
+        const minWidth = 300
+        const minHeight = 200
+        const maxWidth = containerRef.current?.clientWidth ? containerRef.current.clientWidth - 32 : 1200
+        const maxHeight = 800
 
-        const finalWidth = Math.max(newWidth, minWidth)
-        const finalHeight = Math.max(newHeight, minHeight)
+        const finalWidth = Math.min(Math.max(newWidth, minWidth), maxWidth)
+        const finalHeight = Math.min(Math.max(newHeight, minHeight), maxHeight)
 
         setTerminalSizes(prev => ({
           ...prev,
@@ -418,7 +423,10 @@ export default function MadroxMonitor() {
   })
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-transparent relative transition-theme">
+      {/* Animated Background */}
+      <AnimatedBackground variant="aurora" intensity="medium" />
+
       {/* Screen reader announcements for accessibility */}
       <div
         role="status"
@@ -431,14 +439,14 @@ export default function MadroxMonitor() {
 
       <ConnectionStatus status={connectionStatus} />
 
-      <div ref={containerRef} className="flex-1 flex flex-col overflow-hidden">
-        {/* Elegant Header - Two Rows */}
-        <div className="border-b border-border">
+      <div ref={containerRef} className="flex-1 flex flex-col overflow-hidden relative z-10 bg-transparent">
+        {/* Elegant Header - Two Rows with Glass Morphism */}
+        <div className="glass border-b border-white/10">
           {/* Top Row - Title and Stats */}
           <div className="px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-8">
               <div>
-                <h1 className="text-xl font-semibold text-foreground">Madrox Monitor</h1>
+                <h1 className="text-xl font-semibold gradient-text-primary">Madrox Monitor</h1>
                 <p className="text-sm text-muted-foreground">Real-time agent network</p>
               </div>
 
@@ -446,6 +454,9 @@ export default function MadroxMonitor() {
 
               <StatsHeader stats={stats} />
             </div>
+
+            {/* Theme Toggle */}
+            <ThemeToggleDropdown />
           </div>
 
           {/* Bottom Row - Filters and Tabs */}
@@ -459,24 +470,24 @@ export default function MadroxMonitor() {
               onTypeFilterChange={setTypeFilter}
             />
 
-            {/* Tab Switcher */}
-            <div className="flex gap-2">
+            {/* Tab Switcher with Glass Effect */}
+            <div className="flex gap-2 glass-subtle rounded-lg p-1">
               <button
                 onClick={() => setActiveTab("graph")}
-                className={`px-4 py-1.5 text-sm font-medium rounded transition-colors ${
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
                   activeTab === "graph"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    ? "bg-primary text-primary-foreground shadow-glow"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/10"
                 }`}
               >
                 Network Graph
               </button>
               <button
                 onClick={() => setActiveTab("terminals")}
-                className={`px-4 py-1.5 text-sm font-medium rounded transition-colors ${
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
                   activeTab === "terminals"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    ? "bg-primary text-primary-foreground shadow-glow"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/10"
                 }`}
               >
                 Terminals ({openTerminals.length})
