@@ -233,7 +233,7 @@ export default function MadroxMonitor() {
     const handleMouseMove = (e: MouseEvent) => {
       if (isResizing) {
         const terminalEl = document.getElementById(`terminal-${isResizing}`)
-        if (!terminalEl) return
+        if (!terminalEl || !isResizing) return
 
         const rect = terminalEl.getBoundingClientRect()
         const newWidth = e.clientX - rect.left

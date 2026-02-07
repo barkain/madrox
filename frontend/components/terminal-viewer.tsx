@@ -35,8 +35,11 @@ export function TerminalViewer({ instanceId, instanceName, onClose, compact = fa
       if (data.content) {
         setContent(data.content)
       }
-    } catch {
-      // Silently handle fetch failures (server may be restarting)
+    } catch (err) {
+      // Log in development, stay silent in production (server may be restarting)
+      if (process.env.NODE_ENV === "development") {
+        console.warn(`[TerminalViewer] fetch failed for ${instanceId}:`, err)
+      }
       if (!content) {
         setContent("Connecting to terminal...")
       }

@@ -766,13 +766,16 @@ class ClaudeOrchestratorServer:
         @self.app.get("/instances/{instance_id}/terminal")
         async def get_terminal_content(instance_id: str, lines: int = 1000):
             """Get tmux pane content for an instance (terminal output)."""
+            # Clamp lines to a safe range
+            lines = max(1, min(lines, 10000))
             try:
                 content = await self.instance_manager.tmux_manager.get_tmux_pane_content(
                     instance_id, lines=lines
                 )
                 return {"instance_id": instance_id, "content": content}
             except Exception as e:
-                raise HTTPException(status_code=404, detail=str(e)) from e
+                logger.warning(f"Terminal fetch failed for {instance_id}: {e}")
+                raise HTTPException(status_code=404, detail="Instance not found or terminal unavailable") from e
 
         @self.app.get("/logs/audit")
         async def get_audit_logs(

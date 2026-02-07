@@ -1125,29 +1125,42 @@ class TmuxInstanceManager:
         if not self.shared_state or not self.shared_state.has_queued_messages(instance_id):
             return
 
+        instance = self.instances.get(instance_id)
+        if not instance:
+            logger.warning(f"Instance {instance_id} not found, cannot process queued messages")
+            return
+
         queued = self.shared_state.get_queued_messages(instance_id)
         if not queued:
             return
 
         logger.info(f"Processing {len(queued)} queued messages for instance {instance_id}")
 
-        session = self.tmux_sessions.get(instance_id)
-        if not session:
-            logger.warning(f"No tmux session found for {instance_id}, cannot deliver queued messages")
-            return
+        # Mark busy while draining queue to prevent new messages interleaving
+        instance["state"] = "busy"
+        instance["last_activity"] = datetime.now(UTC).isoformat()
 
-        window = session.windows[0]
-        pane = window.panes[0]
+        try:
+            session = self.tmux_sessions.get(instance_id)
+            if not session:
+                logger.warning(f"No tmux session found for {instance_id}, cannot deliver queued messages")
+                return
 
-        for msg in queued:
-            formatted = f"[MSG:{msg['message_id']}] {msg['message']}"
-            self._send_multiline_message_to_pane(pane, formatted)
-            logger.info(
-                f"Delivered queued message {msg['message_id']} to {instance_id} "
-                f"(queued at {msg['queued_at']})"
-            )
-            # Brief pause between queued messages
-            await asyncio.sleep(0.1)
+            window = session.windows[0]
+            pane = window.panes[0]
+
+            for msg in queued:
+                formatted = f"[MSG:{msg['message_id']}] {msg['message']}"
+                self._send_multiline_message_to_pane(pane, formatted)
+                logger.info(
+                    f"Delivered queued message {msg['message_id']} to {instance_id} "
+                    f"(queued at {msg['queued_at']})"
+                )
+                # Brief pause between queued messages
+                await asyncio.sleep(0.1)
+        finally:
+            instance["state"] = "idle"
+            instance["last_activity"] = datetime.now(UTC).isoformat()
 
     async def interrupt_instance(self, instance_id: str) -> dict[str, Any]:
         """Send interrupt signal (Ctrl+C) to a running instance.
