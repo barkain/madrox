@@ -30,7 +30,7 @@ async def test_all_tools_registered(test_config):
     tools = await server.mcp.get_tools()
 
     # Verify tool count
-    assert len(tools) == 27, f"Expected 27 tools, got {len(tools)}"
+    assert len(tools) == 28, f"Expected 28 tools, got {len(tools)}"
 
     # Verify specific critical tools exist
     critical_tools = [
@@ -116,7 +116,7 @@ async def test_validation_catches_missing_tools(test_config):
 
     # Verify the validation constant matches reality
     tools = await server.mcp.get_tools()
-    assert len(tools) == 27  # This matches the expected_tools_count in the validation
+    assert len(tools) == 28  # This matches the expected_tools_count in the validation
 
 
 def test_class_docstring_updated():

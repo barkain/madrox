@@ -23,30 +23,18 @@ export function TerminalViewer({ instanceId, instanceName, onClose, compact = fa
 
   const fetchContent = async () => {
     try {
-      const response = await fetch("http://localhost:8001/mcp/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: Date.now(),
-          method: "tools/call",
-          params: {
-            name: "get_tmux_pane_content",
-            arguments: {
-              instance_id: instanceId,
-              lines: 1000, // Increased from 100 to 1000 for more scrollback history
-            },
-          },
-        }),
-      })
-
+      const response = await fetch(
+        `http://localhost:8001/instances/${instanceId}/terminal?lines=1000`
+      )
       const data = await response.json()
-      if (data.result?.content?.[0]?.text) {
-        setContent(data.result.content[0].text)
+      if (data.content) {
+        setContent(data.content)
       }
-    } catch (error) {
-      console.error("Failed to fetch tmux content:", error)
-      setContent("Error: Failed to fetch terminal content")
+    } catch {
+      // Silently handle fetch failures (server may be restarting)
+      if (!content) {
+        setContent("Connecting to terminal...")
+      }
     } finally {
       setIsLoading(false)
     }

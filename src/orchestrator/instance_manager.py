@@ -1086,6 +1086,61 @@ Begin execution now. Spawn your team and start the workflow."""
         """
         return self._get_children_internal(parent_id)
 
+    def _get_peers_internal(
+        self, instance_id: str, include_self: bool = False
+    ) -> list[dict[str, Any]]:
+        """Internal method to get all peer instances (siblings sharing the same parent).
+
+        Args:
+            instance_id: The instance whose peers to find
+            include_self: If True, include the requesting instance in results
+
+        Returns:
+            List of peer instance details (excludes terminated instances)
+        """
+        instance = self.instances.get(instance_id)
+        if not instance:
+            return []
+
+        parent_id = instance.get("parent_instance_id")
+        if not parent_id:
+            return []
+
+        peers = []
+        for iid, inst in self.instances.items():
+            if inst.get("parent_instance_id") != parent_id:
+                continue
+            if inst.get("state") == "terminated":
+                continue
+            if not include_self and iid == instance_id:
+                continue
+            peers.append(
+                {
+                    "id": iid,
+                    "name": inst.get("name"),
+                    "role": inst.get("role"),
+                    "state": inst.get("state"),
+                    "instance_type": inst.get("instance_type"),
+                }
+            )
+        return peers
+
+    @mcp.tool
+    def get_peers(self, instance_id: str) -> list[dict[str, Any]]:
+        """Get all peer instances (siblings that share the same parent).
+
+        Use this to discover teammates for direct peer-to-peer communication.
+        After discovering peers, use send_to_instance(instance_id=peer_id, message='...')
+        to message them directly.
+
+        Args:
+            instance_id: Your own instance ID
+
+        Returns:
+            List of peer instance details (excludes terminated instances and self)
+        """
+        return self._get_peers_internal(instance_id)
+
     @mcp.tool
     async def broadcast_to_children(
         self, parent_id: str, message: str, wait_for_responses: bool = False

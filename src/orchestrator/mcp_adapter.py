@@ -1114,6 +1114,21 @@ Begin execution now. Spawn your team and start the workflow."""
                             ]
                         }
 
+                    elif tool_name == "get_peers":
+                        # Bypass decorator - use internal method
+                        peers = self.manager._get_peers_internal(
+                            instance_id=tool_args["instance_id"]
+                        )
+                        result = {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Found {len(peers)} peers:\n\n"
+                                    + json.dumps(peers, indent=2),
+                                }
+                            ]
+                        }
+
                     elif tool_name == "broadcast_to_children":
                         # Bypass decorator - inline implementation
                         parent_id = tool_args["parent_id"]
