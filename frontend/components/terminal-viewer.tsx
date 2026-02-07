@@ -26,6 +26,11 @@ export function TerminalViewer({ instanceId, instanceName, onClose, compact = fa
       const response = await fetch(
         `http://localhost:8001/instances/${instanceId}/terminal?lines=1000`
       )
+      if (response.status === 404) {
+        setContent("Instance not found — it may have been terminated.")
+        setAutoRefresh(false)
+        return
+      }
       const data = await response.json()
       if (data.content) {
         setContent(data.content)
