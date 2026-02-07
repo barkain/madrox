@@ -677,7 +677,7 @@ class TmuxInstanceManager:
             # Blocking: wait for full initialization
             try:
                 await self._initialize_tmux_session(instance_id)
-                instance["state"] = "running"
+                instance["state"] = "idle"
                 logger.info(
                     f"Successfully spawned {instance_type} instance {instance_id} ({instance_name}) with role {role} via tmux",
                     extra={
@@ -733,7 +733,7 @@ class TmuxInstanceManager:
 
         try:
             await self._initialize_tmux_session(instance_id)
-            instance["state"] = "running"
+            instance["state"] = "idle"
             logger.info(
                 f"Background initialization completed for instance {instance_id} ({instance['name']})",
                 extra={"instance_id": instance_id, "instance_name": instance["name"]},
