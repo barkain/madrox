@@ -529,21 +529,23 @@ Begin execution now. Spawn your team and start the workflow."""
                             }
 
                     elif tool_name == "send_to_multiple_instances":
-                        messages_config = tool_args.get("messages", [])
+                        instance_ids = tool_args.get("instance_ids", [])
+                        message = tool_args.get("message", "")
+                        wait_for_responses = tool_args.get("wait_for_responses", False)
+                        timeout_seconds = tool_args.get("timeout_seconds", 180)
 
                         # Create send tasks for all instances - bypass decorator
-                        async def send_message_bypass(msg_config):
-                            instance_id = msg_config["instance_id"]
-                            if instance_id not in self.manager.instances:
-                                raise ValueError(f"Instance {instance_id} not found")
+                        async def send_message_bypass(inst_id):
+                            if inst_id not in self.manager.instances:
+                                raise ValueError(f"Instance {inst_id} not found")
 
-                            instance = self.manager.instances[instance_id]
+                            instance = self.manager.instances[inst_id]
                             if instance.get("instance_type") in ["claude", "codex"]:
                                 result = await self.manager.tmux_manager.send_message(
-                                    instance_id=instance_id,
-                                    message=msg_config["message"],
-                                    wait_for_response=msg_config.get("wait_for_response", True),
-                                    timeout_seconds=msg_config.get("timeout_seconds", 180),
+                                    instance_id=inst_id,
+                                    message=message,
+                                    wait_for_response=wait_for_responses,
+                                    timeout_seconds=timeout_seconds,
                                 )
                                 return result or {"status": "message_sent"}
                             else:
@@ -551,9 +553,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     f"Unsupported instance type: {instance.get('instance_type')}"
                                 )
 
-                        send_tasks = []
-                        for msg_config in messages_config:
-                            send_tasks.append(send_message_bypass(msg_config))
+                        send_tasks = [send_message_bypass(iid) for iid in instance_ids]
 
                         # Execute all sends in parallel
                         results = await asyncio.gather(*send_tasks, return_exceptions=True)
@@ -563,13 +563,12 @@ Begin execution now. Spawn your team and start the workflow."""
                         errors = []
 
                         for idx, send_result in enumerate(results):
-                            msg_config = messages_config[idx]
-                            instance_id = msg_config["instance_id"]
+                            iid = instance_ids[idx]
 
                             if isinstance(send_result, Exception):
                                 errors.append(
                                     {
-                                        "instance_id": instance_id,
+                                        "instance_id": iid,
                                         "error": str(send_result),
                                     }
                                 )
@@ -577,7 +576,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                 # Successful send
                                 successful_sends.append(
                                     {
-                                        "instance_id": instance_id,
+                                        "instance_id": iid,
                                         "response": send_result.get("response", "Sent"),
                                     }
                                 )
@@ -585,14 +584,14 @@ Begin execution now. Spawn your team and start the workflow."""
                                 # Unexpected result type
                                 successful_sends.append(
                                     {
-                                        "instance_id": instance_id,
+                                        "instance_id": iid,
                                         "response": str(send_result),
                                     }
                                 )
 
                         # Build response text
                         response_lines = [
-                            f"Sent to {len(successful_sends)}/{len(messages_config)} instances successfully"
+                            f"Sent to {len(successful_sends)}/{len(instance_ids)} instances successfully"
                         ]
 
                         if successful_sends:

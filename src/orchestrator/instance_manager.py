@@ -266,9 +266,13 @@ class InstanceManager:
         # Apply since filter if provided
         if since:
             since_dt = datetime.fromisoformat(since)
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=UTC)
             # Note: In a real implementation, we'd track timestamps per message
             # For now, we can only filter based on the last activity
             last_activity = datetime.fromisoformat(instance["last_activity"])
+            if last_activity.tzinfo is None:
+                last_activity = last_activity.replace(tzinfo=UTC)
             if last_activity < since_dt:
                 return {"instance_id": instance_id, "output": []}
 
@@ -318,7 +322,11 @@ class InstanceManager:
         # Apply since filter if provided
         if since:
             since_dt = datetime.fromisoformat(since)
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=UTC)
             last_activity = datetime.fromisoformat(instance["last_activity"])
+            if last_activity.tzinfo is None:
+                last_activity = last_activity.replace(tzinfo=UTC)
             if last_activity < since_dt:
                 return []
 

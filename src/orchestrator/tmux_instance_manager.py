@@ -116,6 +116,7 @@ class TmuxInstanceManager:
 
         # Manager health monitoring
         self._manager_health_task: asyncio.Task | None = None
+        self._queue_poller_task: asyncio.Task | None = None
         self._manager_health_check_interval = 30  # seconds
         self._manager_health_failures = 0
         self._max_health_failures = 3  # Alert after 3 consecutive failures
@@ -678,6 +679,7 @@ class TmuxInstanceManager:
             try:
                 await self._initialize_tmux_session(instance_id)
                 instance["state"] = "idle"
+                await self._process_queued_messages(instance_id)
                 logger.info(
                     f"Successfully spawned {instance_type} instance {instance_id} ({instance_name}) with role {role} via tmux",
                     extra={
@@ -734,6 +736,7 @@ class TmuxInstanceManager:
         try:
             await self._initialize_tmux_session(instance_id)
             instance["state"] = "idle"
+            await self._process_queued_messages(instance_id)
             logger.info(
                 f"Background initialization completed for instance {instance_id} ({instance['name']})",
                 extra={"instance_id": instance_id, "instance_name": instance["name"]},
@@ -1959,6 +1962,9 @@ class TmuxInstanceManager:
                 target_id = parent_id if parent_id else "coordinator"
                 await self._put_to_shared_queue(target_id, reply_payload)
                 logger.info(f"Reply queued for {target_id} via shared queue")
+                # Also queue in the child's own queue so send_message() can pick it up
+                await self._put_to_shared_queue(instance_id, reply_payload)
+                logger.debug(f"Reply also queued in child {instance_id}'s queue for send_message pickup")
             else:
                 # Use local queue for HTTP transport
                 if parent_id:
@@ -1974,6 +1980,12 @@ class TmuxInstanceManager:
                         self.response_queues["coordinator"] = asyncio.Queue()
                     await self.response_queues["coordinator"].put(reply_payload)
                     logger.info("Reply queued for coordinator")
+
+                # Also queue in the child's own queue so send_message() can pick it up
+                if instance_id not in self.response_queues:
+                    self.response_queues[instance_id] = asyncio.Queue()
+                await self.response_queues[instance_id].put(reply_payload)
+                logger.debug(f"Reply also queued in child {instance_id}'s queue for send_message pickup")
 
             # Log the communication
             if self.logging_manager:
@@ -2424,6 +2436,29 @@ class TmuxInstanceManager:
             timeout_seconds=timeout_seconds,
         )
 
+    async def _queue_poller_loop(self):
+        """Background loop that delivers queued messages to idle instances."""
+        logger.info("Queue poller started (interval=2s)")
+        while True:
+            try:
+                await asyncio.sleep(2)
+                if not self.shared_state:
+                    continue
+                for instance_id, instance in list(self.instances.items()):
+                    if (
+                        instance["state"] == "idle"
+                        and self.shared_state.has_queued_messages(instance_id)
+                    ):
+                        logger.info(
+                            f"Queue poller: delivering queued messages to idle instance {instance_id}"
+                        )
+                        await self._process_queued_messages(instance_id)
+            except asyncio.CancelledError:
+                logger.info("Queue poller stopped")
+                break
+            except Exception as e:
+                logger.error(f"Queue poller error: {e}")
+
     def _start_manager_health_monitoring(self):
         """Start background task for manager health monitoring.
 
@@ -2438,6 +2473,9 @@ class TmuxInstanceManager:
         logger.info(
             f"Manager health monitoring started (interval={self._manager_health_check_interval}s)"
         )
+
+        # Start queue poller for delivering queued messages to idle instances
+        self._queue_poller_task = asyncio.create_task(self._queue_poller_loop())
 
     async def _manager_health_monitor_loop(self):
         """Background loop that periodically checks Manager daemon health.
@@ -2587,3 +2625,12 @@ class TmuxInstanceManager:
             except asyncio.CancelledError:
                 pass
             logger.info("Manager health monitoring stopped")
+
+        if self._queue_poller_task and not self._queue_poller_task.done():
+            logger.info("Stopping queue poller")
+            self._queue_poller_task.cancel()
+            try:
+                await self._queue_poller_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Queue poller stopped")
