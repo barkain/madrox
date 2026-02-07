@@ -871,6 +871,115 @@ worker_id = await spawn_instance(
 # Supervisor polls to retrieve - drains from response queue
 ```
 
+#### Peer-to-Peer Communication
+
+Sibling instances (instances that share the same parent) can discover and message each other directly without routing through the parent. This enables efficient lateral coordination between team members.
+
+**Discovering Peers**
+
+Use `get_peers` to find sibling instances that share the same parent:
+
+```python
+# Worker discovers its siblings
+peers = await manager.get_peers(instance_id="worker-abc123")
+
+# Returns list of sibling instances (excludes self and terminated instances)
+# [
+#   {"instance_id": "worker-def456", "name": "frontend-dev", "state": "idle"},
+#   {"instance_id": "worker-ghi789", "name": "backend-dev", "state": "busy"}
+# ]
+```
+
+**Direct Peer Messaging**
+
+After discovering peers, use `send_to_instance` to communicate directly:
+
+```python
+# Agent A discovers Agent B and sends a direct message
+peers = await manager.get_peers(instance_id="agent-a-id")
+agent_b = peers[0]["instance_id"]
+
+response = await manager.send_to_instance(
+    agent_b,
+    "I've finished the API schema. Here are the endpoint definitions you need..."
+)
+```
+
+**Automatic Message Queuing**
+
+Messages sent to busy peers are automatically queued and delivered when the peer becomes available:
+
+```python
+# Send message to a busy peer - message is queued automatically
+await manager.send_to_instance(
+    peer_id,
+    "Updated the shared config file, please reload before your next task",
+    wait_for_response=False  # Fire-and-forget, message queued if peer is busy
+)
+```
+
+**Example Workflow: Lateral Coordination**
+
+```python
+# Supervisor spawns a team of 3 workers
+supervisor_id = await manager.spawn_instance(name="supervisor", role="architect")
+
+workers = await manager.spawn_multiple_instances([
+    {"name": "api-dev", "role": "backend_developer", "parent_instance_id": supervisor_id},
+    {"name": "db-dev", "role": "backend_developer", "parent_instance_id": supervisor_id},
+    {"name": "test-dev", "role": "testing_specialist", "parent_instance_id": supervisor_id}
+])
+
+# api-dev discovers its siblings
+# Inside api-dev's execution context:
+peers = await manager.get_peers(instance_id=workers[0])
+# Returns: [db-dev, test-dev]
+
+# api-dev notifies db-dev directly about schema changes
+await manager.send_to_instance(
+    workers[1],  # db-dev
+    "I've added a new /users/preferences endpoint. Please add a preferences table with columns: user_id, key, value, updated_at"
+)
+
+# api-dev notifies test-dev directly about new endpoints
+await manager.send_to_instance(
+    workers[2],  # test-dev
+    "New endpoint ready for testing: POST /users/preferences. Accepts JSON body with key-value pairs."
+)
+```
+
+**Benefits Over Parent-Routed Communication**
+
+| Aspect | Peer-to-Peer | Parent-Routed |
+|--------|-------------|---------------|
+| **Latency** | Direct (single hop) | Indirect (two hops via parent) |
+| **Parent Load** | No parent involvement | Parent must relay messages |
+| **Scalability** | O(1) per message | Parent becomes bottleneck |
+| **Autonomy** | Workers coordinate independently | Parent coordinates all |
+| **Use Case** | Lateral coordination, shared context | Hierarchical delegation |
+
+### Madrox Monitor Dashboard
+
+The Madrox Monitor is a real-time web dashboard for visualizing and inspecting the instance network.
+
+#### Features
+
+**Real-Time Network Graph**
+- Interactive visualization of the full instance hierarchy (parent-child relationships)
+- Nodes colored by state (idle, busy, running, terminated)
+- Edges show parent-child and peer connections
+- Auto-updates via WebSocket as instances spawn or terminate
+
+**Terminal Viewers**
+- Live terminal output for any instance, powered by the `GET /instances/{instance_id}/terminal?lines=N` REST endpoint
+- View tmux pane content directly in the browser without SSH access
+- Configurable line count for scrollback depth
+
+**Access**
+- Runs on port 3002 by default
+- Start with `./start.sh` (starts both backend and dashboard) or `./start.sh --fe` (dashboard only)
+- Requires the backend server running on port 8001
+
 ### File Operations
 
 #### Workspace Isolation
@@ -1862,6 +1971,92 @@ review = await manager.send_to_instance(
     f"Review this implementation for best practices: {implementation}"
 )
 ```
+
+---
+
+## Madrox Monitor Dashboard
+
+Real-time web dashboard for monitoring and visualizing the entire Madrox instance network. Provides a graphical interface for observing instance hierarchies, live terminal output, and inter-instance communication.
+
+### Starting the Dashboard
+
+**Quick Start**
+```bash
+# Start both the Madrox server and the dashboard
+./start.sh
+
+# Or start the dashboard independently
+cd frontend && npx next dev -p 3002
+```
+
+The dashboard runs on **port 3002** by default and connects to the Madrox orchestrator API.
+
+### Features
+
+**Network Graph Visualization**
+- Interactive graph showing the full instance hierarchy and parent-child connections
+- Nodes represent instances with color-coded status indicators (idle, busy, running, terminated)
+- Edges show parent-child relationships and communication channels
+- Real-time updates as instances are spawned, terminated, or change state
+
+**Live Terminal Viewers**
+- Embedded terminal viewers for every active instance
+- Auto-refresh every 1 second with live tmux pane content
+- View exactly what each Claude/Codex instance is doing in real-time
+- Search across terminal output to find specific activity
+
+**Real-Time Updates**
+- WebSocket-based communication for instant UI updates
+- No manual refresh needed - dashboard reflects current state automatically
+- Instance state changes, new spawns, and terminations appear immediately
+
+**Interactive Controls**
+- Search and filter instances by name, role, or state
+- Theme toggle between light and dark modes
+- Drag-to-reorder terminal panels for custom layouts
+- Click on network graph nodes to focus on specific instances
+
+### Architecture
+
+```
+Browser (port 3002)
+    ↓ WebSocket
+Next.js Frontend
+    ↓ REST API
+Madrox Orchestrator (port 8001)
+    ↓ tmux
+Claude/Codex Instances
+```
+
+**Components:**
+
+- **Next.js Frontend**: React-based dashboard with real-time data fetching
+- **WebSocket Layer**: Pushes state changes to connected clients without polling
+- **REST API Integration**: Queries Madrox orchestrator for instance status, hierarchy, and terminal content
+- **Network Graph**: D3.js-based force-directed graph for hierarchy visualization
+
+### Usage Examples
+
+**Monitoring a Team Build**
+
+```bash
+# Terminal 1: Start Madrox server
+python run_orchestrator.py
+
+# Terminal 2: Start dashboard
+cd frontend && npx next dev -p 3002
+
+# Terminal 3: Spawn instances via Claude Code
+# Dashboard automatically shows new instances as they appear
+```
+
+**Debugging Instance Communication**
+
+Open the dashboard at `http://localhost:3002` to:
+1. View the network graph to understand the instance hierarchy
+2. Click on any instance node to view its live terminal output
+3. Search terminal content for specific messages or errors
+4. Observe message flow between parent and child instances in real-time
 
 ---
 

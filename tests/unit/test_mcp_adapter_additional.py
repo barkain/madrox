@@ -387,11 +387,10 @@ class TestBatchOperationsErrorHandling:
             "params": {
                 "name": "send_to_multiple_instances",
                 "arguments": {
-                    "messages": [
-                        {"instance_id": "inst-1", "message": "Task 1"},
-                        {"instance_id": "inst-2", "message": "Task 2"},
-                        {"instance_id": "inst-3", "message": "Task 3"},
-                    ]
+                    "instance_ids": ["inst-1", "inst-2", "inst-3"],
+                    "message": "Task for all",
+                    "wait_for_responses": False,
+                    "timeout_seconds": 180,
                 },
             },
             "id": 8,

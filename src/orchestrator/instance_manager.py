@@ -266,9 +266,13 @@ class InstanceManager:
         # Apply since filter if provided
         if since:
             since_dt = datetime.fromisoformat(since)
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=UTC)
             # Note: In a real implementation, we'd track timestamps per message
             # For now, we can only filter based on the last activity
             last_activity = datetime.fromisoformat(instance["last_activity"])
+            if last_activity.tzinfo is None:
+                last_activity = last_activity.replace(tzinfo=UTC)
             if last_activity < since_dt:
                 return {"instance_id": instance_id, "output": []}
 
@@ -318,7 +322,11 @@ class InstanceManager:
         # Apply since filter if provided
         if since:
             since_dt = datetime.fromisoformat(since)
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=UTC)
             last_activity = datetime.fromisoformat(instance["last_activity"])
+            if last_activity.tzinfo is None:
+                last_activity = last_activity.replace(tzinfo=UTC)
             if last_activity < since_dt:
                 return []
 
@@ -1023,8 +1031,18 @@ Begin execution now. Spawn your team and start the workflow."""
         """
         children = []
 
-        # First, check active instances in memory
-        for instance_id, instance in self.instances.items():
+        # Merge local instances with shared state (STDIO children)
+        all_instances = dict(self.instances)
+        if hasattr(self, "shared_state_manager") and self.shared_state_manager:
+            try:
+                for iid, metadata in self.shared_state_manager.instance_metadata.items():
+                    if iid not in all_instances:
+                        all_instances[iid] = dict(metadata)
+            except Exception as e:
+                logger.warning(f"Failed to read shared instance metadata in get_children: {e}")
+
+        # Check all instances (local + shared)
+        for instance_id, instance in all_instances.items():
             is_child = instance.get("parent_instance_id") == parent_id
             include = is_child and (include_terminated or instance.get("state") != "terminated")
             if include:
@@ -1085,6 +1103,71 @@ Begin execution now. Spawn your team and start the workflow."""
             List of child instance details (excludes terminated instances)
         """
         return self._get_children_internal(parent_id)
+
+    def _get_peers_internal(
+        self, instance_id: str, include_self: bool = False
+    ) -> list[dict[str, Any]]:
+        """Internal method to get all peer instances (siblings sharing the same parent).
+
+        Args:
+            instance_id: The instance whose peers to find
+            include_self: If True, include the requesting instance in results
+
+        Returns:
+            List of peer instance details (excludes terminated instances)
+        """
+        # Merge local instances with shared state (STDIO children)
+        all_instances = dict(self.instances)
+        if hasattr(self, "shared_state_manager") and self.shared_state_manager:
+            try:
+                for iid, metadata in self.shared_state_manager.instance_metadata.items():
+                    if iid not in all_instances:
+                        all_instances[iid] = dict(metadata)
+            except Exception as e:
+                logger.warning(f"Failed to read shared instance metadata in get_peers: {e}")
+
+        instance = all_instances.get(instance_id)
+        if not instance:
+            return []
+
+        parent_id = instance.get("parent_instance_id")
+        if not parent_id:
+            return []
+
+        peers = []
+        for iid, inst in all_instances.items():
+            if inst.get("parent_instance_id") != parent_id:
+                continue
+            if inst.get("state") == "terminated":
+                continue
+            if not include_self and iid == instance_id:
+                continue
+            peers.append(
+                {
+                    "id": iid,
+                    "name": inst.get("name"),
+                    "role": inst.get("role"),
+                    "state": inst.get("state"),
+                    "instance_type": inst.get("instance_type"),
+                }
+            )
+        return peers
+
+    @mcp.tool
+    def get_peers(self, instance_id: str) -> list[dict[str, Any]]:
+        """Get all peer instances (siblings that share the same parent).
+
+        Use this to discover teammates for direct peer-to-peer communication.
+        After discovering peers, use send_to_instance(instance_id=peer_id, message='...')
+        to message them directly.
+
+        Args:
+            instance_id: Your own instance ID
+
+        Returns:
+            List of peer instance details (excludes terminated instances and self)
+        """
+        return self._get_peers_internal(instance_id)
 
     @mcp.tool
     async def broadcast_to_children(

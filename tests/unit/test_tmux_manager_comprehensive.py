@@ -592,7 +592,7 @@ class TestInstanceLifecycle:
         # Assert
         assert instance_id in tmux_manager.instances
         assert tmux_manager.instances[instance_id]["name"] == "test-instance"
-        assert tmux_manager.instances[instance_id]["state"] == "running"
+        assert tmux_manager.instances[instance_id]["state"] == "idle"
 
     @pytest.mark.asyncio
     async def test_spawn_instance_with_system_prompt(self, tmux_manager):
@@ -661,7 +661,7 @@ class TestInstanceLifecycle:
         """Test instance state transitions through lifecycle."""
         # Spawn
         instance_id = await tmux_manager.spawn_instance(name="lifecycle-test")
-        assert tmux_manager.instances[instance_id]["state"] == "running"
+        assert tmux_manager.instances[instance_id]["state"] == "idle"
 
         # Update to busy
         tmux_manager.instances[instance_id]["state"] = "busy"

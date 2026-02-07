@@ -96,6 +96,11 @@ class ClaudeOrchestratorServer:
         # Track server start time for session-only audit logs (use local time to match audit log timestamps)
         self.server_start_time = datetime.now().isoformat()
 
+        # WebSocket connection tracking for rate limiting
+        self.max_ws_connections = int(os.getenv("MAX_WS_CONNECTIONS", "100"))
+        self.active_ws_connections = 0
+        self._ws_connection_lock = asyncio.Lock()
+
         # Initialize FastAPI app
         self.app = FastAPI(
             title="Claude Conversational Orchestrator",
@@ -104,13 +109,43 @@ class ClaudeOrchestratorServer:
         )
 
         # Add CORS middleware
+        # Production-ready CORS configuration
+        cors_origins = [
+            os.getenv("FRONTEND_URL", "http://localhost:3000"),
+            "http://localhost:3000",  # Development
+            "http://localhost:3002",  # Madrox Monitor dashboard
+        ]
+        # Add production domain if specified
+        prod_domain = os.getenv("PRODUCTION_DOMAIN")
+        if prod_domain:
+            cors_origins.append(f"https://{prod_domain}")
+            cors_origins.append(f"http://{prod_domain}")
+
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=cors_origins,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+        # Add request logging middleware
+        @self.app.middleware("http")
+        async def log_requests(request, call_next):
+            """Log all HTTP requests with timing information."""
+            import time
+
+            start_time = time.time()
+            response = await call_next(request)
+            process_time = time.time() - start_time
+
+            logger.info(
+                f"{request.method} {request.url.path} "
+                f"status={response.status_code} "
+                f"duration={process_time:.3f}s"
+            )
+
+            return response
 
         # Mount MCP adapter before registering additional routes
         self.mcp_adapter = MCPAdapter(self.instance_manager)
@@ -161,8 +196,21 @@ class ClaudeOrchestratorServer:
         @self.app.websocket("/ws/monitor")
         async def monitor_websocket(websocket: WebSocket):
             """WebSocket endpoint for real-time monitoring."""
+            # Check connection limit before accepting
+            async with self._ws_connection_lock:
+                if self.active_ws_connections >= self.max_ws_connections:
+                    await websocket.close(code=1008, reason="Connection limit reached")
+                    logger.warning(
+                        f"WebSocket connection rejected: limit reached ({self.max_ws_connections})"
+                    )
+                    return
+                self.active_ws_connections += 1
+
             await websocket.accept()
-            logger.info("WebSocket client connected to /ws/monitor")
+            logger.info(
+                f"WebSocket client connected to /ws/monitor "
+                f"(active: {self.active_ws_connections}/{self.max_ws_connections})"
+            )
 
             try:
                 # Send initial state with instances (exclude terminated)
@@ -338,6 +386,14 @@ class ClaudeOrchestratorServer:
                     await websocket.close()
                 except Exception:
                     pass
+            finally:
+                # Decrement connection count on disconnect
+                async with self._ws_connection_lock:
+                    self.active_ws_connections -= 1
+                logger.info(
+                    f"WebSocket connection closed "
+                    f"(active: {self.active_ws_connections}/{self.max_ws_connections})"
+                )
 
         def transform_audit_log(audit_entry: dict[str, Any]) -> dict[str, Any]:
             """Transform backend audit log format to frontend format."""
@@ -353,8 +409,21 @@ class ClaudeOrchestratorServer:
         @self.app.websocket("/ws/logs")
         async def logs_websocket(websocket: WebSocket):
             """WebSocket endpoint for dual-panel logging system (system + audit logs)."""
+            # Check connection limit before accepting
+            async with self._ws_connection_lock:
+                if self.active_ws_connections >= self.max_ws_connections:
+                    await websocket.close(code=1008, reason="Connection limit reached")
+                    logger.warning(
+                        f"WebSocket connection rejected: limit reached ({self.max_ws_connections})"
+                    )
+                    return
+                self.active_ws_connections += 1
+
             await websocket.accept()
-            logger.info("WebSocket client connected to /ws/logs")
+            logger.info(
+                f"WebSocket client connected to /ws/logs "
+                f"(active: {self.active_ws_connections}/{self.max_ws_connections})"
+            )
 
             # Register this client with both system and audit log stream handlers
             log_handler = get_log_stream_handler()
@@ -427,6 +496,13 @@ class ClaudeOrchestratorServer:
             finally:
                 log_handler.remove_client(websocket)
                 audit_log_handler.remove_client(websocket)
+                # Decrement connection count on disconnect
+                async with self._ws_connection_lock:
+                    self.active_ws_connections -= 1
+                logger.info(
+                    f"WebSocket connection closed "
+                    f"(active: {self.active_ws_connections}/{self.max_ws_connections})"
+                )
 
         # MCP Protocol endpoints
         @self.app.get("/tools")
@@ -686,6 +762,22 @@ class ClaudeOrchestratorServer:
                 }
             except ValueError as e:
                 raise HTTPException(status_code=404, detail=str(e)) from e
+
+        @self.app.get("/instances/{instance_id}/terminal")
+        async def get_terminal_content(instance_id: str, lines: int = 1000):
+            """Get tmux pane content for an instance (terminal output)."""
+            # Clamp lines to a safe range
+            lines = max(1, min(lines, 10000))
+            try:
+                content = await self.instance_manager.tmux_manager.get_tmux_pane_content(
+                    instance_id, lines=lines
+                )
+                return {"instance_id": instance_id, "content": content}
+            except Exception as e:
+                logger.warning(f"Terminal fetch failed for {instance_id}: {e}")
+                raise HTTPException(
+                    status_code=404, detail="Instance not found or terminal unavailable"
+                ) from e
 
         @self.app.get("/logs/audit")
         async def get_audit_logs(

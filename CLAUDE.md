@@ -41,6 +41,19 @@ MADROX_TRANSPORT=stdio python run_orchestrator.py
 # env = { MADROX_TRANSPORT = "stdio" }
 ```
 
+**Quick Start with start.sh:**
+```bash
+# Start both backend (port 8001) and frontend dashboard (port 3002)
+./start.sh
+
+# Start only the backend
+./start.sh --be
+
+# Start only the frontend
+./start.sh --fe
+```
+Note: When backgrounding the backend, set `MADROX_TRANSPORT=http` to prevent STDIO auto-detection.
+
 **Transport Auto-Detection:**
 - Terminal input (stdin.isatty()) → HTTP server on port 8001
 - Piped input → STDIO server for MCP protocol
@@ -165,6 +178,17 @@ Real-time instance monitoring endpoint:
 - **Use Case**: Monitor long-running operations, track instance uptime
 - **Note**: Tool-level details require `get_tmux_pane_content()` for terminal inspection
 
+### Terminal REST Endpoint
+
+- **Endpoint**: `GET /instances/{instance_id}/terminal?lines=N`
+- **Returns**: Raw tmux pane content for the instance
+- **Use Case**: Used by the Madrox Monitor dashboard's terminal viewer
+
+### Instance Communication
+
+- **Parent-child**: Parent spawns children and communicates via `send_to_instance` / `reply_to_caller`
+- **Peer discovery**: `get_peers` allows sibling instances (same parent) to discover each other for direct peer-to-peer messaging without routing through the parent
+
 ### Coordination Patterns
 
 Three coordination types supported:
@@ -187,6 +211,11 @@ Environment variables:
 **Transport Modes:**
 - **HTTP/SSE**: Used by Claude Code clients, provides web UI and REST API
 - **STDIO**: Used by Codex CLI clients, MCP protocol over stdin/stdout
+
+**Dashboard (Madrox Monitor):**
+- Runs on port 3002 (started via `./start.sh` or `./start.sh --fe`)
+- Provides real-time network graph visualization of instance hierarchy
+- Includes terminal viewers for each instance
 
 Note: ANTHROPIC_API_KEY is no longer required as the system now spawns Claude Code CLI processes that use the user's existing Claude authentication.
 

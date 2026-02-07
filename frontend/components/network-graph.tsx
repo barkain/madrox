@@ -1,12 +1,11 @@
 "use client"
 
-import { useEffect, useCallback, useState } from "react"
+import { useEffect, useCallback } from "react"
 import {
   ReactFlow,
   ReactFlowProvider,
   type Node,
   type Edge,
-  Background,
   Controls,
   MiniMap,
   useNodesState,
@@ -16,14 +15,202 @@ import {
   ControlButton,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { RotateCcw } from "lucide-react"
+import { RotateCcw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react"
 import { hierarchy, tree } from "d3-hierarchy"
+import { useTheme } from "next-themes"
 import { AgentNode } from "./agent-node"
 import type { AgentInstance, MessageFlow } from "@/types"
 
 const nodeTypes = {
   agent: AgentNode,
 }
+
+// Custom CSS for React Flow controls and minimap with glass morphism
+const customStyles = `
+  /* Glass morphism controls panel */
+  .react-flow__controls {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(255, 255, 255, 0.05) 100%
+    ) !important;
+    backdrop-filter: blur(20px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    border-radius: 16px !important;
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.12),
+      0 0 0 1px rgba(var(--primary-rgb), 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+    overflow: hidden !important;
+    padding: 6px !important;
+  }
+
+  /* Dark mode overrides - FORCE visibility */
+  .dark .react-flow__controls {
+    background: rgba(30, 41, 59, 0.95) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  .dark .react-flow__controls-button {
+    background: rgba(30, 41, 59, 0.9) !important;
+    color: rgba(255, 255, 255, 0.95) !important;
+    fill: rgba(255, 255, 255, 0.95) !important;
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  .dark .react-flow__controls-button:hover {
+    background: rgba(51, 65, 85, 1) !important;
+    color: white !important;
+    fill: white !important;
+  }
+
+  .dark .react-flow__controls-button svg {
+    fill: rgba(255, 255, 255, 0.95) !important;
+    stroke: rgba(255, 255, 255, 0.95) !important;
+  }
+
+  .dark .react-flow__controls-button:hover svg {
+    fill: white !important;
+    stroke: white !important;
+  }
+
+  .react-flow__controls-button {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 10px !important;
+    width: 36px !important;
+    height: 36px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: rgba(30, 41, 59, 0.9) !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    position: relative !important;
+  }
+
+  .react-flow__controls-button::before {
+    content: '' !important;
+    position: absolute !important;
+    inset: 0 !important;
+    border-radius: 10px !important;
+    background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-rgb), 0.05)) !important;
+    opacity: 0 !important;
+    transition: opacity 0.25s ease !important;
+  }
+
+  .react-flow__controls-button:hover {
+    color: hsl(var(--primary)) !important;
+    transform: scale(1.08) translateY(-1px) !important;
+    text-shadow: 0 0 12px rgba(var(--primary-rgb), 0.5) !important;
+  }
+
+  .react-flow__controls-button:hover::before {
+    opacity: 1 !important;
+  }
+
+  .react-flow__controls-button:active {
+    transform: scale(0.95) translateY(0) !important;
+  }
+
+  .react-flow__controls-button svg {
+    width: 18px !important;
+    height: 18px !important;
+    fill: currentColor !important;
+    position: relative !important;
+    z-index: 1 !important;
+  }
+
+  /* Glass morphism minimap */
+  .react-flow__minimap {
+    background: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.12) 0%,
+      rgba(255, 255, 255, 0.05) 100%
+    ) !important;
+    backdrop-filter: blur(24px) saturate(200%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(200%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 16px !important;
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.15),
+      0 0 0 1px rgba(var(--primary-rgb), 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+    overflow: hidden !important;
+  }
+
+  .dark .react-flow__minimap {
+    background: linear-gradient(
+      145deg,
+      rgba(30, 30, 40, 0.85) 0%,
+      rgba(15, 15, 25, 0.7) 100%
+    ) !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(var(--primary-rgb), 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+  }
+
+  .react-flow__minimap-mask {
+    fill: rgba(var(--primary-rgb), 0.12) !important;
+    stroke: rgba(var(--primary-rgb), 0.4) !important;
+    stroke-width: 1.5px !important;
+    filter: drop-shadow(0 0 4px rgba(var(--primary-rgb), 0.3)) !important;
+  }
+
+  /* Edge animation for active connections */
+  @keyframes edge-flow {
+    0% {
+      stroke-dashoffset: 24;
+    }
+    100% {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes edge-glow {
+    0%, 100% {
+      filter: drop-shadow(0 0 3px rgba(var(--primary-rgb), 0.4));
+    }
+    50% {
+      filter: drop-shadow(0 0 8px rgba(var(--primary-rgb), 0.6));
+    }
+  }
+
+  .react-flow__edge-path.animated {
+    animation: edge-flow 1s linear infinite, edge-glow 2s ease-in-out infinite !important;
+  }
+
+  /* Gradient edge definitions and styling */
+  .react-flow__edges {
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+  }
+
+  .react-flow__edge-path {
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+  }
+
+  /* Make React Flow transparent for aurora background */
+  .react-flow__background {
+    display: none !important;
+  }
+
+  .react-flow__pane {
+    background: transparent !important;
+  }
+
+  .react-flow__viewport {
+    background: transparent !important;
+  }
+
+  /* Panel background with gradient overlay */
+  .react-flow__panel {
+    transition: all 0.3s ease !important;
+  }
+`
 
 interface NetworkGraphProps {
   instances: AgentInstance[]
@@ -225,12 +412,12 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
         type: "smoothstep",
         animated: instance.status === "running",
         style: {
-          stroke: instance.status === "running" ? "var(--color-primary)" : "var(--color-border)",
-          strokeWidth: 2,
+          stroke: instance.status === "running" ? "#60a5fa" : "rgba(148, 163, 184, 0.6)",
+          strokeWidth: 2.5,
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: instance.status === "running" ? "var(--color-primary)" : "var(--color-border)",
+          color: instance.status === "running" ? "#60a5fa" : "rgba(148, 163, 184, 0.6)",
         },
       }))
 
@@ -259,7 +446,12 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
 
     setNodes(newNodes)
     setEdges(newEdges)
-  }, [instances, messageFlows, setNodes, setEdges])
+
+    // Fit view after layout updates
+    setTimeout(() => {
+      fitView({ padding: 0.2, duration: 300, maxZoom: 0.6 })
+    }, 100)
+  }, [instances, messageFlows, setNodes, setEdges, fitView])
 
   return (
     <ReactFlow
@@ -271,11 +463,10 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
       nodeTypes={nodeTypes}
       fitView
       fitViewOptions={{ padding: 0.2, maxZoom: 0.6 }}
-      defaultViewport={{ x: 0, y: 0, zoom: 0.5 }}
       minZoom={0.1}
       maxZoom={2}
+      style={{ background: 'transparent' }}
     >
-      <Background color="var(--color-border)" gap={16} />
       <Controls className="bg-card border-border" position="top-left">
         <ControlButton onClick={resetLayout} title="Reset Layout">
           <RotateCcw className="w-4 h-4" />
@@ -300,7 +491,8 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
 
 export function NetworkGraph({ instances, messageFlows, onNodeClick }: NetworkGraphProps) {
   return (
-    <div className="w-full h-full bg-background">
+    <div className="w-full h-full bg-transparent">
+      <style>{customStyles}</style>
       <ReactFlowProvider>
         <NetworkGraphInner instances={instances} messageFlows={messageFlows} onNodeClick={onNodeClick} />
       </ReactFlowProvider>

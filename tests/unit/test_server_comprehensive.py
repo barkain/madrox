@@ -864,11 +864,11 @@ class TestLogsWebSocket:
 class TestCORSMiddleware:
     """Test CORS middleware configuration."""
 
-    def test_cors_allows_all_origins(self, client):
-        """Test that CORS allows all origins."""
-        response = client.get("/health", headers={"Origin": "http://example.com"})
+    def test_cors_allows_configured_origins(self, client):
+        """Test that CORS allows configured origins."""
+        response = client.get("/health", headers={"Origin": "http://localhost:3000"})
         assert response.status_code == 200
-        assert response.headers.get("access-control-allow-origin") == "*"
+        assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
 
     def test_cors_allows_credentials(self, client):
         """Test that CORS allows credentials."""

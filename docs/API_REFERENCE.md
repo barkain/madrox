@@ -18,6 +18,7 @@ Complete technical reference for Madrox MCP tools, HTTP endpoints, configuration
   - [Network Hierarchy](#network-hierarchy)
   - [Monitoring & Summaries](#monitoring--summaries)
   - [Log Streaming](#log-streaming)
+  - [Terminal Output](#terminal-output)
 - [Configuration](#configuration)
   - [Server Configuration](#server-configuration)
   - [Instance Configuration](#instance-configuration)
@@ -1093,6 +1094,69 @@ Get list of child instances for a parent.
 
 ---
 
+#### get_peers
+
+Get all peer instances (siblings that share the same parent). Use this to discover teammates for direct peer-to-peer communication. After discovering peers, use `send_to_instance` to message them directly.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `instance_id` | string | Yes | Your own instance ID |
+
+**Returns:**
+
+```json
+{
+  "instance_id": "worker-1",
+  "peers": [
+    {
+      "id": "worker-2",
+      "name": "frontend-dev",
+      "role": "frontend_developer",
+      "state": "running"
+    },
+    {
+      "id": "worker-3",
+      "name": "backend-dev",
+      "role": "backend_developer",
+      "state": "idle"
+    }
+  ],
+  "count": 2
+}
+```
+
+**Behavior:**
+
+- Returns siblings sharing the same `parent_instance_id`
+- Excludes terminated instances
+- Excludes the calling instance itself (self)
+- Returns empty list if instance has no parent or no peers
+
+**Use Cases:**
+
+- Peer-to-peer discovery for direct communication
+- Coordinating work between sibling instances
+- Finding available teammates for task delegation
+
+**Example:**
+
+```python
+# Discover peers
+peers = await get_peers(instance_id="worker-1")
+
+# Message a specific peer directly
+for peer in peers["peers"]:
+    if peer["role"] == "qa_engineer":
+        await send_to_instance(
+            instance_id=peer["id"],
+            message="Please review the code I just committed"
+        )
+```
+
+---
+
 ### Status & Monitoring
 
 #### get_agent_summary
@@ -1764,6 +1828,49 @@ Get communication logs for instance (structured JSON format).
 
 ```bash
 curl "http://localhost:8001/logs/communication/9e240be1-3989-47a1-b3a0-59a616d7923f"
+```
+
+---
+
+### Terminal Output
+
+#### GET /instances/{instance_id}/terminal
+
+Get raw tmux pane content for an instance. Useful for inspecting the current terminal state of a running instance.
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `instance_id` | string | Yes | Instance UUID |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `lines` | integer | `1000` | Number of lines to capture from the tmux pane |
+
+**Response:**
+
+```json
+{
+  "instance_id": "9e240be1-3989-47a1-b3a0-59a616d7923f",
+  "content": "Claude > I'll analyze the codebase now...\n\n..."
+}
+```
+
+**Error Response (404):**
+
+```json
+{
+  "detail": "Instance not found: {instance_id}"
+}
+```
+
+**Example:**
+
+```bash
+curl "http://localhost:8001/instances/9e240be1-3989-47a1-b3a0-59a616d7923f/terminal?lines=500" | jq
 ```
 
 ---

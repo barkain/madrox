@@ -9,8 +9,9 @@ limitation of asyncio.Queue which is local to a single process.
 """
 
 import logging
+from collections import deque
 from datetime import UTC, datetime, timedelta
-from multiprocessing import Lock, Manager, Queue
+from multiprocessing import Manager, Queue
 from multiprocessing.managers import DictProxy
 from typing import Any
 
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 # SECURITY FIX (CWE-770): Message retention policy to prevent unbounded memory growth
 MESSAGE_RETENTION_HOURS = 24  # Keep messages for 24 hours
 MAX_MESSAGES_PER_INSTANCE = 1000  # Max messages to keep per instance
+MAX_INCOMING_QUEUE_SIZE = 100  # Max queued messages per busy instance
 
 
 # SECURITY FIX (CWE-532): Helper function to redact authkeys in logs
@@ -85,10 +87,16 @@ class SharedStateManager:
 
             if has_tcp_address or has_unix_socket:
                 # Child process: connect to parent's Manager daemon
+                # Type guard: manager_authkey_b64 is guaranteed non-None here
+                if manager_authkey_b64 is None:
+                    raise ValueError("manager_authkey_b64 is required for child connection")
                 manager_authkey = base64.b64decode(manager_authkey_b64)
 
+                manager_address: tuple[str, int] | str
                 if has_tcp_address:
-                    # TCP connection
+                    # TCP connection - type guards for required values
+                    if manager_host is None or manager_port_str is None:
+                        raise ValueError("manager_host and manager_port_str required for TCP")
                     manager_port = int(manager_port_str)
                     manager_address = (manager_host, manager_port)
                     logger.info(
@@ -96,6 +104,8 @@ class SharedStateManager:
                     )
                 else:
                     # Unix socket connection
+                    if manager_socket is None:
+                        raise ValueError("manager_socket required for Unix socket connection")
                     manager_address = manager_socket
                     logger.info(
                         f"Connecting to parent Manager daemon at {manager_socket} (Unix socket)"
@@ -119,14 +129,15 @@ class SharedStateManager:
                 logger.info("Successfully connected to parent Manager daemon")
             else:
                 # Parent process: create new Manager daemon
-                self.manager: Manager = Manager()
+                self.manager = Manager()
                 self.is_child_connection = False
                 logger.info("Multiprocessing Manager daemon started (parent)")
 
             # Store connection details for child processes
             # The Manager's address is available via _address attribute
-            self.manager_address = self.manager._address
-            self.manager_authkey = self.manager._authkey
+            # These are internal attributes not in type stubs but valid at runtime
+            self.manager_address = self.manager._address  # type: ignore[union-attr]
+            self.manager_authkey = self.manager._authkey  # type: ignore[union-attr]
 
             # SECURITY FIX (CWE-532): Redact authkey in logs, don't expose raw value
             address_type = "unix_socket" if isinstance(self.manager_address, str) else "tcp"
@@ -139,11 +150,12 @@ class SharedStateManager:
             self.response_queues: dict[str, Queue] = {}
 
             # Shared dicts for state synchronization
-            self.message_registry: DictProxy = self.manager.dict()
-            self.instance_metadata: DictProxy = self.manager.dict()
+            # Manager.dict() is valid but not in type stubs for all Manager variants
+            self.message_registry: DictProxy = self.manager.dict()  # type: ignore[union-attr]
+            self.instance_metadata: DictProxy = self.manager.dict()  # type: ignore[union-attr]
 
-            # Locks for thread-safe operations (instance_id -> Lock)
-            self.queue_locks: dict[str, Lock] = {}
+            # Locks for thread-safe operations (instance_id -> manager Lock proxy)
+            self.queue_locks: dict[str, Any] = {}
 
             logger.info("SharedStateManager initialized successfully")
         except Exception as e:
@@ -174,15 +186,15 @@ class SharedStateManager:
                 )
                 return self.response_queues[instance_id]
 
-            # Create queue and lock
-            queue = self.manager.Queue(maxsize=maxsize)
-            lock = self.manager.Lock()
+            # Create queue and lock (manager methods are dynamic, not in type stubs)
+            queue: Queue[Any] = self.manager.Queue(maxsize=maxsize)  # type: ignore[union-attr]
+            lock = self.manager.Lock()  # type: ignore[union-attr]
 
             self.response_queues[instance_id] = queue
             self.queue_locks[instance_id] = lock
 
             logger.info(f"Created response queue for instance {instance_id} (maxsize={maxsize})")
-            return queue
+            return queue  # type: ignore[return-value]
         except Exception as e:
             logger.error(f"Failed to create response queue for {instance_id}: {e}")
             raise
@@ -591,13 +603,15 @@ class SharedStateManager:
 
         try:
             # Test 1: Check if manager is still running
-            if not hasattr(self.manager, "_process") or self.manager._process is None:
+            # Access _process attribute (internal, not in type stubs)
+            manager_process = getattr(self.manager, "_process", None)
+            if manager_process is None:
                 health_result["error"] = "Manager process object not found"
                 return health_result
 
             # Check if the manager process is alive
-            if hasattr(self.manager._process, "is_alive"):
-                is_alive = self.manager._process.is_alive()
+            if hasattr(manager_process, "is_alive"):
+                is_alive = manager_process.is_alive()
                 health_result["manager_alive"] = is_alive
                 if not is_alive:
                     health_result["error"] = "Manager daemon process is dead"
@@ -608,7 +622,7 @@ class SharedStateManager:
 
             # Test 2: Create a test queue (tests Manager responsiveness)
             try:
-                test_queue = self.manager.Queue(maxsize=10)
+                test_queue = self.manager.Queue(maxsize=10)  # type: ignore[union-attr]
                 health_result["test_queue_created"] = True
             except Exception as e:
                 health_result["error"] = f"Failed to create test queue: {e}"
@@ -684,17 +698,93 @@ class SharedStateManager:
             True if manager process is alive, False otherwise
         """
         try:
-            if not hasattr(self.manager, "_process") or self.manager._process is None:
+            # Access _process attribute (internal, not in type stubs)
+            manager_process = getattr(self.manager, "_process", None)
+            if manager_process is None:
                 return False
 
-            if hasattr(self.manager._process, "is_alive"):
-                return self.manager._process.is_alive()
+            if hasattr(manager_process, "is_alive"):
+                return manager_process.is_alive()
 
             # Fallback: assume alive if we can't check
             return True
         except Exception as e:
             logger.error(f"Error checking manager process status: {e}")
             return False
+
+    # =========================================================================
+    # Incoming Message Queue for Busy Agents
+    # =========================================================================
+
+    def queue_message(
+        self,
+        instance_id: str,
+        message: str,
+        message_id: str,
+        sender_id: str | None = None,
+    ) -> None:
+        """Queue a message for a busy instance to be delivered when idle.
+
+        Args:
+            instance_id: Target instance ID
+            message: Message content
+            message_id: Unique message identifier
+            sender_id: Optional sender instance ID
+        """
+        if not hasattr(self, "_incoming_queues"):
+            self._incoming_queues: dict[str, deque[dict[str, Any]]] = {}
+
+        if instance_id not in self._incoming_queues:
+            self._incoming_queues[instance_id] = deque(maxlen=MAX_INCOMING_QUEUE_SIZE)
+
+        queued_msg = {
+            "message": message,
+            "message_id": message_id,
+            "sender_id": sender_id,
+            "queued_at": datetime.now(UTC).isoformat(),
+        }
+        self._incoming_queues[instance_id].append(queued_msg)
+        logger.info(
+            f"Queued message {message_id} for busy instance {instance_id} "
+            f"(queue depth: {len(self._incoming_queues[instance_id])})"
+        )
+
+    def get_queued_messages(self, instance_id: str) -> list[dict[str, Any]]:
+        """Get and clear all queued messages for an instance.
+
+        Args:
+            instance_id: Instance ID to get messages for
+
+        Returns:
+            List of queued message dicts, empty if none
+        """
+        if not hasattr(self, "_incoming_queues"):
+            return []
+
+        if instance_id not in self._incoming_queues:
+            return []
+
+        messages = list(self._incoming_queues[instance_id])
+        self._incoming_queues[instance_id].clear()
+
+        if messages:
+            logger.info(f"Retrieved {len(messages)} queued messages for instance {instance_id}")
+
+        return messages
+
+    def has_queued_messages(self, instance_id: str) -> bool:
+        """Check if an instance has queued messages.
+
+        Args:
+            instance_id: Instance ID to check
+
+        Returns:
+            True if there are queued messages, False otherwise
+        """
+        if not hasattr(self, "_incoming_queues"):
+            return False
+
+        return bool(self._incoming_queues.get(instance_id))
 
     def __repr__(self) -> str:
         """String representation of SharedStateManager."""

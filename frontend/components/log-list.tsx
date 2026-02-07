@@ -134,25 +134,25 @@ export function LogList({ logs, filters, autoScroll, type }: LogListProps) {
     <ScrollArea className="flex-1" ref={scrollRef}>
       <div className="px-2 py-1">
         {/* Column Headers */}
-        <div className="flex items-center gap-2 py-1.5 px-2 text-xs font-semibold text-muted-foreground border-b-2 border-border sticky top-0 bg-background z-10 min-w-max">
+        <div className="flex items-center gap-2 py-2 px-3 text-xs font-semibold text-slate-400 border-b border-white/10 sticky top-0 bg-slate-900/95 backdrop-blur-sm z-10 min-w-max">
           <div className="flex-shrink-0 relative" style={{ width: `${columnWidths.timestamp}px` }}>
             Timestamp
             <div
-              className="absolute right-0 top-0 bottom-0 w-px bg-border hover:bg-primary cursor-col-resize hover:w-1 transition-all"
+              className="absolute right-0 top-0 bottom-0 w-px bg-white/10 hover:bg-blue-400 cursor-col-resize hover:w-1 hover:shadow-[0_0_8px_rgba(96,165,250,0.5)] transition-all duration-200"
               onMouseDown={() => setResizingColumn("timestamp")}
             />
           </div>
           <div className="flex-shrink-0 text-center relative" style={{ width: `${columnWidths.level}px` }}>
             Level
             <div
-              className="absolute right-0 top-0 bottom-0 w-px bg-border hover:bg-primary cursor-col-resize hover:w-1 transition-all"
+              className="absolute right-0 top-0 bottom-0 w-px bg-white/10 hover:bg-blue-400 cursor-col-resize hover:w-1 hover:shadow-[0_0_8px_rgba(96,165,250,0.5)] transition-all duration-200"
               onMouseDown={() => setResizingColumn("level")}
             />
           </div>
           <div className="flex-shrink-0 relative" style={{ width: `${columnWidths.logger}px` }}>
             Logger
             <div
-              className="absolute right-0 top-0 bottom-0 w-px bg-border hover:bg-primary cursor-col-resize hover:w-1 transition-all"
+              className="absolute right-0 top-0 bottom-0 w-px bg-white/10 hover:bg-blue-400 cursor-col-resize hover:w-1 hover:shadow-[0_0_8px_rgba(96,165,250,0.5)] transition-all duration-200"
               onMouseDown={() => setResizingColumn("logger")}
             />
           </div>
@@ -161,14 +161,14 @@ export function LogList({ logs, filters, autoScroll, type }: LogListProps) {
               <div className="flex-shrink-0 relative" style={{ width: `${columnWidths.module}px` }}>
                 Module
                 <div
-                  className="absolute right-0 top-0 bottom-0 w-px bg-border hover:bg-primary cursor-col-resize hover:w-1 transition-all"
+                  className="absolute right-0 top-0 bottom-0 w-px bg-white/10 hover:bg-blue-400 cursor-col-resize hover:w-1 hover:shadow-[0_0_8px_rgba(96,165,250,0.5)] transition-all duration-200"
                   onMouseDown={() => setResizingColumn("module")}
                 />
               </div>
               <div className="flex-shrink-0 relative" style={{ width: `${columnWidths.functionLine}px` }}>
                 Function:Line
                 <div
-                  className="absolute right-0 top-0 bottom-0 w-px bg-border hover:bg-primary cursor-col-resize hover:w-1 transition-all"
+                  className="absolute right-0 top-0 bottom-0 w-px bg-white/10 hover:bg-blue-400 cursor-col-resize hover:w-1 hover:shadow-[0_0_8px_rgba(96,165,250,0.5)] transition-all duration-200"
                   onMouseDown={() => setResizingColumn("functionLine")}
                 />
               </div>
@@ -177,7 +177,7 @@ export function LogList({ logs, filters, autoScroll, type }: LogListProps) {
             <div className="flex-shrink-0 relative" style={{ width: `${columnWidths.action}px` }}>
               Action
               <div
-                className="absolute right-0 top-0 bottom-0 w-px bg-border hover:bg-primary cursor-col-resize hover:w-1 transition-all"
+                className="absolute right-0 top-0 bottom-0 w-px bg-white/10 hover:bg-blue-400 cursor-col-resize hover:w-1 hover:shadow-[0_0_8px_rgba(96,165,250,0.5)] transition-all duration-200"
                 onMouseDown={() => setResizingColumn("action")}
               />
             </div>
@@ -185,7 +185,7 @@ export function LogList({ logs, filters, autoScroll, type }: LogListProps) {
           <div className="flex-shrink-0 relative" style={{ width: `${columnWidths.message}px` }}>
             Message
             <div
-              className="absolute right-0 top-0 bottom-0 w-px bg-border hover:bg-primary cursor-col-resize hover:w-1 transition-all"
+              className="absolute right-0 top-0 bottom-0 w-px bg-white/10 hover:bg-blue-400 cursor-col-resize hover:w-1 hover:shadow-[0_0_8px_rgba(96,165,250,0.5)] transition-all duration-200"
               onMouseDown={() => setResizingColumn("message")}
             />
           </div>
@@ -196,7 +196,7 @@ export function LogList({ logs, filters, autoScroll, type }: LogListProps) {
 
         {/* Log Entries */}
         {filteredLogs.length === 0 ? (
-          <div className="text-center py-8 text-sm text-muted-foreground">
+          <div className="text-center py-12 text-sm text-slate-500">
             {logs.length === 0 ? "No logs yet" : "No logs match the current filters"}
           </div>
         ) : type === "system" ? (

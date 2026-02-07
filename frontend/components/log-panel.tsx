@@ -67,32 +67,32 @@ export function LogPanel({ type }: LogPanelProps) {
   }
 
   return (
-    <div className="flex flex-col h-full border border-border rounded-lg overflow-hidden bg-card">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card/80">
+    <div className="flex flex-col h-full rounded-xl overflow-hidden border border-white/10 backdrop-blur-xl bg-white/5 shadow-2xl shadow-black/20">
+      {/* Header - Glass morphism with gradient text */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-gradient-to-r from-white/5 to-white/[0.02]">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-foreground capitalize">
+          <h2 className={`text-sm font-bold bg-gradient-to-r ${isSystem ? 'from-cyan-400 to-blue-400' : 'from-emerald-400 to-teal-400'} bg-clip-text text-transparent capitalize`}>
             {type} Logs
           </h2>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-slate-400 px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
             {logs.length} {logs.length === 1 ? "entry" : "entries"}
           </span>
           {isPaused && (
-            <span className="text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300 px-2 py-0.5 rounded font-medium">
+            <span className="text-xs bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full font-medium border border-amber-500/30 animate-pulse">
               PAUSED
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <Button
             size="sm"
             variant="ghost"
             onClick={togglePause}
             title={isPaused ? "Resume logging" : "Pause logging"}
-            className="h-7 w-7 p-0"
+            className="h-8 w-8 p-0 rounded-lg hover:bg-white/10 hover:text-white transition-all duration-200 text-slate-400"
           >
-            {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+            {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
           </Button>
 
           <Button
@@ -100,10 +100,10 @@ export function LogPanel({ type }: LogPanelProps) {
             variant="ghost"
             onClick={clearLogs}
             title="Clear logs"
-            className="h-7 w-7 p-0"
+            className="h-8 w-8 p-0 rounded-lg hover:bg-white/10 hover:text-white transition-all duration-200 text-slate-400 disabled:opacity-30"
             disabled={logs.length === 0}
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" />
           </Button>
 
           <Button
@@ -111,10 +111,10 @@ export function LogPanel({ type }: LogPanelProps) {
             variant="ghost"
             onClick={handleExport}
             title="Export logs as JSON"
-            className="h-7 w-7 p-0"
+            className="h-8 w-8 p-0 rounded-lg hover:bg-white/10 hover:text-white transition-all duration-200 text-slate-400 disabled:opacity-30"
             disabled={logs.length === 0}
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-4 w-4" />
           </Button>
         </div>
       </div>

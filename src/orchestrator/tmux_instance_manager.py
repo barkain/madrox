@@ -73,7 +73,9 @@ class TmuxInstanceManager:
         self.total_tokens_used = 0
 
         # Create workspace base directory
-        self.workspace_base = Path(config.get("workspace_base_dir", "/tmp/claude_orchestrator"))
+        self.workspace_base = Path(
+            config.get("workspace_base_dir", "/tmp/claude_orchestrator")  # noqa: S108
+        )
         self.workspace_base.mkdir(parents=True, exist_ok=True)
 
         # Connect to tmux server
@@ -114,6 +116,7 @@ class TmuxInstanceManager:
 
         # Manager health monitoring
         self._manager_health_task: asyncio.Task | None = None
+        self._queue_poller_task: asyncio.Task | None = None
         self._manager_health_check_interval = 30  # seconds
         self._manager_health_failures = 0
         self._max_health_failures = 3  # Alert after 3 consecutive failures
@@ -675,7 +678,8 @@ class TmuxInstanceManager:
             # Blocking: wait for full initialization
             try:
                 await self._initialize_tmux_session(instance_id)
-                instance["state"] = "running"
+                instance["state"] = "idle"
+                await self._process_queued_messages(instance_id)
                 logger.info(
                     f"Successfully spawned {instance_type} instance {instance_id} ({instance_name}) with role {role} via tmux",
                     extra={
@@ -731,7 +735,8 @@ class TmuxInstanceManager:
 
         try:
             await self._initialize_tmux_session(instance_id)
-            instance["state"] = "running"
+            instance["state"] = "idle"
+            await self._process_queued_messages(instance_id)
             logger.info(
                 f"Background initialization completed for instance {instance_id} ({instance['name']})",
                 extra={"instance_id": instance_id, "instance_name": instance["name"]},
@@ -766,6 +771,22 @@ class TmuxInstanceManager:
             raise ValueError(f"Instance {instance_id} not found")
 
         instance = self.instances[instance_id]
+
+        # Queue message if instance is busy (instead of rejecting)
+        if instance["state"] == "busy":
+            message_id = str(uuid.uuid4())
+            if self.shared_state:
+                self.shared_state.queue_message(instance_id, message, message_id)
+                logger.info(f"Instance {instance_id} is busy, queued message {message_id}")
+                return {
+                    "instance_id": instance_id,
+                    "status": "queued",
+                    "message_id": message_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            # Fallback for HTTP mode without shared state - still reject
+            raise RuntimeError(f"Instance {instance_id} is busy (no queue in HTTP mode)")
+
         if instance["state"] not in ["running", "idle"]:
             raise RuntimeError(
                 f"Instance {instance_id} is not in a valid state: {instance['state']}"
@@ -1095,6 +1116,56 @@ class TmuxInstanceManager:
             # Update state back to idle
             if instance["state"] == "busy":
                 instance["state"] = "idle"
+                # Process any queued messages
+                await self._process_queued_messages(instance_id)
+
+    async def _process_queued_messages(self, instance_id: str) -> None:
+        """Process queued messages for an instance that just became idle.
+
+        Args:
+            instance_id: Instance ID to process messages for
+        """
+        if not self.shared_state or not self.shared_state.has_queued_messages(instance_id):
+            return
+
+        instance = self.instances.get(instance_id)
+        if not instance:
+            logger.warning(f"Instance {instance_id} not found, cannot process queued messages")
+            return
+
+        queued = self.shared_state.get_queued_messages(instance_id)
+        if not queued:
+            return
+
+        logger.info(f"Processing {len(queued)} queued messages for instance {instance_id}")
+
+        # Mark busy while draining queue to prevent new messages interleaving
+        instance["state"] = "busy"
+        instance["last_activity"] = datetime.now(UTC).isoformat()
+
+        try:
+            session = self.tmux_sessions.get(instance_id)
+            if not session:
+                logger.warning(
+                    f"No tmux session found for {instance_id}, cannot deliver queued messages"
+                )
+                return
+
+            window = session.windows[0]
+            pane = window.panes[0]
+
+            for msg in queued:
+                formatted = f"[MSG:{msg['message_id']}] {msg['message']}"
+                self._send_multiline_message_to_pane(pane, formatted)
+                logger.info(
+                    f"Delivered queued message {msg['message_id']} to {instance_id} "
+                    f"(queued at {msg['queued_at']})"
+                )
+                # Brief pause between queued messages
+                await asyncio.sleep(0.1)
+        finally:
+            instance["state"] = "idle"
+            instance["last_activity"] = datetime.now(UTC).isoformat()
 
     async def interrupt_instance(self, instance_id: str) -> dict[str, Any]:
         """Send interrupt signal (Ctrl+C) to a running instance.
@@ -1383,8 +1454,8 @@ class TmuxInstanceManager:
             if existing:
                 existing.kill_session()
                 logger.debug(f"Killed existing session: {session_name}")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"No existing session to clean up: {e}")
 
         # Prepare environment variables for the tmux session
         # CRITICAL: Pass Manager IPC credentials to the session itself, not just MCP subprocess
@@ -1618,7 +1689,11 @@ class TmuxInstanceManager:
                     f"Benefits of using reply_to_caller:\n"
                     f"- Instant delivery (no polling delay)\n"
                     f"- Proper request-response correlation\n"
-                    f"- More efficient than text output\n"
+                    f"- More efficient than text output\n\n"
+                    f"PEER-TO-PEER COMMUNICATION:\n"
+                    f"- Use get_peers(instance_id='{instance['id']}') to discover your teammates (siblings with the same parent)\n"
+                    f"- Use send_to_instance(instance_id='peer_id', message='...') to message them directly\n"
+                    f"- Messages to busy peers are automatically queued and delivered when they become idle\n"
                 )
                 instance_id_info += spawn_info
             else:
@@ -1688,6 +1763,10 @@ class TmuxInstanceManager:
                         f"- Use get_children(parent_id='{instance['id']}') to see all your children\n"
                         f"- Use broadcast_to_children(parent_id='{instance['id']}', message='...') to message all children\n"
                         f"- You control what information (IDs, tasks) flows up to your parent or down to your children\n\n"
+                        f"PEER-TO-PEER COMMUNICATION:\n"
+                        f"- Use get_peers(instance_id='{instance['id']}') to discover your teammates (siblings with the same parent)\n"
+                        f"- Use send_to_instance(instance_id='peer_id', message='...') to message them directly\n"
+                        f"- Messages to busy peers are automatically queued and delivered when they become idle\n\n"
                         f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
                         f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
                         f"  [MSG:correlation-id] message content here\n\n"
@@ -1883,6 +1962,11 @@ class TmuxInstanceManager:
                 target_id = parent_id if parent_id else "coordinator"
                 await self._put_to_shared_queue(target_id, reply_payload)
                 logger.info(f"Reply queued for {target_id} via shared queue")
+                # Also queue in the child's own queue so send_message() can pick it up
+                await self._put_to_shared_queue(instance_id, reply_payload)
+                logger.debug(
+                    f"Reply also queued in child {instance_id}'s queue for send_message pickup"
+                )
             else:
                 # Use local queue for HTTP transport
                 if parent_id:
@@ -1898,6 +1982,14 @@ class TmuxInstanceManager:
                         self.response_queues["coordinator"] = asyncio.Queue()
                     await self.response_queues["coordinator"].put(reply_payload)
                     logger.info("Reply queued for coordinator")
+
+                # Also queue in the child's own queue so send_message() can pick it up
+                if instance_id not in self.response_queues:
+                    self.response_queues[instance_id] = asyncio.Queue()
+                await self.response_queues[instance_id].put(reply_payload)
+                logger.debug(
+                    f"Reply also queued in child {instance_id}'s queue for send_message pickup"
+                )
 
             # Log the communication
             if self.logging_manager:
@@ -2348,6 +2440,28 @@ class TmuxInstanceManager:
             timeout_seconds=timeout_seconds,
         )
 
+    async def _queue_poller_loop(self):
+        """Background loop that delivers queued messages to idle instances."""
+        logger.info("Queue poller started (interval=2s)")
+        while True:
+            try:
+                await asyncio.sleep(2)
+                if not self.shared_state:
+                    continue
+                for instance_id, instance in list(self.instances.items()):
+                    if instance["state"] == "idle" and self.shared_state.has_queued_messages(
+                        instance_id
+                    ):
+                        logger.info(
+                            f"Queue poller: delivering queued messages to idle instance {instance_id}"
+                        )
+                        await self._process_queued_messages(instance_id)
+            except asyncio.CancelledError:
+                logger.info("Queue poller stopped")
+                break
+            except Exception as e:
+                logger.error(f"Queue poller error: {e}")
+
     def _start_manager_health_monitoring(self):
         """Start background task for manager health monitoring.
 
@@ -2362,6 +2476,9 @@ class TmuxInstanceManager:
         logger.info(
             f"Manager health monitoring started (interval={self._manager_health_check_interval}s)"
         )
+
+        # Start queue poller for delivering queued messages to idle instances
+        self._queue_poller_task = asyncio.create_task(self._queue_poller_loop())
 
     async def _manager_health_monitor_loop(self):
         """Background loop that periodically checks Manager daemon health.
@@ -2511,3 +2628,12 @@ class TmuxInstanceManager:
             except asyncio.CancelledError:
                 pass
             logger.info("Manager health monitoring stopped")
+
+        if self._queue_poller_task and not self._queue_poller_task.done():
+            logger.info("Stopping queue poller")
+            self._queue_poller_task.cancel()
+            try:
+                await self._queue_poller_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Queue poller stopped")

@@ -1,12 +1,14 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { X } from "lucide-react"
+import Image from "next/image"
+import { X, Activity } from "lucide-react"
 import { ConnectionStatus } from "@/components/connection-status"
-import { StatsHeader } from "@/components/stats-header"
 import { FilterBar } from "@/components/filter-bar"
 import { NetworkGraph } from "@/components/network-graph"
 import { TerminalViewer } from "@/components/terminal-viewer"
+import { AnimatedBackground } from "@/components/animated-background"
+import { ThemeToggleDropdown } from "@/components/theme-toggle"
 import { useWebSocket } from "@/hooks/use-websocket"
 import type { MessageFlow } from "@/types"
 import {
@@ -101,13 +103,13 @@ function SortableTerminal({ terminal, size, onExpand, onClose, onResizeStart }: 
             e.stopPropagation()
             onClose(terminal.id)
           }}
-          className="p-1 rounded hover:bg-muted transition-colors"
+          className="p-2 md:p-1 rounded hover:bg-muted transition-colors min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center"
           aria-label={`Close ${terminal.name} terminal`}
         >
           <X className="h-3 w-3" />
         </button>
       </div>
-      <div className="h-[calc(100%-2.5rem)] bg-[#1e1e1e]">
+      <div className="h-[calc(100%-2.5rem)] bg-slate-50 dark:bg-[#1e1e1e]">
         <TerminalViewer
           instanceId={terminal.id}
           instanceName={terminal.name}
@@ -117,7 +119,7 @@ function SortableTerminal({ terminal, size, onExpand, onClose, onResizeStart }: 
       </div>
       {/* Resize Handle */}
       <div
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize hover:bg-primary/50 transition-all z-10 group"
+        className="absolute bottom-0 right-0 w-11 h-11 md:w-4 md:h-4 cursor-nwse-resize hover:bg-primary/50 transition-all z-10 group flex items-center justify-center"
         onMouseDown={(e) => {
           e.stopPropagation()
           e.preventDefault()
@@ -134,7 +136,7 @@ function SortableTerminal({ terminal, size, onExpand, onClose, onResizeStart }: 
           }
         }}
       >
-        <svg className="w-full h-full text-muted-foreground group-hover:text-primary transition-colors" viewBox="0 0 16 16">
+        <svg className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" viewBox="0 0 16 16">
           <path d="M14,12 L12,14 M14,8 L8,14 M14,4 L4,14" stroke="currentColor" strokeWidth="1.5" fill="none" />
         </svg>
       </div>
@@ -231,18 +233,21 @@ export default function MadroxMonitor() {
     const handleMouseMove = (e: MouseEvent) => {
       if (isResizing) {
         const terminalEl = document.getElementById(`terminal-${isResizing}`)
-        if (!terminalEl) return
+        if (!terminalEl || !isResizing) return
 
         const rect = terminalEl.getBoundingClientRect()
         const newWidth = e.clientX - rect.left
         const newHeight = e.clientY - rect.top
 
-        // Min size: 650x500px (width increased from 400px to 600px for 150% scaling)
-        const minWidth = 650
-        const minHeight = 500
+        // Min size: allow shrinking to reasonable minimums (300x200)
+        // Max size: limit to container width and reasonable height
+        const minWidth = 300
+        const minHeight = 200
+        const maxWidth = containerRef.current?.clientWidth ? containerRef.current.clientWidth - 32 : 1200
+        const maxHeight = 800
 
-        const finalWidth = Math.max(newWidth, minWidth)
-        const finalHeight = Math.max(newHeight, minHeight)
+        const finalWidth = Math.min(Math.max(newWidth, minWidth), maxWidth)
+        const finalHeight = Math.min(Math.max(newHeight, minHeight), maxHeight)
 
         setTerminalSizes(prev => ({
           ...prev,
@@ -418,7 +423,10 @@ export default function MadroxMonitor() {
   })
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-transparent relative transition-theme">
+      {/* Animated Background */}
+      <AnimatedBackground variant="aurora" intensity="medium" />
+
       {/* Screen reader announcements for accessibility */}
       <div
         role="status"
@@ -431,58 +439,78 @@ export default function MadroxMonitor() {
 
       <ConnectionStatus status={connectionStatus} />
 
-      <div ref={containerRef} className="flex-1 flex flex-col overflow-hidden">
-        {/* Elegant Header - Two Rows */}
-        <div className="border-b border-border">
-          {/* Top Row - Title and Stats */}
-          <div className="px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-8">
-              <div>
-                <h1 className="text-xl font-semibold text-foreground">Madrox Monitor</h1>
-                <p className="text-sm text-muted-foreground">Real-time agent network</p>
-              </div>
-
-              <div className="h-10 w-px bg-border/50" />
-
-              <StatsHeader stats={stats} />
-            </div>
-          </div>
-
-          {/* Bottom Row - Filters and Tabs */}
-          <div className="px-6 pb-3 flex items-center justify-between gap-4">
-            <FilterBar
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              statusFilter={statusFilter}
-              onStatusFilterChange={setStatusFilter}
-              typeFilter={typeFilter}
-              onTypeFilterChange={setTypeFilter}
+      <div ref={containerRef} className="flex-1 flex flex-col overflow-hidden relative z-10 bg-transparent">
+        {/* Header - Single unified bar */}
+        <div className="glass border-b border-white/10 px-5 py-2.5 flex items-center gap-5">
+          {/* Logo + Title */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <Image
+              src="/madrox-hero.png"
+              alt="Madrox"
+              width={36}
+              height={36}
+              className="rounded object-cover"
             />
-
-            {/* Tab Switcher */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setActiveTab("graph")}
-                className={`px-4 py-1.5 text-sm font-medium rounded transition-colors ${
-                  activeTab === "graph"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
-              >
-                Network Graph
-              </button>
-              <button
-                onClick={() => setActiveTab("terminals")}
-                className={`px-4 py-1.5 text-sm font-medium rounded transition-colors ${
-                  activeTab === "terminals"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
-              >
-                Terminals ({openTerminals.length})
-              </button>
+            <div className="leading-tight">
+              <h1 className="text-base font-semibold gradient-text-primary">Madrox Monitor</h1>
+              <p className="text-[11px] text-muted-foreground/70">One becomes many. Many become unstoppable.</p>
             </div>
           </div>
+
+          <div className="h-8 w-px bg-border/40 shrink-0" />
+
+          {/* Active Instances counter - compact */}
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="p-1.5 rounded-md bg-primary/10 dark:bg-primary/20">
+              <Activity className="h-3.5 w-3.5 text-primary" />
+            </div>
+            <div className="leading-tight">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">Active</p>
+              <p className="text-lg font-bold font-mono gradient-text-primary leading-none">{stats.activeInstances}</p>
+            </div>
+          </div>
+
+          <div className="h-8 w-px bg-border/40 shrink-0" />
+
+          {/* Search */}
+          <FilterBar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            typeFilter={typeFilter}
+            onTypeFilterChange={setTypeFilter}
+          />
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Tab Switcher */}
+          <div className="flex gap-1 glass-subtle rounded-lg p-0.5 shrink-0">
+            <button
+              onClick={() => setActiveTab("graph")}
+              className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
+                activeTab === "graph"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/10"
+              }`}
+            >
+              Network Graph
+            </button>
+            <button
+              onClick={() => setActiveTab("terminals")}
+              className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
+                activeTab === "terminals"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/10"
+              }`}
+            >
+              Terminals ({openTerminals.length})
+            </button>
+          </div>
+
+          {/* Theme Toggle */}
+          <ThemeToggleDropdown />
         </div>
 
         {/* Content Area - Tabbed */}

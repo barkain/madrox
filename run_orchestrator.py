@@ -39,14 +39,27 @@ def detect_transport_mode() -> str:
         return "stdio"
 
 
+BANNER = r"""
+ ███╗   ███╗ █████╗ ██████╗ ██████╗  ██████╗ ██╗  ██╗
+ ████╗ ████║██╔══██╗██╔══██╗██╔══██╗██╔═══██╗╚██╗██╔╝
+ ██╔████╔██║███████║██║  ██║██████╔╝██║   ██║ ╚███╔╝
+ ██║╚██╔╝██║██╔══██║██║  ██║██╔══██╗██║   ██║ ██╔██╗
+ ██║ ╚═╝ ██║██║  ██║██████╔╝██║  ██║╚██████╔╝██╔╝ ██╗
+ ╚═╝     ╚═╝╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝
+ Hierarchical Multi-Agent Orchestrator
+"""
+
+
 async def start_http_server(config):
     """Start HTTP/SSE server for Claude Code clients."""
     from src.orchestrator.server import ClaudeOrchestratorServer
 
-    print(f"Starting Claude Orchestrator (HTTP) on {config.server_host}:{config.server_port}")
-    print(f"Workspace: {config.workspace_base_dir}")
-    print(f"Max instances: {config.max_concurrent_instances}")
-    print("Transport: HTTP/SSE (Claude Code)")
+    print(BANNER)
+    print(f"  Host:        {config.server_host}:{config.server_port}")
+    print(f"  Workspace:   {config.workspace_base_dir}")
+    print(f"  Max agents:  {config.max_concurrent_instances}")
+    print(f"  Transport:   HTTP/SSE (Claude Code)")
+    print()
 
     server = ClaudeOrchestratorServer(config)
     await server.start_server()
@@ -56,10 +69,12 @@ async def start_stdio_server(config):
     """Start STDIO server for Codex CLI clients."""
     from src.orchestrator.mcp_server import OrchestrationMCPServer
 
-    print("Starting Claude Orchestrator (STDIO)", file=sys.stderr)
-    print(f"Workspace: {config.workspace_base_dir}", file=sys.stderr)
-    print(f"Max instances: {config.max_concurrent_instances}", file=sys.stderr)
-    print("Transport: STDIO (Codex CLI)", file=sys.stderr)
+    print(BANNER, file=sys.stderr)
+    print(f"  Host:        STDIO", file=sys.stderr)
+    print(f"  Workspace:   {config.workspace_base_dir}", file=sys.stderr)
+    print(f"  Max agents:  {config.max_concurrent_instances}", file=sys.stderr)
+    print(f"  Transport:   STDIO (Codex CLI)", file=sys.stderr)
+    print(file=sys.stderr)
 
     # Create MCP server instance
     mcp_server = OrchestrationMCPServer(config)
