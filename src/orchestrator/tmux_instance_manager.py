@@ -1964,7 +1964,9 @@ class TmuxInstanceManager:
                 logger.info(f"Reply queued for {target_id} via shared queue")
                 # Also queue in the child's own queue so send_message() can pick it up
                 await self._put_to_shared_queue(instance_id, reply_payload)
-                logger.debug(f"Reply also queued in child {instance_id}'s queue for send_message pickup")
+                logger.debug(
+                    f"Reply also queued in child {instance_id}'s queue for send_message pickup"
+                )
             else:
                 # Use local queue for HTTP transport
                 if parent_id:
@@ -1985,7 +1987,9 @@ class TmuxInstanceManager:
                 if instance_id not in self.response_queues:
                     self.response_queues[instance_id] = asyncio.Queue()
                 await self.response_queues[instance_id].put(reply_payload)
-                logger.debug(f"Reply also queued in child {instance_id}'s queue for send_message pickup")
+                logger.debug(
+                    f"Reply also queued in child {instance_id}'s queue for send_message pickup"
+                )
 
             # Log the communication
             if self.logging_manager:
@@ -2445,9 +2449,8 @@ class TmuxInstanceManager:
                 if not self.shared_state:
                     continue
                 for instance_id, instance in list(self.instances.items()):
-                    if (
-                        instance["state"] == "idle"
-                        and self.shared_state.has_queued_messages(instance_id)
+                    if instance["state"] == "idle" and self.shared_state.has_queued_messages(
+                        instance_id
                     ):
                         logger.info(
                             f"Queue poller: delivering queued messages to idle instance {instance_id}"
