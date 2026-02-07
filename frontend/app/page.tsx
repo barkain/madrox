@@ -1,9 +1,9 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { X } from "lucide-react"
+import Image from "next/image"
+import { X, Activity } from "lucide-react"
 import { ConnectionStatus } from "@/components/connection-status"
-import { StatsHeader } from "@/components/stats-header"
 import { FilterBar } from "@/components/filter-bar"
 import { NetworkGraph } from "@/components/network-graph"
 import { TerminalViewer } from "@/components/terminal-viewer"
@@ -440,60 +440,77 @@ export default function MadroxMonitor() {
       <ConnectionStatus status={connectionStatus} />
 
       <div ref={containerRef} className="flex-1 flex flex-col overflow-hidden relative z-10 bg-transparent">
-        {/* Elegant Header - Two Rows with Glass Morphism */}
-        <div className="glass border-b border-white/10">
-          {/* Top Row - Title and Stats */}
-          <div className="px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-8">
-              <div>
-                <h1 className="text-xl font-semibold gradient-text-primary">Madrox Monitor</h1>
-                <p className="text-sm text-muted-foreground">Real-time agent network</p>
-              </div>
-
-              <div className="h-10 w-px bg-border/50" />
-
-              <StatsHeader stats={stats} />
-            </div>
-
-            {/* Theme Toggle */}
-            <ThemeToggleDropdown />
-          </div>
-
-          {/* Bottom Row - Filters and Tabs */}
-          <div className="px-6 pb-3 flex items-center justify-between gap-4">
-            <FilterBar
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              statusFilter={statusFilter}
-              onStatusFilterChange={setStatusFilter}
-              typeFilter={typeFilter}
-              onTypeFilterChange={setTypeFilter}
+        {/* Header - Single unified bar */}
+        <div className="glass border-b border-white/10 px-5 py-2.5 flex items-center gap-5">
+          {/* Logo + Title */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <Image
+              src="/madrox-hero.png"
+              alt="Madrox"
+              width={36}
+              height={36}
+              className="rounded object-cover"
             />
-
-            {/* Tab Switcher with Glass Effect */}
-            <div className="flex gap-2 glass-subtle rounded-lg p-1">
-              <button
-                onClick={() => setActiveTab("graph")}
-                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
-                  activeTab === "graph"
-                    ? "bg-primary text-primary-foreground shadow-glow"
-                    : "text-muted-foreground hover:text-foreground hover:bg-white/10"
-                }`}
-              >
-                Network Graph
-              </button>
-              <button
-                onClick={() => setActiveTab("terminals")}
-                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
-                  activeTab === "terminals"
-                    ? "bg-primary text-primary-foreground shadow-glow"
-                    : "text-muted-foreground hover:text-foreground hover:bg-white/10"
-                }`}
-              >
-                Terminals ({openTerminals.length})
-              </button>
+            <div className="leading-tight">
+              <h1 className="text-base font-semibold gradient-text-primary">Madrox Monitor</h1>
+              <p className="text-[11px] text-muted-foreground/70">One becomes many. Many become unstoppable.</p>
             </div>
           </div>
+
+          <div className="h-8 w-px bg-border/40 shrink-0" />
+
+          {/* Active Instances counter - compact */}
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="p-1.5 rounded-md bg-primary/10 dark:bg-primary/20">
+              <Activity className="h-3.5 w-3.5 text-primary" />
+            </div>
+            <div className="leading-tight">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">Active</p>
+              <p className="text-lg font-bold font-mono gradient-text-primary leading-none">{stats.activeInstances}</p>
+            </div>
+          </div>
+
+          <div className="h-8 w-px bg-border/40 shrink-0" />
+
+          {/* Search */}
+          <FilterBar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            typeFilter={typeFilter}
+            onTypeFilterChange={setTypeFilter}
+          />
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Tab Switcher */}
+          <div className="flex gap-1 glass-subtle rounded-lg p-0.5 shrink-0">
+            <button
+              onClick={() => setActiveTab("graph")}
+              className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
+                activeTab === "graph"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/10"
+              }`}
+            >
+              Network Graph
+            </button>
+            <button
+              onClick={() => setActiveTab("terminals")}
+              className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
+                activeTab === "terminals"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/10"
+              }`}
+            >
+              Terminals ({openTerminals.length})
+            </button>
+          </div>
+
+          {/* Theme Toggle */}
+          <ThemeToggleDropdown />
         </div>
 
         {/* Content Area - Tabbed */}

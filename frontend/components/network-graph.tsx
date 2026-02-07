@@ -412,12 +412,12 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
         type: "smoothstep",
         animated: instance.status === "running",
         style: {
-          stroke: instance.status === "running" ? "var(--color-primary)" : "var(--color-border)",
-          strokeWidth: 2,
+          stroke: instance.status === "running" ? "#60a5fa" : "rgba(148, 163, 184, 0.6)",
+          strokeWidth: 2.5,
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: instance.status === "running" ? "var(--color-primary)" : "var(--color-border)",
+          color: instance.status === "running" ? "#60a5fa" : "rgba(148, 163, 184, 0.6)",
         },
       }))
 
@@ -446,7 +446,12 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
 
     setNodes(newNodes)
     setEdges(newEdges)
-  }, [instances, messageFlows, setNodes, setEdges])
+
+    // Fit view after layout updates
+    setTimeout(() => {
+      fitView({ padding: 0.2, duration: 300, maxZoom: 0.6 })
+    }, 100)
+  }, [instances, messageFlows, setNodes, setEdges, fitView])
 
   return (
     <ReactFlow
@@ -458,7 +463,6 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
       nodeTypes={nodeTypes}
       fitView
       fitViewOptions={{ padding: 0.2, maxZoom: 0.6 }}
-      defaultViewport={{ x: 0, y: 0, zoom: 0.5 }}
       minZoom={0.1}
       maxZoom={2}
       style={{ background: 'transparent' }}
