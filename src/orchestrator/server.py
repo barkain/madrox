@@ -775,7 +775,9 @@ class ClaudeOrchestratorServer:
                 return {"instance_id": instance_id, "content": content}
             except Exception as e:
                 logger.warning(f"Terminal fetch failed for {instance_id}: {e}")
-                raise HTTPException(status_code=404, detail="Instance not found or terminal unavailable") from e
+                raise HTTPException(
+                    status_code=404, detail="Instance not found or terminal unavailable"
+                ) from e
 
         @self.app.get("/logs/audit")
         async def get_audit_logs(

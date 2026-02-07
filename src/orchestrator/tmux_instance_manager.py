@@ -1143,7 +1143,9 @@ class TmuxInstanceManager:
         try:
             session = self.tmux_sessions.get(instance_id)
             if not session:
-                logger.warning(f"No tmux session found for {instance_id}, cannot deliver queued messages")
+                logger.warning(
+                    f"No tmux session found for {instance_id}, cannot deliver queued messages"
+                )
                 return
 
             window = session.windows[0]
