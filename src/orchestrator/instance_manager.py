@@ -1031,8 +1031,18 @@ Begin execution now. Spawn your team and start the workflow."""
         """
         children = []
 
-        # First, check active instances in memory
-        for instance_id, instance in self.instances.items():
+        # Merge local instances with shared state (STDIO children)
+        all_instances = dict(self.instances)
+        if hasattr(self, "shared_state_manager") and self.shared_state_manager:
+            try:
+                for iid, metadata in self.shared_state_manager.instance_metadata.items():
+                    if iid not in all_instances:
+                        all_instances[iid] = dict(metadata)
+            except Exception as e:
+                logger.warning(f"Failed to read shared instance metadata in get_children: {e}")
+
+        # Check all instances (local + shared)
+        for instance_id, instance in all_instances.items():
             is_child = instance.get("parent_instance_id") == parent_id
             include = is_child and (include_terminated or instance.get("state") != "terminated")
             if include:
@@ -1106,7 +1116,17 @@ Begin execution now. Spawn your team and start the workflow."""
         Returns:
             List of peer instance details (excludes terminated instances)
         """
-        instance = self.instances.get(instance_id)
+        # Merge local instances with shared state (STDIO children)
+        all_instances = dict(self.instances)
+        if hasattr(self, "shared_state_manager") and self.shared_state_manager:
+            try:
+                for iid, metadata in self.shared_state_manager.instance_metadata.items():
+                    if iid not in all_instances:
+                        all_instances[iid] = dict(metadata)
+            except Exception as e:
+                logger.warning(f"Failed to read shared instance metadata in get_peers: {e}")
+
+        instance = all_instances.get(instance_id)
         if not instance:
             return []
 
@@ -1115,7 +1135,7 @@ Begin execution now. Spawn your team and start the workflow."""
             return []
 
         peers = []
-        for iid, inst in self.instances.items():
+        for iid, inst in all_instances.items():
             if inst.get("parent_instance_id") != parent_id:
                 continue
             if inst.get("state") == "terminated":
