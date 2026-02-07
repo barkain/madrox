@@ -184,6 +184,7 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 - **`get_instance_output`** - Retrieve output history from instances
 - **`get_instance_tree`** - Visualize hierarchical network of all running instances
 - **`get_children`** - Query child instances of a parent
+- **`get_peers`** - Discover sibling instances that share the same parent for direct peer-to-peer communication
 - **`broadcast_to_children`** - Broadcast messages to all children of a parent
 - **`coordinate_instances`** - Coordinate multiple instances for complex tasks
 - **`interrupt_instance`** - Interrupt running task without terminating instance
@@ -191,9 +192,11 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
 - **`terminate_instance`** - Gracefully terminate instances with proper cleanup
 
 ### Advanced Capabilities
+- **Madrox Monitor Dashboard** - Real-time web dashboard at `http://localhost:3002` with network graph visualization, live terminal viewers for all instances, and WebSocket-based updates
 - **Multi-Model Support** - Orchestrate both Claude (Anthropic) and Codex (OpenAI) instances
 - **Custom MCP Server Configuration** - Dynamic loading of MCP tools (Playwright, databases, APIs) per instance
 - **Hierarchical Architecture** - Parent-child relationships with bidirectional communication
+- **Peer-to-Peer Communication** - Sibling instances can discover each other via `get_peers` and communicate directly using `send_to_instance`, bypassing the parent
 - **Instance Tree Visualization** - Real-time network topology with state and type indicators
 - **Task Interruption** - Stop running tasks without terminating instances (preserves context)
 - **Parallel Spawning** - Launch multiple instances concurrently for performance
@@ -225,7 +228,7 @@ Claude has a built-in subagent capability, but Madrox transforms it into a **tru
   ```
 
 
-### Installation (4 steps)
+### Installation (3 steps)
 
 **1. Clone and install:**
 ```bash
@@ -234,22 +237,16 @@ cd madrox
 uv sync
 ```
 
-**2. Start the server:**
+**2. Start backend + dashboard:**
 ```bash
-MADROX_TRANSPORT=http python run_orchestrator.py
+./start.sh
 ```
+This launches the backend server (port 8001) and the Madrox Monitor dashboard (port 3002).
+You can also start them individually with `./start.sh --be` (backend only) or `./start.sh --fe` (frontend only).
 
 **3. Add MCP to Claude Code:**
 ```bash
 claude mcp add madrox http://localhost:8001/mcp --transport http
-```
-
-
-**4. Open madrox UI:**
-```bash
-cd frontend
-npm install  # install dependencies
-npm run dev  # start the UI
 ```
 
 That's it! Start using Madrox tools in Claude Code to spawn and orchestrate AI instances.
@@ -819,7 +816,6 @@ python run_orchestrator.py
 ## 🗺️ Roadmap
 
 ### Network Visibility & Monitoring
-- **Instance Network Dashboard** - Real-time visualization of the entire Madrox network topology
 - **Cross-Instance Metrics** - Monitor resource usage, message flow, and performance across all instances
 - **Network Health Monitoring** - Automatic detection of bottlenecks and communication issues
 - **Inter-Instance Communication Logs** - Trace message paths through the hierarchy
@@ -859,7 +855,6 @@ python run_orchestrator.py
 - **Plugin System** - Custom tools and capabilities for instances
 
 ### Developer Experience
-- **Web UI Console** - Browser-based management interface for networks
 - **CLI Tool** - Command-line interface for quick operations
 - **VS Code Extension** - Manage instances directly from IDE
 - **Debugging Tools** - Step-through execution, breakpoints for workflows
