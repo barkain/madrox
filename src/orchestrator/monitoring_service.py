@@ -35,7 +35,7 @@ class MonitoringService:
 
     # Class Attributes (Singleton pattern)
     _instance: Optional["MonitoringService"] = None
-    _lock: asyncio.Lock = None  # Will be initialized at runtime
+    _lock: asyncio.Lock | None = None
 
     def __init__(
         self,
@@ -555,7 +555,7 @@ class MonitoringService:
         Returns:
             Dict mapping instance_id to summary data
         """
-        summaries = {}
+        summaries: dict[str, dict] = {}
 
         try:
             # Iterate through all instance directories

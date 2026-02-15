@@ -118,44 +118,16 @@ warn_unreachable = true
 no_implicit_optional = false
 
 [[tool.mypy.overrides]]
-module = "orchestrator.mcp_adapter"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "orchestrator.shared_state_manager"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "orchestrator.instance_manager"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "orchestrator.monitoring_service"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "orchestrator.log_stream_handler"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "orchestrator.llm_summarizer"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "orchestrator.monitoring.summary_generator"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "supervision.coordination.coordinator"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "orchestrator.server"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "orchestrator.tmux_instance_manager"
-ignore_errors = true
+module = [
+    "libtmux.*",
+    "fastmcp.*",
+    "sse_starlette.*",
+    "toml.*",
+    "psutil.*",
+    "yaml.*",
+    "aiofiles.*",
+]
+ignore_missing_imports = true
 
 [tool.coverage.run]
 source = ["src"]

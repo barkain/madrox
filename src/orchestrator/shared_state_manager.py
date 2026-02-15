@@ -129,15 +129,15 @@ class SharedStateManager:
                 logger.info("Successfully connected to parent Manager daemon")
             else:
                 # Parent process: create new Manager daemon
-                self.manager = Manager()
+                self.manager = Manager()  # type: ignore[assignment]
                 self.is_child_connection = False
                 logger.info("Multiprocessing Manager daemon started (parent)")
 
             # Store connection details for child processes
             # The Manager's address is available via _address attribute
             # These are internal attributes not in type stubs but valid at runtime
-            self.manager_address = self.manager._address  # type: ignore[union-attr]
-            self.manager_authkey = self.manager._authkey  # type: ignore[union-attr]
+            self.manager_address = self.manager._address  # type: ignore[attr-defined]
+            self.manager_authkey = self.manager._authkey  # type: ignore[attr-defined]
 
             # SECURITY FIX (CWE-532): Redact authkey in logs, don't expose raw value
             address_type = "unix_socket" if isinstance(self.manager_address, str) else "tcp"
@@ -151,8 +151,8 @@ class SharedStateManager:
 
             # Shared dicts for state synchronization
             # Manager.dict() is valid but not in type stubs for all Manager variants
-            self.message_registry: DictProxy = self.manager.dict()  # type: ignore[union-attr]
-            self.instance_metadata: DictProxy = self.manager.dict()  # type: ignore[union-attr]
+            self.message_registry: DictProxy = self.manager.dict()  # type: ignore[attr-defined]
+            self.instance_metadata: DictProxy = self.manager.dict()  # type: ignore[attr-defined]
 
             # Locks for thread-safe operations (instance_id -> manager Lock proxy)
             self.queue_locks: dict[str, Any] = {}
@@ -187,14 +187,14 @@ class SharedStateManager:
                 return self.response_queues[instance_id]
 
             # Create queue and lock (manager methods are dynamic, not in type stubs)
-            queue: Queue[Any] = self.manager.Queue(maxsize=maxsize)  # type: ignore[union-attr]
-            lock = self.manager.Lock()  # type: ignore[union-attr]
+            queue: Queue[Any] = self.manager.Queue(maxsize=maxsize)  # type: ignore[attr-defined]
+            lock = self.manager.Lock()  # type: ignore[attr-defined]
 
             self.response_queues[instance_id] = queue
             self.queue_locks[instance_id] = lock
 
             logger.info(f"Created response queue for instance {instance_id} (maxsize={maxsize})")
-            return queue  # type: ignore[return-value]
+            return queue
         except Exception as e:
             logger.error(f"Failed to create response queue for {instance_id}: {e}")
             raise
@@ -562,7 +562,7 @@ class SharedStateManager:
             for instance_id in self.response_queues.keys():
                 depth = self.get_queue_depth(instance_id)
                 if depth is not None:
-                    stats["queue_depths"][instance_id] = depth
+                    stats["queue_depths"][instance_id] = depth  # type: ignore[index]
 
             return stats
         except Exception as e:
@@ -606,7 +606,7 @@ class SharedStateManager:
             # Access _process attribute (internal, not in type stubs)
             manager_process = getattr(self.manager, "_process", None)
             if manager_process is None:
-                health_result["error"] = "Manager process object not found"
+                health_result["error"] = "Manager process object not found"  # type: ignore[assignment]
                 return health_result
 
             # Check if the manager process is alive
@@ -614,7 +614,7 @@ class SharedStateManager:
                 is_alive = manager_process.is_alive()
                 health_result["manager_alive"] = is_alive
                 if not is_alive:
-                    health_result["error"] = "Manager daemon process is dead"
+                    health_result["error"] = "Manager daemon process is dead"  # type: ignore[assignment]
                     return health_result
             else:
                 # Fallback: try to use the manager
@@ -622,10 +622,10 @@ class SharedStateManager:
 
             # Test 2: Create a test queue (tests Manager responsiveness)
             try:
-                test_queue = self.manager.Queue(maxsize=10)  # type: ignore[union-attr]
+                test_queue = self.manager.Queue(maxsize=10)  # type: ignore[attr-defined]
                 health_result["test_queue_created"] = True
             except Exception as e:
-                health_result["error"] = f"Failed to create test queue: {e}"
+                health_result["error"] = f"Failed to create test queue: {e}"  # type: ignore[assignment]
                 return health_result
 
             # Test 3: Test queue operations (put/get with timeout)
@@ -635,13 +635,13 @@ class SharedStateManager:
                 retrieved_data = test_queue.get(timeout=timeout)
 
                 if retrieved_data != test_data:
-                    health_result["error"] = "Queue data mismatch (corrupted communication)"
+                    health_result["error"] = "Queue data mismatch (corrupted communication)"  # type: ignore[assignment]
                     return health_result
             except Empty:
-                health_result["error"] = "Queue get timeout (Manager not responding)"
+                health_result["error"] = "Queue get timeout (Manager not responding)"  # type: ignore[assignment]
                 return health_result
             except Exception as e:
-                health_result["error"] = f"Queue operation failed: {e}"
+                health_result["error"] = f"Queue operation failed: {e}"  # type: ignore[assignment]
                 return health_result
 
             # Test 4: Access shared dict (tests proxy object communication)
@@ -652,12 +652,12 @@ class SharedStateManager:
                 retrieved_value = self.instance_metadata.get(test_key)
 
                 if retrieved_value != test_value:
-                    health_result["error"] = "Shared dict data mismatch"
+                    health_result["error"] = "Shared dict data mismatch"  # type: ignore[assignment]
                     return health_result
 
                 health_result["test_dict_accessed"] = True
             except Exception as e:
-                health_result["error"] = f"Shared dict access failed: {e}"
+                health_result["error"] = f"Shared dict access failed: {e}"  # type: ignore[assignment]
                 return health_result
 
             # Test 5: Cleanup test data
@@ -665,7 +665,7 @@ class SharedStateManager:
                 del self.instance_metadata[test_key]
                 # Queue cleanup (just let it be garbage collected)
                 health_result["test_cleanup_completed"] = True
-            except Exception as e:
+            except Exception as e:  # noqa: F841
                 logger.warning(f"Health check cleanup failed (non-critical): {e}")
                 # Non-critical error, don't fail health check
 
@@ -684,7 +684,7 @@ class SharedStateManager:
         except Exception as e:
             elapsed_time = (time.time() - start_time) * 1000
             health_result["response_time_ms"] = round(elapsed_time, 2)
-            health_result["error"] = f"Unexpected health check error: {e}"
+            health_result["error"] = f"Unexpected health check error: {e}"  # type: ignore[assignment]
             logger.error(f"Manager health check failed: {e}", exc_info=True)
             return health_result
 
