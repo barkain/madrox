@@ -303,7 +303,7 @@ class HierarchyMixin:
         children = self._get_children_internal(instance_id)
         child_count = len(children)
 
-        children.sort(key=lambda x: x["name"])
+        children.sort(key=lambda x: x.get("name") or "")
 
         for i, child in enumerate(children):
             is_last_child = i == child_count - 1

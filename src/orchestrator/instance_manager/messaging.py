@@ -91,7 +91,10 @@ class MessagingMixin:
         for i, instance_id in enumerate(instance_ids):
             response = responses[i]
             if isinstance(response, Exception):
-                results["errors"].append({"instance_id": instance_id, "error": str(response)})
+                logger.error(f"Failed to send to instance {instance_id}: {response}")
+                results["errors"].append(
+                    {"instance_id": instance_id, "error": type(response).__name__}
+                )
             else:
                 results["sent"].append({"instance_id": instance_id, "response": response})
 
@@ -215,7 +218,10 @@ class MessagingMixin:
                 output = await self._get_output_messages(instance_id, limit, since)
                 results["outputs"].append({"instance_id": instance_id, "output": output})
             except Exception as e:
-                results["errors"].append({"instance_id": instance_id, "error": str(e)})
+                logger.error(f"Failed to get output for instance {instance_id}: {e}")
+                results["errors"].append(
+                    {"instance_id": instance_id, "error": type(e).__name__}
+                )
         return results
 
     @mcp.tool
@@ -262,7 +268,7 @@ class MessagingMixin:
                 except TimeoutError:
                     return []
 
-            for _ in range(10000):  # bounded drain to prevent infinite loop
+            for _ in range(500):  # bounded drain to avoid blocking event loop
                 try:
                     reply = await self.tmux_manager._get_from_shared_queue(instance_id, timeout=0)
                     replies.append(reply)
@@ -320,8 +326,11 @@ class MessagingMixin:
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
         """Handle reply from instance back to its caller."""
-        if not self.shared_state_manager and instance_id not in self.instances:
-            return {"success": False, "error": f"Instance {instance_id} not found"}
+        is_known = instance_id in self.instances
+        if not is_known and self.shared_state_manager:
+            is_known = instance_id in self.shared_state_manager.instance_metadata
+        if not is_known:
+            return {"success": False, "error": "Instance not found"}
 
         return await self.tmux_manager.handle_reply_to_caller(
             instance_id=instance_id,
@@ -364,12 +373,13 @@ class MessagingMixin:
         for i, child in enumerate(children):
             result = results[i]
             if isinstance(result, Exception):
+                logger.error(f"Failed to send to child {child['id']}: {result}")
                 formatted_results.append(
                     {
                         "child_id": child["id"],
                         "child_name": child["name"],
                         "status": "error",
-                        "error": str(result),
+                        "error": type(result).__name__,
                     }
                 )
             else:

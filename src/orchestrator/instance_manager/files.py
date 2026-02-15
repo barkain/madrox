@@ -24,11 +24,11 @@ class FilesMixin:
             return None
 
         instance = self.instances[instance_id]
-        workspace_dir = Path(instance["workspace_dir"])
+        workspace_dir = Path(instance["workspace_dir"]).resolve()
         source_file = (workspace_dir / filename).resolve()
 
         # Prevent path traversal outside workspace
-        if not str(source_file).startswith(str(workspace_dir.resolve())):
+        if not source_file.is_relative_to(workspace_dir):
             logger.warning(f"Path traversal attempt blocked: {filename}")
             return None
 
@@ -38,10 +38,16 @@ class FilesMixin:
 
         if destination_path:
             dest = Path(destination_path)
+            if dest.is_absolute():
+                logger.warning(f"Absolute destination path rejected: {destination_path}")
+                return None
+            dest = (Path.cwd() / dest).resolve()
             if dest.is_dir():
                 dest = dest / filename
         else:
             dest = Path.cwd() / filename
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
 
         try:
             import shutil
@@ -109,11 +115,12 @@ class FilesMixin:
                         }
                     )
             except Exception as e:
+                logger.error(f"Failed to retrieve file: {e}")
                 results["errors"].append(
                     {
                         "instance_id": retrieval.get("instance_id"),
                         "filename": retrieval.get("filename"),
-                        "error": str(e),
+                        "error": type(e).__name__,
                     }
                 )
         return results
@@ -189,10 +196,11 @@ class FilesMixin:
                         }
                     )
             except Exception as e:
+                logger.error(f"Failed to list files for instance {instance_id}: {e}")
                 results["errors"].append(
                     {
                         "instance_id": instance_id,
-                        "error": str(e),
+                        "error": type(e).__name__,
                     }
                 )
         return results

@@ -43,7 +43,6 @@ class TemplateMixin:
             Formatted result text with supervisor ID and network topology
         """
         from pathlib import Path
-
         from re import fullmatch
 
         if not fullmatch(r"[a-zA-Z0-9_-]+", template_name):
@@ -54,7 +53,7 @@ class TemplateMixin:
 
         # Prevent path traversal outside templates directory
         templates_dir = (project_root / "templates").resolve()
-        if not str(template_path).startswith(str(templates_dir)):
+        if not template_path.is_relative_to(templates_dir):
             raise ValueError(f"Invalid template name: {template_name}")
 
         if not template_path.exists():
