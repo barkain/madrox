@@ -234,7 +234,11 @@ class InstanceManager(
             if not session:
                 raise RuntimeError(f"No tmux session found for instance {instance_id}")
 
+            if not session.windows:
+                raise RuntimeError(f"No tmux window found for instance {instance_id}")
             window = session.windows[0]
+            if not window.panes:
+                raise RuntimeError(f"No tmux pane found for instance {instance_id}")
             pane = window.panes[0]
 
             if lines == -1:
@@ -412,6 +416,13 @@ class InstanceManager(
     async def shutdown(self):
         """Shutdown the instance manager and clean up resources."""
         logger.info("Shutting down instance manager")
+
+        if self._main_monitor_task is not None and not self._main_monitor_task.done():
+            self._main_monitor_task.cancel()
+            try:
+                await self._main_monitor_task
+            except asyncio.CancelledError:
+                pass
 
         for instance_id in list(self.instances.keys()):
             try:

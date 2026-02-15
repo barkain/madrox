@@ -95,7 +95,7 @@ class TemplateMixin:
                 if not instance.get("parent_instance_id") and instance.get("state") != "terminated":
                     roots.append((instance_id, instance.get("name", "unknown")))
 
-            if roots:  # noqa: E501
+            if roots:
                 roots.sort(key=lambda x: x[1])
                 lines: list[str] = []
                 for i, (root_id, _) in enumerate(roots):

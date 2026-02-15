@@ -236,8 +236,9 @@ class LifecycleMixin:
         if not wait_for_completion or job["status"] in ["completed", "failed", "timeout"]:
             return job
 
-        start_time = asyncio.get_event_loop().time()
-        while asyncio.get_event_loop().time() - start_time < max_wait:
+        loop = asyncio.get_running_loop()
+        start_time = loop.time()
+        while loop.time() - start_time < max_wait:
             job = self.jobs[job_id]
             if job["status"] in ["completed", "failed", "timeout"]:
                 return job

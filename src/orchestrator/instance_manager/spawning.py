@@ -118,7 +118,7 @@ class SpawningMixin:
         """
         validated_model = validate_model("codex", model)
 
-        instance_id = await self.tmux_manager.spawn_instance(
+        instance_id = await self.spawn_instance(
             name=name,
             model=validated_model,
             bypass_isolation=bypass_isolation,
@@ -129,7 +129,6 @@ class SpawningMixin:
             parent_instance_id=parent_instance_id,
             mcp_servers=mcp_servers,
         )
-        self.instances[instance_id] = self.tmux_manager.instances[instance_id]
         self.instances[instance_id]["instance_type"] = "codex"
         return {
             "instance_id": instance_id,

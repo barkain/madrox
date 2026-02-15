@@ -42,10 +42,16 @@ class FilesMixin:
                 logger.warning(f"Absolute destination path rejected: {destination_path}")
                 return None
             dest = (Path.cwd() / dest).resolve()
+            if not dest.is_relative_to(Path.cwd()):
+                logger.warning(f"Destination path traversal blocked: {destination_path}")
+                return None
             if dest.is_dir():
-                dest = dest / filename
+                dest = (dest / Path(filename).name).resolve()
+                if not dest.is_relative_to(Path.cwd()):
+                    logger.warning(f"Destination path traversal blocked: {destination_path}")
+                    return None
         else:
-            dest = Path.cwd() / filename
+            dest = Path.cwd() / Path(filename).name
 
         dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -132,7 +138,7 @@ class FilesMixin:
             return None
 
         instance = self.instances[instance_id]
-        workspace_dir = Path(instance["workspace_dir"])
+        workspace_dir = Path(instance["workspace_dir"]).resolve()
 
         if not workspace_dir.exists():
             logger.warning(f"Workspace directory for instance {instance_id} does not exist")
@@ -141,8 +147,13 @@ class FilesMixin:
         try:
             files = []
             for item in workspace_dir.rglob("*"):
+                if item.is_symlink():
+                    continue
                 if item.is_file():
-                    relative_path = item.relative_to(workspace_dir)
+                    resolved_item = item.resolve()
+                    if not resolved_item.is_relative_to(workspace_dir):
+                        continue
+                    relative_path = resolved_item.relative_to(workspace_dir)
                     files.append(str(relative_path))
 
             logger.debug(f"Found {len(files)} files in instance {instance_id} workspace")
@@ -196,7 +207,10 @@ class FilesMixin:
                         }
                     )
             except Exception as e:
-                logger.error(f"Failed to list files for instance {instance_id}: {e}")
+                logger.error(
+                    f"Failed to list files for instance {instance_id}: {type(e).__name__}",
+                    exc_info=True,
+                )
                 results["errors"].append(
                     {
                         "instance_id": instance_id,
