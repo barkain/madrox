@@ -634,7 +634,7 @@ Begin execution now. Spawn your team and start the workflow."""
                         import uuid
                         from datetime import datetime
 
-                        from .compat import UTC
+                        from ..compat import UTC
 
                         task_id = str(uuid.uuid4())
                         coordinator_id = tool_args["coordinator_id"]

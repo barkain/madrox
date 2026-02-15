@@ -44,8 +44,18 @@ class TemplateMixin:
         """
         from pathlib import Path
 
+        from re import fullmatch
+
+        if not fullmatch(r"[a-zA-Z0-9_-]+", template_name):
+            raise ValueError(f"Invalid template name: {template_name}")
+
         project_root = Path(__file__).parent.parent.parent.parent
-        template_path = project_root / "templates" / f"{template_name}.md"
+        template_path = (project_root / "templates" / f"{template_name}.md").resolve()
+
+        # Prevent path traversal outside templates directory
+        templates_dir = (project_root / "templates").resolve()
+        if not str(template_path).startswith(str(templates_dir)):
+            raise ValueError(f"Invalid template name: {template_name}")
 
         if not template_path.exists():
             raise ValueError(
@@ -69,7 +79,7 @@ class TemplateMixin:
             role=role,
             wait_for_ready=True,
             initial_prompt=instruction,
-            parent_instance_id=None,
+            parent_instance_id=parent_instance_id,
         )
 
         logger.info(

@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from src.orchestrator.simple_models import (
+from orchestrator.simple_models import (
     CoordinationTask,
     InstanceMetrics,
     InstanceOutput,

@@ -383,7 +383,7 @@ class InstanceManager(
                 logger.error(f"Failed to read audit file {audit_file}: {e}")
                 continue
 
-        return audit_logs[-limit:] if audit_logs else []
+        return audit_logs[:limit]
 
     async def list_logged_instances(self) -> list[dict[str, Any]]:
         """List all instances that have logs."""

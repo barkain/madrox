@@ -181,6 +181,8 @@ class LifecycleMixin:
             "results": {},
         }
 
+        self.jobs[task_id] = coordination_task
+
         logger.info(f"Started coordination task {task_id} with {len(participant_ids)} participants")
 
         asyncio.create_task(self._execute_coordination(coordination_task))

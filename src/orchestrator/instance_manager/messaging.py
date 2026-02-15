@@ -262,11 +262,14 @@ class MessagingMixin:
                 except TimeoutError:
                     return []
 
-            while True:
+            for _ in range(10000):  # bounded drain to prevent infinite loop
                 try:
                     reply = await self.tmux_manager._get_from_shared_queue(instance_id, timeout=0)
                     replies.append(reply)
-                except (TimeoutError, Exception):
+                except TimeoutError:
+                    break
+                except Exception:
+                    logger.warning(f"Error draining shared queue for {instance_id}", exc_info=True)
                     break
         else:
             if instance_id not in self.tmux_manager.response_queues:

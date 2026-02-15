@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.orchestrator.compat import UTC
-from src.orchestrator.instance_manager import InstanceManager
+from orchestrator.compat import UTC
+from orchestrator.instance_manager import InstanceManager
 
 
 @pytest.fixture
@@ -26,12 +26,12 @@ def mock_config():
 @pytest.fixture
 async def instance_manager(mock_config):
     """Create InstanceManager with mocked dependencies."""
-    with patch("src.orchestrator.instance_manager.validate_model") as mock_validate:
+    with patch("orchestrator.instance_manager.spawning.validate_model") as mock_validate:
         mock_validate.side_effect = lambda provider, model: model or "claude-sonnet-4-5"
-        with patch("src.orchestrator.instance_manager.LoggingManager"):
-            with patch("src.orchestrator.shared_state_manager.SharedStateManager"):
+        with patch("orchestrator.instance_manager.core.LoggingManager"):
+            with patch("orchestrator.shared_state_manager.SharedStateManager"):
                 with patch(
-                    "src.orchestrator.instance_manager.TmuxInstanceManager"
+                    "orchestrator.instance_manager.core.TmuxInstanceManager"
                 ) as mock_tmux_mgr_class:
                     # Setup mock tmux manager
                     mock_tmux_mgr = MagicMock()

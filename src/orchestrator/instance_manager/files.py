@@ -25,7 +25,12 @@ class FilesMixin:
 
         instance = self.instances[instance_id]
         workspace_dir = Path(instance["workspace_dir"])
-        source_file = workspace_dir / filename
+        source_file = (workspace_dir / filename).resolve()
+
+        # Prevent path traversal outside workspace
+        if not str(source_file).startswith(str(workspace_dir.resolve())):
+            logger.warning(f"Path traversal attempt blocked: {filename}")
+            return None
 
         if not source_file.exists():
             logger.warning(f"File {filename} not found in instance {instance_id} workspace")
