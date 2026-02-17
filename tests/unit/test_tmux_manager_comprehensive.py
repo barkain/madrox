@@ -20,8 +20,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.orchestrator.compat import UTC
-from src.orchestrator.tmux_instance_manager import TmuxInstanceManager
+from orchestrator.compat import UTC
+from orchestrator.tmux_instance_manager import TmuxInstanceManager
 
 
 @pytest.fixture
@@ -66,7 +66,7 @@ def tmux_manager(mock_config, mock_libtmux_server):
     """Create TmuxInstanceManager with mocked dependencies."""
     mock_server, mock_session, mock_window, mock_pane = mock_libtmux_server
 
-    with patch("src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mock_server):
+    with patch("orchestrator.tmux_instance_manager.core.libtmux.Server", return_value=mock_server):
         with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
             # Mock Path operations to avoid filesystem access
             with patch("pathlib.Path.write_text"):

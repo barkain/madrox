@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.orchestrator.tmux_instance_manager import TmuxInstanceManager
+from orchestrator.tmux_instance_manager import TmuxInstanceManager
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ class TestMonitoringServiceInitialization:
             if "OPENROUTER_API_KEY" in os.environ:
                 del os.environ["OPENROUTER_API_KEY"]
 
-            with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+            with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
                 manager = TmuxInstanceManager(mock_config)
 
                 assert manager.monitoring_service is None
@@ -56,10 +56,10 @@ class TestMonitoringServiceInitialization:
     def test_monitoring_service_enabled_with_api_key(self, mock_config):
         """Test that monitoring service is enabled when OPENROUTER_API_KEY is set."""
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
-            with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
-                with patch("src.orchestrator.tmux_instance_manager.LLMSummarizer") as mock_llm:
+            with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
+                with patch("orchestrator.tmux_instance_manager.core.LLMSummarizer") as mock_llm:
                     with patch(
-                        "src.orchestrator.tmux_instance_manager.MonitoringService"
+                        "orchestrator.tmux_instance_manager.core.MonitoringService"
                     ) as mock_mon:
                         TmuxInstanceManager(mock_config)
 
@@ -72,9 +72,9 @@ class TestMonitoringServiceInitialization:
     def test_monitoring_service_initialization_failure(self, mock_config):
         """Test graceful handling of monitoring service initialization failure."""
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
-            with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+            with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
                 with patch(
-                    "src.orchestrator.tmux_instance_manager.LLMSummarizer",
+                    "orchestrator.tmux_instance_manager.core.LLMSummarizer",
                     side_effect=Exception("Failed to init"),
                 ):
                     # Should not raise, just log warning
@@ -85,11 +85,11 @@ class TestMonitoringServiceInitialization:
     def test_monitoring_service_logger_configuration(self, mock_config):
         """Test that monitoring service and LLM summarizer loggers are configured."""
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
-            with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
-                with patch("src.orchestrator.tmux_instance_manager.LLMSummarizer"):
-                    with patch("src.orchestrator.tmux_instance_manager.MonitoringService"):
+            with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
+                with patch("orchestrator.tmux_instance_manager.core.LLMSummarizer"):
+                    with patch("orchestrator.tmux_instance_manager.core.MonitoringService"):
                         with patch(
-                            "src.orchestrator.tmux_instance_manager.logging.getLogger"
+                            "orchestrator.tmux_instance_manager.core.logging.getLogger"
                         ) as mock_get_logger:
                             # Create mock loggers
                             mock_logger = MagicMock()
@@ -107,7 +107,7 @@ class TestHealthMonitoring:
 
     def test_health_monitoring_defaults(self, mock_config):
         """Test default health monitoring configuration."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager._manager_health_check_interval == 30
@@ -118,7 +118,7 @@ class TestHealthMonitoring:
 
     def test_monitoring_service_started_flag(self, mock_config):
         """Test monitoring service started flag initialization."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager._monitoring_service_started is False
@@ -130,7 +130,7 @@ class TestSharedStateQueueOperations:
     @pytest.mark.asyncio
     async def test_get_from_shared_queue_no_shared_state(self, mock_config):
         """Test _get_from_shared_queue raises error when shared state not available."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
             manager.shared_state = None
 
@@ -140,7 +140,7 @@ class TestSharedStateQueueOperations:
     @pytest.mark.asyncio
     async def test_get_from_shared_queue_timeout(self, mock_config):
         """Test _get_from_shared_queue handles timeout."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             # Mock shared state with queue that times out
@@ -160,7 +160,7 @@ class TestSharedStateQueueOperations:
     @pytest.mark.asyncio
     async def test_get_from_shared_queue_success(self, mock_config):
         """Test _get_from_shared_queue successfully retrieves message."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             # Mock shared state with queue that returns message
@@ -185,7 +185,7 @@ class TestServerPortConfiguration:
             if "ORCHESTRATOR_PORT" in os.environ:
                 del os.environ["ORCHESTRATOR_PORT"]
 
-            with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+            with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
                 manager = TmuxInstanceManager(mock_config)
 
                 assert manager.server_port == 8001
@@ -193,7 +193,7 @@ class TestServerPortConfiguration:
     def test_custom_server_port_from_env(self, mock_config):
         """Test custom server port from environment variable."""
         with patch.dict(os.environ, {"ORCHESTRATOR_PORT": "9000"}):
-            with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+            with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
                 manager = TmuxInstanceManager(mock_config)
 
                 assert manager.server_port == 9000
@@ -205,7 +205,7 @@ class TestWorkspaceConfiguration:
     def test_default_workspace_directory(self):
         """Test default workspace directory."""
         config = {}
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(config)
 
             assert str(manager.workspace_base) == "/tmp/claude_orchestrator"
@@ -213,7 +213,7 @@ class TestWorkspaceConfiguration:
     def test_custom_workspace_directory(self):
         """Test custom workspace directory from config."""
         config = {"workspace_base_dir": "/custom/workspace"}
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch("pathlib.Path.mkdir"):
                 manager = TmuxInstanceManager(config)
 
@@ -221,7 +221,7 @@ class TestWorkspaceConfiguration:
 
     def test_workspace_directory_created(self, mock_config):
         """Test that workspace directory is created."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch("pathlib.Path.mkdir") as mock_mkdir:
                 TmuxInstanceManager(mock_config)
 
@@ -234,7 +234,7 @@ class TestResourceTracking:
 
     def test_total_tokens_initialized(self, mock_config):
         """Test total tokens counter is initialized."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager.total_tokens_used == 0
@@ -245,28 +245,28 @@ class TestLegacyBackwardCompatibility:
 
     def test_response_queues_initialized(self, mock_config):
         """Test response_queues dict is initialized for HTTP transport."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager.response_queues == {}
 
     def test_message_registry_initialized(self, mock_config):
         """Test message_registry dict is initialized."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager.message_registry == {}
 
     def test_main_message_inbox_initialized(self, mock_config):
         """Test main_message_inbox list is initialized."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager.main_message_inbox == []
 
     def test_main_instance_id_initialized(self, mock_config):
         """Test main_instance_id is initialized to None."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager.main_instance_id is None
@@ -279,14 +279,14 @@ class TestLoggingManagerIntegration:
         """Test that logging_manager is stored if provided."""
         mock_logging_manager = MagicMock()
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config, logging_manager=mock_logging_manager)
 
             assert manager.logging_manager is mock_logging_manager
 
     def test_logging_manager_optional(self, mock_config):
         """Test that logging_manager is optional."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager.logging_manager is None
@@ -299,14 +299,14 @@ class TestSharedStateManagerIntegration:
         """Test that shared_state_manager is stored if provided."""
         mock_shared_state = MagicMock()
 
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config, shared_state_manager=mock_shared_state)
 
             assert manager.shared_state is mock_shared_state
 
     def test_shared_state_manager_optional(self, mock_config):
         """Test that shared_state_manager is optional."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager.shared_state is None
@@ -317,21 +317,21 @@ class TestDataStructureInitialization:
 
     def test_instances_dict_initialized(self, mock_config):
         """Test instances dict is initialized."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager.instances == {}
 
     def test_tmux_sessions_dict_initialized(self, mock_config):
         """Test tmux_sessions dict is initialized."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager.tmux_sessions == {}
 
     def test_message_history_dict_initialized(self, mock_config):
         """Test message_history dict is initialized."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             manager = TmuxInstanceManager(mock_config)
 
             assert manager.message_history == {}
@@ -342,7 +342,7 @@ class TestTmuxServerConnection:
 
     def test_tmux_server_connection(self, mock_config):
         """Test that tmux server is connected."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server") as mock_server_class:
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server") as mock_server_class:
             mock_server = MagicMock()
             mock_server_class.return_value = mock_server
 

@@ -12,35 +12,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import libtmux  # type: ignore[import-untyped]
+import libtmux
 
-from .compat import UTC
-from .llm_summarizer import LLMSummarizer
-from .monitoring_service import MonitoringService
-from .name_generator import get_instance_name
-from .simple_models import MessageEnvelope
+from ..compat import UTC
+from ..llm_summarizer import LLMSummarizer
+from ..monitoring_service import MonitoringService
+from ..name_generator import get_instance_name
+from ..simple_models import MessageEnvelope
+from .helpers import MAX_MESSAGE_HISTORY_PER_INSTANCE, redact_authkey
 
 logger = logging.getLogger(__name__)
-
-# SECURITY FIX (CWE-770): Message history limits to prevent unbounded memory growth
-MAX_MESSAGE_HISTORY_PER_INSTANCE = 500  # Keep last 500 messages per instance
-
-
-# SECURITY FIX (CWE-532): Helper function to redact authkeys in logs
-def redact_authkey(authkey: bytes | None) -> str:
-    """Redact authentication keys for logging.
-
-    Args:
-        authkey: Authentication key bytes to redact
-
-    Returns:
-        Redacted string like "***1234" showing last 4 bytes in hex
-    """
-    if not authkey:
-        return "[not set]"
-    # Show last 4 bytes as hex
-    last_bytes = authkey[-4:] if len(authkey) >= 4 else authkey
-    return f"***{last_bytes.hex()}"
 
 
 class TmuxInstanceManager:
@@ -415,7 +396,7 @@ class TmuxInstanceManager:
 
                         # Read existing config or create new one
                         if codex_config_path.exists():
-                            import toml  # type: ignore[import-untyped]
+                            import toml
 
                             config = toml.load(codex_config_path)
                         else:
@@ -432,7 +413,7 @@ class TmuxInstanceManager:
                             config["mcp_servers"][server_name]["bearer_token"] = bearer_token
 
                         # Write config back
-                        import toml  # type: ignore[import-untyped]
+                        import toml
 
                         with codex_config_path.open("w") as f:
                             toml.dump(config, f)
@@ -451,7 +432,7 @@ class TmuxInstanceManager:
 
         # Handle Claude instances - create JSON config file
         mcp_config_path = workspace_dir / ".claude_mcp_config.json"
-        mcp_config = {"mcpServers": {}}
+        mcp_config: dict[str, Any] = {"mcpServers": {}}
 
         # Build config from mcp_servers parameter
         for server_name, server_config in mcp_servers.items():
@@ -2224,7 +2205,7 @@ class TmuxInstanceManager:
 
             # Check process existence using psutil
             try:
-                import psutil  # type: ignore[import-untyped]
+                import psutil
 
                 if not psutil.pid_exists(pid):
                     logger.error(f"Process {pid} for instance {instance_id} no longer exists")

@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.orchestrator.server import ClaudeOrchestratorServer
-from src.orchestrator.simple_models import OrchestratorConfig
+from orchestrator.server import ClaudeOrchestratorServer
+from orchestrator.simple_models import OrchestratorConfig
 
 
 @pytest.fixture
@@ -34,8 +34,8 @@ def mock_env_vars(monkeypatch):
 @pytest.fixture
 def server(orchestrator_config, mock_env_vars):
     """Create ClaudeOrchestratorServer instance for testing."""
-    with patch("src.orchestrator.server.LoggingManager"):
-        with patch("src.orchestrator.server.InstanceManager") as mock_im:
+    with patch("orchestrator.server.core.LoggingManager"):
+        with patch("orchestrator.server.core.InstanceManager") as mock_im:
             # Mock instance manager
             mock_instance_manager = MagicMock()
             mock_instance_manager.instances = {}
@@ -68,8 +68,8 @@ class TestServerInitialization:
 
     def test_server_init_with_config(self, orchestrator_config, mock_env_vars):
         """Test server initializes with configuration."""
-        with patch("src.orchestrator.server.LoggingManager"):
-            with patch("src.orchestrator.server.InstanceManager"):
+        with patch("orchestrator.server.core.LoggingManager"):
+            with patch("orchestrator.server.core.InstanceManager"):
                 server = ClaudeOrchestratorServer(orchestrator_config)
 
                 assert server.config == orchestrator_config
@@ -294,8 +294,8 @@ class TestServerLifecycle:
 
     def test_cleanup_orphaned_sessions_called(self, orchestrator_config, mock_env_vars):
         """Test that cleanup of orphaned tmux sessions is called during init."""
-        with patch("src.orchestrator.server.LoggingManager"):
-            with patch("src.orchestrator.server.InstanceManager"):
+        with patch("orchestrator.server.core.LoggingManager"):
+            with patch("orchestrator.server.core.InstanceManager"):
                 with patch.object(
                     ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"
                 ) as mock_cleanup:

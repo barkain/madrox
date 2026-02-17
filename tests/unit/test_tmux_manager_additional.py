@@ -21,8 +21,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest  # type: ignore[import-untyped]
 
-from src.orchestrator.compat import UTC
-from src.orchestrator.tmux_instance_manager import TmuxInstanceManager
+from orchestrator.compat import UTC
+from orchestrator.tmux_instance_manager import TmuxInstanceManager
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ class TestInitialization:
 
     def test_init_basic(self, mock_config: dict[str, Any]) -> None:
         """Test basic initialization."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -87,7 +87,7 @@ class TestInitialization:
 
     def test_init_with_workspace_dir(self, mock_config: dict[str, Any]) -> None:
         """Test initialization creates workspace directory."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -95,14 +95,14 @@ class TestInitialization:
 
     def test_init_with_monitoring_service(self, mock_config: dict[str, Any]) -> None:
         """Test initialization with OPENROUTER_API_KEY."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict(
                 "os.environ",
                 {"ORCHESTRATOR_PORT": "8001", "OPENROUTER_API_KEY": "test-key"},
                 clear=False,
             ):
-                with patch("src.orchestrator.tmux_instance_manager.LLMSummarizer"):
-                    with patch("src.orchestrator.tmux_instance_manager.MonitoringService"):
+                with patch("orchestrator.tmux_instance_manager.core.LLMSummarizer"):
+                    with patch("orchestrator.tmux_instance_manager.core.MonitoringService"):
                         manager = TmuxInstanceManager(mock_config)
 
                         # Should have monitoring service initialized
@@ -110,7 +110,7 @@ class TestInitialization:
 
     def test_init_without_monitoring_service(self, mock_config: dict[str, Any]) -> None:
         """Test initialization without OPENROUTER_API_KEY."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=True):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -131,7 +131,7 @@ class TestSessionManagement:
         mocks = create_mock_libtmux()
 
         with patch(
-            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+            "orchestrator.tmux_instance_manager.core.libtmux.Server", return_value=mocks["server"]
         ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
@@ -174,7 +174,7 @@ class TestSessionManagement:
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
         with patch(
-            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+            "orchestrator.tmux_instance_manager.core.libtmux.Server", return_value=mocks["server"]
         ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
@@ -202,7 +202,7 @@ class TestSessionManagement:
         mocks = create_mock_libtmux()
 
         with patch(
-            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+            "orchestrator.tmux_instance_manager.core.libtmux.Server", return_value=mocks["server"]
         ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
@@ -244,7 +244,7 @@ class TestMessageSending:
         mocks = create_mock_libtmux()
 
         with patch(
-            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+            "orchestrator.tmux_instance_manager.core.libtmux.Server", return_value=mocks["server"]
         ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
@@ -281,7 +281,7 @@ class TestMessageSending:
         mocks = create_mock_libtmux()
 
         with patch(
-            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+            "orchestrator.tmux_instance_manager.core.libtmux.Server", return_value=mocks["server"]
         ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
@@ -314,7 +314,7 @@ class TestOutputCapture:
         mocks = create_mock_libtmux()
 
         with patch(
-            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+            "orchestrator.tmux_instance_manager.core.libtmux.Server", return_value=mocks["server"]
         ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
@@ -345,7 +345,7 @@ class TestUtilityFunctions:
 
     def test_get_role_prompt_valid_role(self, mock_config: dict[str, Any]) -> None:
         """Test _get_role_prompt with valid role."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -355,7 +355,7 @@ class TestUtilityFunctions:
 
     def test_get_role_prompt_fallback(self, mock_config: dict[str, Any]) -> None:
         """Test _get_role_prompt with unknown role."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -364,7 +364,7 @@ class TestUtilityFunctions:
 
     def test_extract_response_basic(self, mock_config: dict[str, Any]) -> None:
         """Test _extract_response strips UI chrome."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -386,7 +386,7 @@ class TestUtilityFunctions:
 
     def test_get_instance_status_single(self, mock_config: dict[str, Any]) -> None:
         """Test get_instance_status for single instance."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -406,7 +406,7 @@ class TestUtilityFunctions:
 
     def test_get_instance_status_all(self, mock_config: dict[str, Any]) -> None:
         """Test get_instance_status for all instances."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -426,7 +426,7 @@ class TestUtilityFunctions:
 
     def test_get_all_instances(self, mock_config: dict[str, Any]) -> None:
         """Test get_all_instances helper."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -459,7 +459,7 @@ class TestMCPConfiguration:
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
         with patch(
-            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+            "orchestrator.tmux_instance_manager.core.libtmux.Server", return_value=mocks["server"]
         ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
@@ -495,7 +495,7 @@ class TestMCPConfiguration:
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
         with patch(
-            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+            "orchestrator.tmux_instance_manager.core.libtmux.Server", return_value=mocks["server"]
         ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
@@ -526,7 +526,7 @@ class TestMCPConfiguration:
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
         with patch(
-            "src.orchestrator.tmux_instance_manager.libtmux.Server", return_value=mocks["server"]
+            "orchestrator.tmux_instance_manager.core.libtmux.Server", return_value=mocks["server"]
         ):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
@@ -560,7 +560,7 @@ class TestAuditLogs:
     @pytest.mark.asyncio
     async def test_get_audit_logs_no_manager(self, mock_config: dict[str, Any]) -> None:
         """Test get_audit_logs without logging manager."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 
@@ -573,7 +573,7 @@ class TestAuditLogs:
     @pytest.mark.asyncio
     async def test_get_audit_logs_with_limit(self, mock_config: dict[str, Any]) -> None:
         """Test get_audit_logs with limit parameter."""
-        with patch("src.orchestrator.tmux_instance_manager.libtmux.Server"):
+        with patch("orchestrator.tmux_instance_manager.core.libtmux.Server"):
             with patch.dict("os.environ", {"ORCHESTRATOR_PORT": "8001"}, clear=False):
                 manager = TmuxInstanceManager(mock_config)
 

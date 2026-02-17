@@ -127,17 +127,17 @@ class LogStreamHandler(logging.Handler):
 
             # Add audit-specific fields if present
             if hasattr(record, "action"):
-                message_data["data"]["action"] = record.action
+                message_data["data"]["action"] = record.action  # type: ignore[index]
 
             if hasattr(record, "metadata"):
-                message_data["data"]["metadata"] = record.metadata
+                message_data["data"]["metadata"] = record.metadata  # type: ignore[index]
 
             # Include instance_id and event_type if available
             if hasattr(record, "instance_id"):
-                message_data["data"]["instance_id"] = record.instance_id
+                message_data["data"]["instance_id"] = record.instance_id  # type: ignore[index]
 
             if hasattr(record, "event_type"):
-                message_data["data"]["event_type"] = record.event_type
+                message_data["data"]["event_type"] = record.event_type  # type: ignore[index]
 
         else:
             # Format as system log
@@ -156,10 +156,10 @@ class LogStreamHandler(logging.Handler):
 
             # Add extra context fields if present
             if hasattr(record, "instance_id"):
-                message_data["data"]["instance_id"] = record.instance_id
+                message_data["data"]["instance_id"] = record.instance_id  # type: ignore[index]
 
             if hasattr(record, "instance_name"):
-                message_data["data"]["instance_name"] = record.instance_name
+                message_data["data"]["instance_name"] = record.instance_name  # type: ignore[index]
 
         return message_data
 

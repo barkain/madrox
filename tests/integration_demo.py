@@ -8,8 +8,8 @@ from pathlib import Path
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from src.orchestrator.instance_manager import InstanceManager
-from src.orchestrator.simple_models import InstanceRole, OrchestratorConfig
+from orchestrator.instance_manager import InstanceManager
+from orchestrator.simple_models import InstanceRole, OrchestratorConfig
 
 
 async def main():

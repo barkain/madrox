@@ -347,7 +347,7 @@ Begin execution now. Spawn your team and start the workflow."""
 
                 elif method == "tools/list":
                     # Use dynamically generated tools list from FastMCP
-                    result = {"tools": await self.get_available_tools()}
+                    result = {"tools": await self.get_available_tools()}  # type: ignore[dict-item]
 
                 elif method == "tools/call":
                     tool_name = params.get("name")
@@ -382,7 +382,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                 {
                                     "type": "text",
                                     "text": f"Spawned instance '{tool_args.get('name')}' with ID: {instance_id}",
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -462,7 +462,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                 {
                                     "type": "text",
                                     "text": "\n".join(response_lines),
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -506,7 +506,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                 # Other status response
                                 text = f"Response: {response}"
 
-                            result = {"content": [{"type": "text", "text": text}]}
+                            result = {"content": [{"type": "text", "text": text}]}  # type: ignore[list-item]
                         elif response:
                             # Blocking: return actual response
                             result = {
@@ -514,7 +514,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     {
                                         "type": "text",
                                         "text": response.get("response", str(response)),
-                                    }
+                                    }  # type: ignore[list-item]
                                 ]
                             }
                         else:
@@ -524,7 +524,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     {
                                         "type": "text",
                                         "text": "Message sent but no response received",
-                                    }
+                                    }  # type: ignore[list-item]
                                 ]
                             }
 
@@ -613,7 +613,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                 {
                                     "type": "text",
                                     "text": "\n".join(response_lines),
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -626,7 +626,7 @@ Begin execution now. Spawn your team and start the workflow."""
                         )
                         output = {"instance_id": tool_args["instance_id"], "output": messages}
                         result = {
-                            "content": [{"type": "text", "text": json.dumps(output, indent=2)}]
+                            "content": [{"type": "text", "text": json.dumps(output, indent=2)}]  # type: ignore[list-item]
                         }
 
                     elif tool_name == "coordinate_instances":
@@ -634,7 +634,7 @@ Begin execution now. Spawn your team and start the workflow."""
                         import uuid
                         from datetime import datetime
 
-                        from .compat import UTC
+                        from ..compat import UTC
 
                         task_id = str(uuid.uuid4())
                         coordinator_id = tool_args["coordinator_id"]
@@ -670,7 +670,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                 {
                                     "type": "text",
                                     "text": f"Coordination completed: {coordination_result}",
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -686,7 +686,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                         "type": "text",
                                         "text": f"⏸️ Interrupt signal sent to instance {tool_args['instance_id']}\n"
                                         f"Current task stopped, instance remains active and ready for new messages.",
-                                    }
+                                    }  # type: ignore[list-item]
                                 ]
                             }
                         else:
@@ -696,9 +696,9 @@ Begin execution now. Spawn your team and start the workflow."""
                                         "type": "text",
                                         "text": f"❌ Failed to interrupt instance {tool_args['instance_id']}: "
                                         f"{interrupt_result.get('error', 'Unknown error')}",
-                                    }
+                                    }  # type: ignore[list-item]
                                 ],
-                                "isError": True,
+                                "isError": True,  # type: ignore[dict-item]
                             }
 
                     elif tool_name == "interrupt_multiple_instances":
@@ -760,7 +760,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     "text": "\n".join(message_parts)
                                     if message_parts
                                     else "No instances interrupted",
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -777,7 +777,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     "text": f"Instance {tool_args['instance_id']} terminated"
                                     if success
                                     else f"Failed to terminate {tool_args['instance_id']}",
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -842,7 +842,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                 {
                                     "type": "text",
                                     "text": "\n".join(response_lines),
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -883,7 +883,7 @@ Begin execution now. Spawn your team and start the workflow."""
                         response_data = {"outputs": outputs, "errors": errors}
                         result = {
                             "content": [
-                                {"type": "text", "text": json.dumps(response_data, indent=2)}
+                                {"type": "text", "text": json.dumps(response_data, indent=2)}  # type: ignore[list-item]
                             ]
                         }
 
@@ -957,7 +957,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     f"  - {error['instance_id']}/{error['filename']}: {error['error']}"
                                 )
 
-                        result = {"content": [{"type": "text", "text": "\n".join(response_lines)}]}
+                        result = {"content": [{"type": "text", "text": "\n".join(response_lines)}]}  # type: ignore[list-item]
 
                     elif tool_name == "list_multiple_instance_files":
                         instance_ids = tool_args.get("instance_ids", [])
@@ -994,7 +994,7 @@ Begin execution now. Spawn your team and start the workflow."""
                         response_data = {"listings": file_listings, "errors": errors}
                         result = {
                             "content": [
-                                {"type": "text", "text": json.dumps(response_data, indent=2)}
+                                {"type": "text", "text": json.dumps(response_data, indent=2)}  # type: ignore[list-item]
                             ]
                         }
 
@@ -1031,7 +1031,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     "text": json.dumps(job_status, indent=2)
                                     if job_status
                                     else "Job not found",
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -1043,7 +1043,7 @@ Begin execution now. Spawn your team and start the workflow."""
                             instance_id=instance_id, summary_only=(instance_id is None)
                         )
                         result = {
-                            "content": [{"type": "text", "text": json.dumps(status, indent=2)}]
+                            "content": [{"type": "text", "text": json.dumps(status, indent=2)}]  # type: ignore[list-item]
                         }
 
                     elif tool_name == "get_live_instance_status":
@@ -1095,7 +1095,7 @@ Begin execution now. Spawn your team and start the workflow."""
                         }
 
                         result = {
-                            "content": [{"type": "text", "text": json.dumps(live_status, indent=2)}]
+                            "content": [{"type": "text", "text": json.dumps(live_status, indent=2)}]  # type: ignore[list-item]
                         }
 
                     elif tool_name == "get_children":
@@ -1109,7 +1109,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     "type": "text",
                                     "text": f"Found {len(children)} children:\n\n"
                                     + json.dumps(children, indent=2),
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -1124,7 +1124,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     "type": "text",
                                     "text": f"Found {len(peers)} peers:\n\n"
                                     + json.dumps(peers, indent=2),
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -1164,9 +1164,9 @@ Begin execution now. Spawn your team and start the workflow."""
                             # Format results
                             formatted_results = []
                             for i, child in enumerate(children):
-                                result = results[i]
-                                if isinstance(result, Exception):
-                                    formatted_results.append(
+                                result = results[i]  # type: ignore[assignment]
+                                if isinstance(result, Exception):  # type: ignore[unreachable]
+                                    formatted_results.append(  # type: ignore[unreachable]
                                         {
                                             "child_id": child["id"],
                                             "child_name": child["name"],
@@ -1197,7 +1197,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     "type": "text",
                                     "text": f"Broadcasted to {broadcast_result['children_count']} children\n\n"
                                     + json.dumps(broadcast_result["results"], indent=2),
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -1215,7 +1215,7 @@ Begin execution now. Spawn your team and start the workflow."""
                             tree_output = "No instances running"
                         else:
                             roots.sort(key=lambda x: x[1])
-                            lines = []
+                            lines: list[str] = []
                             for i, (root_id, _) in enumerate(roots):
                                 is_last_root = i == len(roots) - 1
                                 self.manager._build_tree_recursive(
@@ -1225,7 +1225,7 @@ Begin execution now. Spawn your team and start the workflow."""
 
                         result = {
                             "content": [
-                                {"type": "text", "text": f"Instance Hierarchy:\n\n{tree_output}"}
+                                {"type": "text", "text": f"Instance Hierarchy:\n\n{tree_output}"}  # type: ignore[list-item]
                             ]
                         }
 
@@ -1243,7 +1243,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     "text": f"File retrieved successfully to: {file_path}"
                                     if file_path
                                     else "File not found",
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -1259,7 +1259,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     "text": json.dumps(files, indent=2)
                                     if files
                                     else "No files found or instance not found",
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -1286,7 +1286,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                 {
                                     "type": "text",
                                     "text": f"Spawned Codex instance '{tool_args.get('name')}' with ID: {instance_id}",
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -1326,7 +1326,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                 {
                                     "type": "text",
                                     "text": content,
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -1341,9 +1341,9 @@ Begin execution now. Spawn your team and start the workflow."""
                                     "text": "⚠️ DEPRECATED: This tool has been removed.\n\n"
                                     "Use your own instance_id in reply_to_caller, not the main instance ID.\n"
                                     "Your instance_id is already provided in your system prompt.",
-                                }
+                                }  # type: ignore[list-item]
                             ],
-                            "isError": True,
+                            "isError": True,  # type: ignore[dict-item]
                         }
 
                     elif tool_name == "reply_to_caller":
@@ -1376,7 +1376,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                             if reply_result.get("correlation_id")
                                             else ""
                                         ),
-                                    }
+                                    }  # type: ignore[list-item]
                                 ]
                             }
                         else:
@@ -1385,9 +1385,9 @@ Begin execution now. Spawn your team and start the workflow."""
                                     {
                                         "type": "text",
                                         "text": f"❌ Failed to deliver reply: {reply_result.get('error', 'Unknown error')}",
-                                    }
+                                    }  # type: ignore[list-item]
                                 ],
-                                "isError": True,
+                                "isError": True,  # type: ignore[dict-item]
                             }
 
                     elif tool_name == "get_pending_replies":
@@ -1413,7 +1413,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     {
                                         "type": "text",
                                         "text": reply_text.strip(),
-                                    }
+                                    }  # type: ignore[list-item]
                                 ]
                             }
                         else:
@@ -1422,7 +1422,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     {
                                         "type": "text",
                                         "text": "📭 No pending replies in queue",
-                                    }
+                                    }  # type: ignore[list-item]
                                 ]
                             }
 
@@ -1531,7 +1531,7 @@ Use get_instance_tree() to see the full network hierarchy."""
                                 {
                                     "type": "text",
                                     "text": result_text,
-                                }
+                                }  # type: ignore[list-item]
                             ]
                         }
 
@@ -1572,7 +1572,7 @@ Use get_instance_tree() to see the full network hierarchy."""
                                             {
                                                 "type": "text",
                                                 "text": json.dumps(summary, indent=2),
-                                            }
+                                            }  # type: ignore[list-item]
                                         ]
                                     }
                             except Exception as e:
@@ -1619,7 +1619,7 @@ Use get_instance_tree() to see the full network hierarchy."""
                                                 {"summaries": summaries, "count": len(summaries)},
                                                 indent=2,
                                             ),
-                                        }
+                                        }  # type: ignore[list-item]
                                     ]
                                 }
                             except Exception as e:

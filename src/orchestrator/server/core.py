@@ -6,18 +6,18 @@ import os
 from datetime import datetime
 from typing import Any
 
-from fastapi import (  # type: ignore[import-untyped]
+from fastapi import (
     FastAPI,
     HTTPException,
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import-untyped]
+from fastapi.middleware.cors import CORSMiddleware
 
-from .instance_manager import InstanceManager
-from .logging_manager import LoggingManager, get_audit_log_stream_handler, get_log_stream_handler
-from .mcp_adapter import MCPAdapter
-from .simple_models import (
+from ..instance_manager import InstanceManager
+from ..logging_manager import LoggingManager, get_audit_log_stream_handler, get_log_stream_handler
+from ..mcp_adapter import MCPAdapter
+from ..simple_models import (
     InstanceRole,
     OrchestratorConfig,
 )
@@ -1196,7 +1196,7 @@ class ClaudeOrchestratorServer:
     async def start_server(self):
         """Start the MCP server."""
         try:
-            import uvicorn  # type: ignore[import-untyped]
+            import uvicorn
         except ImportError:
             # Fallback for type checking
             class _Config:
@@ -1214,7 +1214,7 @@ class ClaudeOrchestratorServer:
                 Config = _Config
                 Server = _Server
 
-            uvicorn = _UvicornModule()  # type: ignore[assignment]
+            uvicorn = _UvicornModule()
 
         logger.info(
             f"Starting Claude Orchestrator Server on {self.config.server_host}:{self.config.server_port}"

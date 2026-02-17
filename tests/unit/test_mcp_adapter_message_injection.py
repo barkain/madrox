@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.orchestrator.mcp_adapter import MCPAdapter
+from orchestrator.mcp_adapter import MCPAdapter
 
 
 @pytest.fixture

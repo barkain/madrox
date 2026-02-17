@@ -17,7 +17,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from src.orchestrator.mcp_adapter import MCPAdapter
+from orchestrator.mcp_adapter import MCPAdapter
 
 # ============================================================================
 # FIXTURES

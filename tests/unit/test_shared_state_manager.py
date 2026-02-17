@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.orchestrator.shared_state_manager import SharedStateManager
+from orchestrator.shared_state_manager import SharedStateManager
 
 
 class TestInitialization:

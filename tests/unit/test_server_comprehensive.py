@@ -17,8 +17,8 @@ import pytest  # type: ignore[import-untyped]
 from fastapi import HTTPException  # type: ignore[import-untyped]
 from fastapi.testclient import TestClient  # type: ignore[import-untyped]
 
-from src.orchestrator.server import ClaudeOrchestratorServer
-from src.orchestrator.simple_models import OrchestratorConfig
+from orchestrator.server import ClaudeOrchestratorServer
+from orchestrator.simple_models import OrchestratorConfig
 
 # ============================================================================
 # FIXTURES
@@ -124,10 +124,10 @@ def mock_mcp_adapter():
 def server(mock_config, mock_instance_manager, mock_mcp_adapter):
     """Create server instance with mocked dependencies."""
     with (
-        patch("src.orchestrator.server.InstanceManager", return_value=mock_instance_manager),
-        patch("src.orchestrator.server.MCPAdapter", return_value=mock_mcp_adapter),
-        patch("src.orchestrator.server.LoggingManager"),
-        patch("src.orchestrator.server.ClaudeOrchestratorServer._cleanup_orphaned_tmux_sessions"),
+        patch("orchestrator.server.core.InstanceManager", return_value=mock_instance_manager),
+        patch("orchestrator.server.core.MCPAdapter", return_value=mock_mcp_adapter),
+        patch("orchestrator.server.core.LoggingManager"),
+        patch("orchestrator.server.core.ClaudeOrchestratorServer._cleanup_orphaned_tmux_sessions"),
     ):
         server_instance = ClaudeOrchestratorServer(mock_config)
         server_instance.instance_manager = mock_instance_manager
@@ -787,8 +787,8 @@ class TestLogsWebSocket:
         log_file.write_text("")
 
         with (
-            patch("src.orchestrator.server.get_log_stream_handler") as mock_handler,
-            patch("src.orchestrator.server.get_audit_log_stream_handler") as mock_audit_handler,
+            patch("orchestrator.server.core.get_log_stream_handler") as mock_handler,
+            patch("orchestrator.server.core.get_audit_log_stream_handler") as mock_audit_handler,
         ):
             mock_handler.return_value = MagicMock()
             mock_audit_handler.return_value = MagicMock()
@@ -814,8 +814,8 @@ class TestLogsWebSocket:
                 f.write(json.dumps(entry) + "\n")
 
         with (
-            patch("src.orchestrator.server.get_log_stream_handler") as mock_handler,
-            patch("src.orchestrator.server.get_audit_log_stream_handler") as mock_audit_handler,
+            patch("orchestrator.server.core.get_log_stream_handler") as mock_handler,
+            patch("orchestrator.server.core.get_audit_log_stream_handler") as mock_audit_handler,
         ):
             mock_handler.return_value = MagicMock()
             mock_audit_handler.return_value = MagicMock()
@@ -835,8 +835,8 @@ class TestLogsWebSocket:
         log_file.write_text("")
 
         with (
-            patch("src.orchestrator.server.get_log_stream_handler") as mock_handler,
-            patch("src.orchestrator.server.get_audit_log_stream_handler") as mock_audit_handler,
+            patch("orchestrator.server.core.get_log_stream_handler") as mock_handler,
+            patch("orchestrator.server.core.get_audit_log_stream_handler") as mock_audit_handler,
         ):
             mock_log_handler = MagicMock()
             mock_audit_log_handler = MagicMock()
@@ -999,11 +999,11 @@ class TestServerLifecycle:
     async def test_server_initialization(self, mock_config):
         """Test that server initializes correctly."""
         with (
-            patch("src.orchestrator.server.InstanceManager"),
-            patch("src.orchestrator.server.MCPAdapter"),
-            patch("src.orchestrator.server.LoggingManager"),
+            patch("orchestrator.server.core.InstanceManager"),
+            patch("orchestrator.server.core.MCPAdapter"),
+            patch("orchestrator.server.core.LoggingManager"),
             patch(
-                "src.orchestrator.server.ClaudeOrchestratorServer._cleanup_orphaned_tmux_sessions"
+                "orchestrator.server.core.ClaudeOrchestratorServer._cleanup_orphaned_tmux_sessions"
             ),
         ):
             server = ClaudeOrchestratorServer(mock_config)
