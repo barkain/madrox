@@ -219,9 +219,7 @@ class MessagingMixin:
                 results["outputs"].append({"instance_id": instance_id, "output": output})
             except Exception as e:
                 logger.error(f"Failed to get output for instance {instance_id}: {e}")
-                results["errors"].append(
-                    {"instance_id": instance_id, "error": type(e).__name__}
-                )
+                results["errors"].append({"instance_id": instance_id, "error": type(e).__name__})
         return results
 
     @mcp.tool

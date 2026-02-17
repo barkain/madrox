@@ -346,9 +346,7 @@ class TestValidateModel:
             }
         }
 
-        with patch(
-            "orchestrator.config._load_model_config", return_value=config_with_empty_list
-        ):
+        with patch("orchestrator.config._load_model_config", return_value=config_with_empty_list):
             # Default should still work
             result = validate_model("claude", None)
             assert result == "claude-sonnet-4-5"

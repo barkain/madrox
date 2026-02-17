@@ -872,7 +872,8 @@ class TestErrorHandling:
             return model or "claude-sonnet-4-5"
 
         with patch(
-            "orchestrator.instance_manager.spawning.validate_model", side_effect=validate_model_strict
+            "orchestrator.instance_manager.spawning.validate_model",
+            side_effect=validate_model_strict,
         ):
             with pytest.raises(ValueError, match="Invalid model"):
                 await instance_manager.spawn_claude.fn(
