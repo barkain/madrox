@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-"""Demo: Claude parent + Codex child discuss Argentina's weather.
+"""Demo: Claude + Codex multi-model team discussing weather.
 
-Shows Madrox's multi-model orchestration:
-  1. Spawn a Claude instance as the team lead
-  2. Spawn a Codex instance as a child researcher
-  3. Send the Codex child a research task
-  4. Forward findings to the Claude parent for analysis
-  5. View the mixed-model instance tree
+Spawns a Claude parent and Codex child, sends each a task,
+then shows the instance tree and terminal output.
 
 Prerequisites:
     ./start.sh --be      # start Madrox backend on :8001
@@ -31,112 +27,97 @@ def call_tool(tool_name: str, args: dict) -> dict:
     return resp.json()
 
 
-def extract_response(result: dict) -> str:
-    """Extract the response text from a send_to_instance result."""
-    response = result.get("response", "")
-    if isinstance(response, dict):
-        return response.get("response", str(response))
-    return str(response) if response else ""
-
-
 def main():
-    print("🌍 Weather Discussion Demo: Claude + Codex")
-    print("=" * 60)
+    print()
+    print("  Madrox Demo: Claude + Codex Weather Team")
+    print("  " + "=" * 44)
     print()
 
-    # Step 1: Spawn Claude parent with Madrox tools
-    print("📍 Step 1: Spawning Claude parent (team lead)...")
+    # 1. Spawn Claude parent
+    print("  [1/5] Spawning Claude parent...")
     parent = call_tool(
         "spawn_claude",
-        {
-            "name": "weather-lead",
-            "role": "general",
-            "bypass_isolation": True,
-            "enable_madrox": True,
-        },
+        {"name": "weather-lead", "role": "general", "bypass_isolation": True},
     )
     parent_id = parent["instance_id"]
-    print(f"   ✅ Claude: {parent['name']} ({parent_id[:8]}...)")
-    print()
-    time.sleep(3)
+    print(f"        Claude: {parent['name']} ({parent_id[:8]}...)")
 
-    # Step 2: Spawn Codex child researcher
-    print("📍 Step 2: Spawning Codex child (researcher)...")
+    # 2. Spawn Codex child
+    print("  [2/5] Spawning Codex child...")
     child = call_tool(
         "spawn_codex",
-        {
-            "name": "weather-researcher",
-            "bypass_isolation": True,
-            "parent_instance_id": parent_id,
-        },
+        {"name": "weather-researcher", "bypass_isolation": True, "parent_instance_id": parent_id},
     )
     child_id = child["instance_id"]
-    print(f"   ✅ Codex: {child.get('name', 'weather-researcher')} ({child_id[:8]}...)")
+    print(f"        Codex:  {child.get('name')} ({child_id[:8]}...)")
     print()
-    time.sleep(5)
 
-    # Step 3: Send research task to Codex child
-    print("📍 Step 3: Sending research task to Codex child...")
-    research_result = call_tool(
+    # 3. Send tasks (fire-and-forget)
+    print("  [3/5] Sending tasks...")
+    call_tool(
         "send_to_instance",
         {
             "instance_id": child_id,
-            "message": (
-                "Research current weather conditions in Buenos Aires, Argentina. "
-                "Include temperature, conditions, and any notable weather patterns. "
-                "Be concise — 3-4 sentences max."
-            ),
-            "wait_for_response": True,
-            "timeout_seconds": 90,
+            "message": "What is the current weather in Buenos Aires, Argentina? Be concise.",
+            "wait_for_response": False,
         },
     )
-    research_text = extract_response(research_result)
-    print(f"   ✅ Codex responded (success: {research_result.get('success')})")
-    if research_text:
-        print(f"   📨 {research_text[:500]}")
-    print()
+    print("        -> Codex: research Buenos Aires weather")
 
-    # Step 4: Forward findings to Claude parent for analysis
-    print("📍 Step 4: Asking Claude parent to analyze...")
-    analysis_result = call_tool(
+    call_tool(
         "send_to_instance",
         {
             "instance_id": parent_id,
-            "message": (
-                f"Your Codex researcher found this about Buenos Aires weather:\n\n"
-                f"{research_text[:800] if research_text else '(no response yet)'}\n\n"
-                f"Based on this, what would you recommend someone pack for a trip "
-                f"to Buenos Aires this week? Be concise — 3-4 sentences."
-            ),
-            "wait_for_response": True,
-            "timeout_seconds": 90,
+            "message": "What should someone pack for a summer trip to Buenos Aires? Be concise.",
+            "wait_for_response": False,
         },
     )
-    analysis_text = extract_response(analysis_result)
-    print(f"   ✅ Claude responded (success: {analysis_result.get('success')})")
-    if analysis_text:
-        print(f"   📨 {analysis_text[:500]}")
+    print("        -> Claude: packing recommendations")
     print()
 
-    # Step 5: Show the mixed-model instance tree
-    print("📍 Step 5: Instance tree")
+    # 4. Wait for instances to process
+    print("  [4/5] Waiting 30s for responses...", end="", flush=True)
+    for i in range(30):
+        time.sleep(1)
+        if (i + 1) % 5 == 0:
+            print(f" {i + 1}s", end="", flush=True)
+    print(" done")
+    print()
+
+    # 5. Show results
+    print("  [5/5] Results")
+    print("  " + "-" * 44)
+    print()
+
+    # Instance tree
     tree = call_tool("get_instance_tree", {})
-    print(f"   {tree}" if isinstance(tree, str) else f"   {tree}")
+    tree_str = tree if isinstance(tree, str) else str(tree)
+    print("  Instance tree:")
+    for line in tree_str.strip().split("\n"):
+        print(f"    {line}")
     print()
 
-    # Step 6: Show children of parent
-    print("📍 Step 6: Children of Claude parent")
-    children = call_tool("get_children", {"parent_id": parent_id})
-    print(f"   Found {len(children)} child(ren)")
-    for c in children:
-        print(
-            f"      - {c.get('name')} ({c.get('id', '')[:8]}...) "
-            f"[{c.get('instance_type')}] [{c.get('state')}]"
-        )
-    print()
+    # Terminal output from each instance
+    for name, iid in [
+        ("Claude (weather-lead)", parent_id),
+        ("Codex (weather-researcher)", child_id),
+    ]:
+        print(f"  Terminal — {name}:")
+        print("  " + "." * 44)
+        try:
+            content = call_tool("get_tmux_pane_content", {"instance_id": iid, "lines": 30})
+            text = content if isinstance(content, str) else str(content)
+            # Show last 15 non-empty lines
+            lines = [ln for ln in text.strip().split("\n") if ln.strip()]
+            for line in lines[-15:]:
+                print(f"    {line[:100]}")
+        except Exception as e:
+            print(f"    (error: {e})")
+        print()
 
-    print("=" * 60)
-    print("✅ Demo completed! Claude + Codex team is still running.")
+    print("  " + "=" * 44)
+    print("  Done. Instances are still running.")
+    print()
 
 
 if __name__ == "__main__":
