@@ -8,7 +8,7 @@ import { FilterBar } from "@/components/filter-bar"
 import { NetworkGraph } from "@/components/network-graph"
 import { TerminalViewer } from "@/components/terminal-viewer"
 import { AnimatedBackground } from "@/components/animated-background"
-import { ThemeToggleDropdown } from "@/components/theme-toggle"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { useWebSocket } from "@/hooks/use-websocket"
 import type { MessageFlow } from "@/types"
 import {
@@ -510,7 +510,7 @@ export default function MadroxMonitor() {
           </div>
 
           {/* Theme Toggle */}
-          <ThemeToggleDropdown />
+          <ThemeToggle />
         </div>
 
         {/* Content Area - Tabbed */}
