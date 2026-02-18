@@ -67,9 +67,10 @@ def main():
             "timeout_seconds": 120,
         },
     )
-    print(f"   ✅ Parent responded (status: {send_result.get('status')})")
-    if send_result.get("response"):
-        preview = send_result["response"][:400]
+    print(f"   ✅ Parent responded (success: {send_result.get('success')})")
+    response = send_result.get("response")
+    if response:
+        preview = str(response)[:400]
         print(f"   📨 Response preview: {preview}...")
     print()
 
@@ -96,9 +97,10 @@ def main():
             },
         )
 
-        print(f"   ✅ Codex child response status: {followup_result.get('status')}")
-        if followup_result.get("response"):
-            print(f"   💬 Response: {followup_result['response'][:300]}...")
+        print(f"   ✅ Codex child response (success: {followup_result.get('success')})")
+        followup_response = followup_result.get("response")
+        if followup_response:
+            print(f"   💬 Response: {str(followup_response)[:300]}...")
     print()
 
     # Step 5: Print instance tree
