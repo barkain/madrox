@@ -1,40 +1,26 @@
 #!/usr/bin/env python3
-"""Simple demo using direct HTTP requests."""
+"""Simple demo: spawn a Claude instance and send it a task.
 
-import requests
-import json
+Prerequisites:
+    ./start.sh --be      # start Madrox backend on :8001
+
+Usage:
+    uv run python examples/demo_simple.py
+"""
+
 import time
 
-BASE_URL = "http://localhost:8001"
+import requests
 
-def spawn_claude(name: str) -> dict:
-    """Spawn a Claude instance."""
-    response = requests.post(f"{BASE_URL}/spawn", json={
-        "name": name,
-        "role": "general",
-        "bypass_isolation": True
-    })
-    return response.json()
+URL = "http://localhost:8001"
 
-def send_message(instance_id: str, message: str, wait: bool = True) -> dict:
-    """Send message to instance."""
-    response = requests.post(f"{BASE_URL}/send", json={
-        "instance_id": instance_id,
-        "message": message,
-        "wait_for_response": wait,
-        "timeout_seconds": 90
-    })
-    return response.json()
 
-def get_output(instance_id: str) -> dict:
-    """Get instance output."""
-    response = requests.get(f"{BASE_URL}/output/{instance_id}?limit=20")
-    return response.json()
+def call_tool(tool_name: str, args: dict) -> dict:
+    """Execute an MCP tool via the REST API."""
+    resp = requests.post(f"{URL}/tools/execute", json={"tool": tool_name, "arguments": args})
+    resp.raise_for_status()
+    return resp.json()
 
-def get_children(parent_id: str) -> dict:
-    """Get child instances."""
-    response = requests.get(f"{BASE_URL}/children/{parent_id}")
-    return response.json()
 
 print("🌍 Weather Discussion Demo: Claude Parent + Codex Child")
 print("=" * 70)
@@ -42,55 +28,64 @@ print()
 
 # Step 1: Spawn Claude parent
 print("📍 Step 1: Spawning Claude parent...")
-parent = spawn_claude("weather-claude-parent")
+parent = call_tool(
+    "spawn_claude",
+    {
+        "name": "weather-claude-parent",
+        "role": "general",
+        "bypass_isolation": True,
+    },
+)
 parent_id = parent["instance_id"]
-print(f"✅ Parent spawned: {parent_id}")
+print(f"   ✅ Parent spawned: {parent_id}")
 print()
 
 time.sleep(5)
 
 # Step 2: Ask parent to spawn Codex child
 print("📍 Step 2: Asking parent to spawn Codex child...")
-spawn_request = """You have access to madrox MCP tools. Please:
+spawn_request = (
+    "You have access to madrox MCP tools. Please:\n\n"
+    "1. Use spawn_codex to create a child instance with these parameters:\n"
+    '   - name: "codex-weather-child"\n'
+    "   - bypass_isolation: true\n\n"
+    "2. Send it this message: \"What's the current weather like in Buenos Aires, "
+    "Argentina? Include temperature and conditions. When done, use reply_to_caller "
+    'to send your findings back to me."\n\n'
+    "3. Wait for its response using get_pending_replies and tell me what it said.\n\n"
+    "Use the madrox tools to do this."
+)
 
-1. Use spawn_codex to create a child instance with these parameters:
-   - name: "codex-weather-child"
-   - model: "gpt-5-codex"
-   - bypass_isolation: true (allows command execution without approval)
-
-2. Send it this message: "What's the current weather like in Buenos Aires, Argentina? Include temperature and conditions. When done, use reply_to_caller to send your findings back to me."
-
-3. Wait for its response using get_pending_replies and tell me what it said.
-
-Use the madrox tools to do this."""
-
-result = send_message(parent_id, spawn_request, wait=True)
-print(f"✅ Request sent, status: {result.get('status')}")
-if result.get('response'):
-    print(f"📨 Parent's response:\n{result['response'][:400]}...")
+result = call_tool(
+    "send_to_instance",
+    {
+        "instance_id": parent_id,
+        "message": spawn_request,
+        "wait_for_response": True,
+        "timeout_seconds": 120,
+    },
+)
+print(f"   ✅ Request sent, status: {result.get('status')}")
+if result.get("response"):
+    print(f"   📨 Parent's response:\n{result['response'][:400]}...")
 print()
 
 time.sleep(8)
 
 # Step 3: Check for children
 print("📍 Step 3: Checking for spawned children...")
-children_resp = get_children(parent_id)
+children_resp = call_tool("get_children", {"parent_id": parent_id})
 children = children_resp.get("children", [])
-print(f"✅ Found {len(children)} child(ren)")
+print(f"   ✅ Found {len(children)} child(ren)")
 for child in children:
-    print(f"   - {child['name']} ({child['instance_type']})")
+    print(f"      - {child['name']} ({child['instance_type']})")
 print()
 
-# Step 4: Get parent output
-print("📍 Step 4: Retrieving parent's conversation...")
-output = get_output(parent_id)
-messages = output.get("messages", [])
-print(f"📨 Last {min(3, len(messages))} messages:")
-for msg in messages[-3:]:
-    content = msg.get("content", "")
-    print(f"\n{content[:500]}...")
+# Step 4: Print instance tree
+print("📍 Step 4: Instance tree")
+tree = call_tool("get_instance_tree", {})
+print(tree.get("tree", "No tree available"))
 print()
 
 print("=" * 70)
 print("✅ Demo completed!")
-
