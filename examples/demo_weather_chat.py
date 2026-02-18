@@ -75,18 +75,15 @@ def main():
 
     # Step 3: Check for spawned children
     print("📍 Step 3: Checking for spawned children...")
-    children_result = call_tool("get_children", {"parent_id": parent_id})
-    children = children_result.get("children", [])
+    children = call_tool("get_children", {"parent_id": parent_id})
     print(f"   ✅ Found {len(children)} child instance(s)")
     for child in children:
-        print(
-            f"      - {child.get('name')} ({child.get('instance_id')}) [{child.get('instance_type')}]"
-        )
+        print(f"      - {child.get('name')} ({child.get('id')}) [{child.get('instance_type')}]")
     print()
 
     # Step 4: Send follow-up to Codex child directly
     if children:
-        child_id = children[0].get("instance_id")
+        child_id = children[0].get("id")
         print(f"📍 Step 4: Sending follow-up to Codex child ({child_id[:8]}...)...")
 
         followup_result = call_tool(
@@ -106,8 +103,8 @@ def main():
 
     # Step 5: Print instance tree
     print("📍 Step 5: Instance tree")
-    tree_result = call_tool("get_instance_tree", {})
-    print(tree_result.get("tree", "No tree available"))
+    tree = call_tool("get_instance_tree", {})
+    print(tree if isinstance(tree, str) else tree.get("tree", "No tree available"))
     print()
 
     print("=" * 60)
