@@ -679,6 +679,28 @@ class ClaudeOrchestratorServer:
                     return await self._terminate_instance(**arguments)
                 elif tool_name == "get_instance_status":
                     return await self._get_instance_status(**arguments)
+                elif tool_name == "get_children":
+                    return self.instance_manager.get_children(**arguments)
+                elif tool_name == "get_peers":
+                    return self.instance_manager.get_peers(**arguments)
+                elif tool_name == "get_instance_tree":
+                    return self.instance_manager.get_instance_tree(**arguments)
+                elif tool_name == "spawn_multiple_instances":
+                    return await self.instance_manager.spawn_multiple_instances(**arguments)
+                elif tool_name == "spawn_codex":
+                    return await self.instance_manager.spawn_codex(**arguments)
+                elif tool_name == "broadcast_to_children":
+                    return await self.instance_manager.broadcast_to_children(**arguments)
+                elif tool_name == "reply_to_caller":
+                    return await self.instance_manager.reply_to_caller(**arguments)
+                elif tool_name == "get_pending_replies":
+                    return self.instance_manager.get_pending_replies(**arguments)
+                elif tool_name == "get_live_instance_status":
+                    return await self.instance_manager.get_live_instance_status(**arguments)
+                elif tool_name == "get_tmux_pane_content":
+                    return self.instance_manager.get_tmux_pane_content(**arguments)
+                elif tool_name == "spawn_team_from_template":
+                    return await self.instance_manager.spawn_team_from_template(**arguments)
                 else:
                     raise HTTPException(status_code=400, detail=f"Unknown tool: {tool_name}")
 

@@ -18,6 +18,8 @@ URL = "http://localhost:8001"
 def call_tool(tool_name: str, args: dict) -> dict:
     """Execute an MCP tool via the REST API."""
     resp = requests.post(f"{URL}/tools/execute", json={"tool": tool_name, "arguments": args})
+    if not resp.ok:
+        print(f"   ERROR [{resp.status_code}]: {resp.text}")
     resp.raise_for_status()
     return resp.json()
 
