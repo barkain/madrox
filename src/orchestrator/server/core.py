@@ -705,7 +705,9 @@ class ClaudeOrchestratorServer:
         async def instance_health_check(instance_id: str):
             """Perform health check on specific instance."""
             try:
-                instance = self.instance_manager.get_instance_status(instance_id)
+                instance = await self._call_mcp_tool(
+                    "get_instance_status", {"instance_id": instance_id}
+                )
                 # Perform actual health check here
                 return {
                     "instance_id": instance_id,
@@ -727,7 +729,9 @@ class ClaudeOrchestratorServer:
             """
             try:
                 # Get basic instance status
-                instance = self.instance_manager.get_instance_status(instance_id)
+                instance = await self._call_mcp_tool(
+                    "get_instance_status", {"instance_id": instance_id}
+                )
 
                 # Get event statistics from tmux_manager
                 event_stats = self.instance_manager.tmux_manager.get_event_statistics(instance_id)
@@ -1057,11 +1061,14 @@ class ClaudeOrchestratorServer:
 
         try:
             # Note: priority parameter is accepted but not used by instance_manager
-            response = await self.instance_manager.send_to_instance(
-                instance_id=instance_id,
-                message=message,
-                wait_for_response=wait_for_response,
-                timeout_seconds=timeout_seconds,
+            response = await self._call_mcp_tool(
+                "send_to_instance",
+                {
+                    "instance_id": instance_id,
+                    "message": message,
+                    "wait_for_response": wait_for_response,
+                    "timeout_seconds": timeout_seconds,
+                },
             )
 
             if response:
@@ -1097,10 +1104,9 @@ class ClaudeOrchestratorServer:
         logger.info(f"Getting output for instance {instance_id}")
 
         try:
-            output = await self.instance_manager.get_instance_output(
-                instance_id=instance_id,
-                since=since,
-                limit=limit,
+            output = await self._call_mcp_tool(
+                "get_instance_output",
+                {"instance_id": instance_id, "since": since, "limit": limit},
             )
 
             return {
@@ -1127,7 +1133,7 @@ class ClaudeOrchestratorServer:
         logger.info("Fetching instance status", extra={"instance_id": instance_id})
 
         try:
-            status = self.instance_manager.get_instance_status(instance_id)
+            status = await self._call_mcp_tool("get_instance_status", {"instance_id": instance_id})
             return {
                 "success": True,
                 "status": status,
@@ -1153,11 +1159,14 @@ class ClaudeOrchestratorServer:
         logger.info(f"Starting coordination with {len(participant_ids)} participants")
 
         try:
-            task_id = await self.instance_manager.coordinate_instances(
-                coordinator_id=coordinator_id,
-                participant_ids=participant_ids,
-                task_description=task_description,
-                coordination_type=coordination_type,
+            task_id = await self._call_mcp_tool(
+                "coordinate_instances",
+                {
+                    "coordinator_id": coordinator_id,
+                    "participant_ids": participant_ids,
+                    "task_description": task_description,
+                    "coordination_type": coordination_type,
+                },
             )
 
             return {
@@ -1186,9 +1195,9 @@ class ClaudeOrchestratorServer:
         logger.info(f"Terminating instance {instance_id} (force={force})")
 
         try:
-            success = await self.instance_manager.terminate_instance(
-                instance_id=instance_id,
-                force=force,
+            success = await self._call_mcp_tool(
+                "terminate_instance",
+                {"instance_id": instance_id, "force": force},
             )
 
             if success:
