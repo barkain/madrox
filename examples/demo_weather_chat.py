@@ -83,17 +83,19 @@ def main():
             "timeout_seconds": 90,
         },
     )
+    response_text = research_result.get("response", "")
+    if isinstance(response_text, dict):
+        response_text = response_text.get("response", str(response_text))
     print(f"   ✅ Child responded (success: {research_result.get('success')})")
-    response = research_result.get("response")
-    if response:
-        print(f"   📨 {str(response)[:500]}")
+    if response_text:
+        print(f"   📨 {response_text[:500]}")
     print()
 
     # Step 4: Ask parent to analyze the findings
     print("📍 Step 4: Asking parent to analyze...")
     analysis_prompt = (
         f"Your researcher found this about Buenos Aires weather:\n\n"
-        f"{str(response)[:800] if response else '(no response yet)'}\n\n"
+        f"{response_text[:800] if response_text else '(no response yet)'}\n\n"
         f"Based on this, what would you recommend someone pack for a trip "
         f"to Buenos Aires this week? Be concise — 3-4 sentences."
     )
@@ -106,10 +108,12 @@ def main():
             "timeout_seconds": 90,
         },
     )
+    analysis_text = analysis_result.get("response", "")
+    if isinstance(analysis_text, dict):
+        analysis_text = analysis_text.get("response", str(analysis_text))
     print(f"   ✅ Parent responded (success: {analysis_result.get('success')})")
-    analysis = analysis_result.get("response")
-    if analysis:
-        print(f"   📨 {str(analysis)[:500]}")
+    if analysis_text:
+        print(f"   📨 {analysis_text[:500]}")
     print()
 
     # Step 5: Show the instance tree
