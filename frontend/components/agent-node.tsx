@@ -10,7 +10,7 @@ interface AgentNodeProps {
 export const AgentNode = memo(({ data }: AgentNodeProps) => {
   const statusGlow = {
     running: "glow-success",
-    idle: "glow-primary",
+    idle: "glow-primary animate-idle-breathe",
     busy: "glow-primary-intense animate-glow-pulse",
     initializing: "glow-warning",
     pending: "",
