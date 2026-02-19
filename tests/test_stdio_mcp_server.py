@@ -1,38 +1,27 @@
-"""Integration tests for STDIO MCP Server tool registration.
+"""Integration tests for STDIO MCP Server proxy tool registration.
 
-Tests the OrchestrationMCPServer to ensure all 27 tools are properly
+Tests the OrchestrationMCPServer proxy to ensure all 28 tools are properly
 registered and accessible via the STDIO transport.
 """
 
 import pytest
 
 from orchestrator.mcp_server import OrchestrationMCPServer
-from orchestrator.simple_models import OrchestratorConfig
 
 
 @pytest.fixture
-def test_config():
-    """Create a test configuration for OrchestrationMCPServer."""
-    return OrchestratorConfig(
-        workspace_base_dir="/tmp/test_madrox_workspace",
-        log_dir="/tmp/test_madrox_logs",
-        log_level="ERROR",  # Reduce noise in tests
-    )
+def proxy_server():
+    """Create a proxy MCP server for testing."""
+    return OrchestrationMCPServer(parent_url="http://localhost:9999")
 
 
 @pytest.mark.asyncio
-async def test_all_tools_registered(test_config):
-    """Test that all 27 tools are registered after initialization."""
-    # Create server
-    server = OrchestrationMCPServer(test_config)
+async def test_all_tools_registered(proxy_server):
+    """Test that all 28 tools are registered after initialization."""
+    tools = await proxy_server.mcp.get_tools()
 
-    # Get registered tools
-    tools = await server.mcp.get_tools()
-
-    # Verify tool count
     assert len(tools) == 28, f"Expected 28 tools, got {len(tools)}"
 
-    # Verify specific critical tools exist
     critical_tools = [
         "spawn_claude",
         "spawn_codex",
@@ -48,13 +37,11 @@ async def test_all_tools_registered(test_config):
 
 
 @pytest.mark.asyncio
-async def test_tool_categories_complete(test_config):
+async def test_tool_categories_complete(proxy_server):
     """Test that all tool categories have the expected number of tools."""
-    server = OrchestrationMCPServer(test_config)
-    tools = await server.mcp.get_tools()
+    tools = await proxy_server.mcp.get_tools()
     tool_names = set(tools.keys())
 
-    # Define expected tool categories and their members
     categories = {
         "lifecycle": [
             "spawn_claude",
@@ -95,58 +82,44 @@ async def test_tool_categories_complete(test_config):
         ],
     }
 
-    # Verify all tools in each category are present
     for category, expected_tools in categories.items():
         missing = set(expected_tools) - tool_names
         assert not missing, f"Category '{category}' is missing tools: {missing}"
 
 
 @pytest.mark.asyncio
-async def test_validation_catches_missing_tools(test_config):
-    """Test that validation catches if tools are missing (regression test)."""
-    # This test verifies the validation logic would catch issues
-    # We can't easily mock the missing tools, but we verify the validation exists
+async def test_validation_catches_missing_tools(proxy_server):
+    """Test that all expected tools are present."""
+    assert hasattr(proxy_server, "mcp")
+    assert hasattr(proxy_server, "parent_url")
 
-    server = OrchestrationMCPServer(test_config)
-
-    # The fact that server initialized successfully means validation passed
-    # and 27 tools are present (validation would have raised RuntimeError otherwise)
-    assert hasattr(server, "mcp")
-    assert hasattr(server, "manager")
-
-    # Verify the validation constant matches reality
-    tools = await server.mcp.get_tools()
-    assert len(tools) == 28  # This matches the expected_tools_count in the validation
+    tools = await proxy_server.mcp.get_tools()
+    assert len(tools) == 28
 
 
 def test_class_docstring_updated():
-    """Test that class docstring reflects the wrapper functions approach."""
+    """Test that class docstring reflects the proxy approach."""
     docstring = OrchestrationMCPServer.__doc__
 
     assert docstring is not None, "Class should have a docstring"
-
-    # Verify docstring mentions wrapper functions approach
-    assert "wrapper" in docstring.lower(), "Docstring should mention wrapper functions approach"
-
-    # Verify it mentions proper binding
-    assert "binding" in docstring.lower() or "bind" in docstring.lower(), (
-        "Docstring should reference proper binding of methods"
-    )
+    assert "proxy" in docstring.lower(), "Docstring should mention proxy approach"
 
 
 @pytest.mark.asyncio
-async def test_stdio_server_run_method(test_config):
+async def test_stdio_server_run_method(proxy_server):
     """Test that the run() method returns the FastMCP instance."""
-    server = OrchestrationMCPServer(test_config)
+    mcp_instance = await proxy_server.run()
 
-    # Call run() method
-    mcp_instance = await server.run()
+    assert mcp_instance is proxy_server.mcp
+    assert mcp_instance.name == "claude-orchestrator-stdio-proxy"
 
-    # Verify it returns the mcp instance
-    assert mcp_instance is server.mcp
-    assert mcp_instance.name == "claude-orchestrator-stdio"
+
+@pytest.mark.asyncio
+async def test_get_peers_tool_registered(proxy_server):
+    """Test that get_peers is registered (previously missing in STDIO)."""
+    tools = await proxy_server.mcp.get_tools()
+    assert "get_peers" in tools
 
 
 if __name__ == "__main__":
-    # Allow running this test file directly
     pytest.main([__file__, "-v"])

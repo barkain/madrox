@@ -58,7 +58,7 @@ async def start_http_server(config):
     print(f"  Host:        {config.server_host}:{config.server_port}")
     print(f"  Workspace:   {config.workspace_base_dir}")
     print(f"  Max agents:  {config.max_concurrent_instances}")
-    print(f"  Transport:   HTTP/SSE (Claude Code)")
+    print("  Transport:   HTTP/SSE (Claude Code)")
     print()
 
     server = ClaudeOrchestratorServer(config)
@@ -66,29 +66,21 @@ async def start_http_server(config):
 
 
 async def start_stdio_server(config):
-    """Start STDIO server for Codex CLI clients."""
+    """Start STDIO server that proxies tool calls to parent HTTP server."""
     from src.orchestrator.mcp_server import OrchestrationMCPServer
 
+    parent_url = os.getenv("MADROX_PARENT_URL", f"http://localhost:{config.server_port}")
+
     print(BANNER, file=sys.stderr)
-    print(f"  Host:        STDIO", file=sys.stderr)
-    print(f"  Workspace:   {config.workspace_base_dir}", file=sys.stderr)
-    print(f"  Max agents:  {config.max_concurrent_instances}", file=sys.stderr)
-    print(f"  Transport:   STDIO (Codex CLI)", file=sys.stderr)
+    print(f"  Transport:   STDIO proxy → {parent_url}", file=sys.stderr)
     print(file=sys.stderr)
 
-    # Create MCP server instance
-    mcp_server = OrchestrationMCPServer(config)
+    # Create proxy MCP server (no local InstanceManager)
+    mcp_server = OrchestrationMCPServer(parent_url=parent_url)
 
-    try:
-        # Get FastMCP instance and run with STDIO transport
-        mcp_instance = await mcp_server.run()
-
-        # Use FastMCP's built-in stdio transport
-        await mcp_instance.run_stdio_async()
-    finally:
-        # Clean up shared resources on exit
-        if hasattr(mcp_server, "manager"):
-            await mcp_server.manager.shutdown()
+    # Get FastMCP instance and run with STDIO transport
+    mcp_instance = await mcp_server.run()
+    await mcp_instance.run_stdio_async()
 
 
 def main():

@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useCallback } from "react"
+import { useEffect, useCallback, useRef } from "react"
 import {
   ReactFlow,
   ReactFlowProvider,
   type Node,
   type Edge,
+  type NodeDragHandler,
   Controls,
   MiniMap,
   useNodesState,
@@ -15,14 +16,18 @@ import {
   ControlButton,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { RotateCcw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react"
+import { RotateCcw } from "lucide-react"
 import { hierarchy, tree } from "d3-hierarchy"
-import { useTheme } from "next-themes"
 import { AgentNode } from "./agent-node"
+import { AnimatedMessageEdge } from "./animated-message-edge"
 import type { AgentInstance, MessageFlow } from "@/types"
 
 const nodeTypes = {
   agent: AgentNode,
+}
+
+const edgeTypes = {
+  animatedMessage: AnimatedMessageEdge,
 }
 
 // Custom CSS for React Flow controls and minimap with glass morphism
@@ -329,6 +334,13 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const { fitView } = useReactFlow()
 
+  // Track manually dragged positions and known instance IDs
+  const manualPositions = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const knownInstanceIds = useRef<Set<string>>(new Set())
+  // Keep a ref to messageFlows so the instances-only effect can read the latest value
+  const messageFlowsRef = useRef<MessageFlow[]>(messageFlows)
+  messageFlowsRef.current = messageFlows
+
   // Handle node clicks
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
@@ -340,6 +352,11 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
     [instances, onNodeClick],
   )
 
+  // Store position when user drags a node
+  const handleNodeDragStop: NodeDragHandler = useCallback((_event, node) => {
+    manualPositions.current.set(node.id, { x: node.position.x, y: node.position.y })
+  }, [])
+
   // Watch for container resize and re-fit the view
   useEffect(() => {
     const handleResize = () => {
@@ -348,7 +365,6 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
 
     window.addEventListener("resize", handleResize)
 
-    // Also set up a mutation observer to detect container size changes
     const observer = new ResizeObserver(() => {
       fitView({ padding: 0.2, duration: 300, maxZoom: 0.6 })
     })
@@ -364,40 +380,66 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
     }
   }, [fitView])
 
-  // Layout reset function
+  // Layout reset function - clears manual positions and recalculates all
   const resetLayout = useCallback(() => {
+    manualPositions.current.clear()
     const positions = calculateHierarchicalLayout(instances)
 
-    const newNodes: Node[] = instances.map((instance) => {
-      const position = positions.get(instance.id) || { x: 0, y: 0 }
-      return {
-        id: instance.id,
-        type: "agent",
-        position,
-        data: instance,
-      }
-    })
+    setNodes((prevNodes) =>
+      prevNodes.map((node) => ({
+        ...node,
+        position: positions.get(node.id) || { x: 0, y: 0 },
+      }))
+    )
 
-    setNodes(newNodes)
-
-    // Fit view after layout
     setTimeout(() => {
       fitView({ padding: 0.2, duration: 500, maxZoom: 0.6 })
     }, 50)
   }, [instances, setNodes, fitView])
 
-  // Convert instances to React Flow nodes and edges
+  // Convert instances to React Flow nodes and hierarchy edges.
+  // This effect does NOT depend on messageFlows — it reads messageFlowsRef
+  // to build the initial message edges.  This prevents tab switches or
+  // messageFlow active-flag updates from recreating all edges (which would
+  // remount AnimatedMessageEdge SVG components and restart their animations).
   useEffect(() => {
     const positions = calculateHierarchicalLayout(instances)
 
-    const newNodes: Node[] = instances.map((instance) => {
-      const position = positions.get(instance.id) || { x: 0, y: 0 }
-      return {
-        id: instance.id,
-        type: "agent",
-        position,
-        data: instance,
-      }
+    // Detect new instances
+    const currentIds = new Set(instances.map((i) => i.id))
+    const hasNewInstances = instances.some((i) => !knownInstanceIds.current.has(i.id))
+    knownInstanceIds.current = currentIds
+
+    // Update nodes in-place to preserve React Flow's internal measured state
+    setNodes((prevNodes) => {
+      const prevNodeMap = new Map(prevNodes.map((n) => [n.id, n]))
+      const instanceIds = new Set(instances.map((i) => i.id))
+
+      const updatedNodes: Node[] = instances.map((instance) => {
+        const existing = prevNodeMap.get(instance.id)
+        const manualPos = manualPositions.current.get(instance.id)
+        const d3Pos = positions.get(instance.id) || { x: 0, y: 0 }
+
+        if (existing) {
+          // Update existing node in-place — preserve position and internal state
+          return {
+            ...existing,
+            position: manualPos || existing.position,
+            data: instance,
+          }
+        }
+        // New node — use D3 layout position
+        return {
+          id: instance.id,
+          type: "agent",
+          position: manualPos || d3Pos,
+          draggable: true,
+          data: instance,
+        }
+      })
+
+      // Remove nodes for terminated/gone instances
+      return updatedNodes.filter((n) => instanceIds.has(n.id))
     })
 
     const instanceMap = new Map(instances.map((instance) => [instance.id, instance]))
@@ -405,53 +447,91 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
     // Parent-child edges (hierarchy)
     const hierarchyEdges: Edge[] = instances
       .filter((instance) => instance.parentId && instanceMap.has(instance.parentId))
-      .map((instance) => ({
-        id: `hierarchy-${instance.parentId}-${instance.id}`,
-        source: instance.parentId!,
-        target: instance.id,
-        type: "smoothstep",
-        animated: instance.status === "running",
-        style: {
-          stroke: instance.status === "running" ? "#60a5fa" : "rgba(148, 163, 184, 0.6)",
-          strokeWidth: 2.5,
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: instance.status === "running" ? "#60a5fa" : "rgba(148, 163, 184, 0.6)",
-        },
-      }))
+      .map((instance) => {
+        const isBusy = instance.status === "busy"
+        const isActive = instance.status === "running" || isBusy
+        return {
+          id: `hierarchy-${instance.parentId}-${instance.id}`,
+          source: instance.parentId!,
+          target: instance.id,
+          type: "smoothstep",
+          animated: isActive,
+          style: {
+            stroke: isBusy ? "#3b82f6" : isActive ? "#60a5fa" : "rgba(148, 163, 184, 0.6)",
+            strokeWidth: isBusy ? 3 : 2.5,
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: isBusy ? "#3b82f6" : isActive ? "#60a5fa" : "rgba(148, 163, 184, 0.6)",
+          },
+        }
+      })
 
-    // Message flow edges (communication)
-    const messageEdges: Edge[] = messageFlows
+    // Also build current message edges (read from ref, not from dep)
+    const currentFlows = messageFlowsRef.current
+    const messageEdges: Edge[] = currentFlows
       .filter((flow) => instanceMap.has(flow.fromId) && instanceMap.has(flow.toId))
       .map((flow) => ({
         id: `message-${flow.id}`,
         source: flow.fromId,
         target: flow.toId,
-        type: "straight",
-        animated: flow.active,
-        style: {
-          stroke: flow.active ? "#10b981" : "#6b7280", // green-500 : gray-500
-          strokeWidth: 3,
-          strokeDasharray: "5,5",
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: flow.active ? "#10b981" : "#6b7280",
-        },
-        zIndex: 1000, // Show message edges above hierarchy edges
+        type: "animatedMessage",
+        data: { active: flow.active },
+        zIndex: 1000,
       }))
 
-    const newEdges = [...hierarchyEdges, ...messageEdges]
+    setEdges([...hierarchyEdges, ...messageEdges])
 
-    setNodes(newNodes)
-    setEdges(newEdges)
+    // Only fitView when new instances appear (prevent viewport jumping)
+    if (hasNewInstances) {
+      setTimeout(() => {
+        fitView({ padding: 0.2, duration: 300, maxZoom: 0.6 })
+      }, 100)
+    }
+  }, [instances, setNodes, setEdges, fitView])
 
-    // Fit view after layout updates
-    setTimeout(() => {
-      fitView({ padding: 0.2, duration: 300, maxZoom: 0.6 })
-    }, 100)
-  }, [instances, messageFlows, setNodes, setEdges, fitView])
+  // Update ONLY message edges when messageFlows changes.
+  // Uses a functional updater so hierarchy edges are preserved in-place,
+  // and only message-prefixed edges are replaced.  This avoids remounting
+  // AnimatedMessageEdge components when only the active flag changes.
+  useEffect(() => {
+    const instanceMap = new Map(instances.map((instance) => [instance.id, instance]))
+
+    setEdges((prevEdges) => {
+      // Keep all non-message edges untouched
+      const hierarchyEdges = prevEdges.filter((e) => !e.id.startsWith("message-"))
+
+      // Build fresh message edges
+      const messageEdges: Edge[] = messageFlows
+        .filter((flow) => instanceMap.has(flow.fromId) && instanceMap.has(flow.toId))
+        .map((flow) => ({
+          id: `message-${flow.id}`,
+          source: flow.fromId,
+          target: flow.toId,
+          type: "animatedMessage",
+          data: { active: flow.active },
+          zIndex: 1000,
+        }))
+
+      // Only update if something actually changed to avoid unnecessary renders
+      const prevMessageEdges = prevEdges.filter((e) => e.id.startsWith("message-"))
+      const isSame =
+        prevMessageEdges.length === messageEdges.length &&
+        prevMessageEdges.every((prev, i) => {
+          const next = messageEdges[i]
+          return (
+            prev.id === next.id &&
+            prev.source === next.source &&
+            prev.target === next.target &&
+            (prev.data as any)?.active === (next.data as any)?.active
+          )
+        })
+
+      if (isSame) return prevEdges
+
+      return [...hierarchyEdges, ...messageEdges]
+    })
+  }, [messageFlows, instances, setEdges])
 
   return (
     <ReactFlow
@@ -460,7 +540,9 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onNodeClick={handleNodeClick}
+      onNodeDragStop={handleNodeDragStop}
       nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
       fitView
       fitViewOptions={{ padding: 0.2, maxZoom: 0.6 }}
       minZoom={0.1}
@@ -477,7 +559,10 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
         nodeColor={(node) => {
           const status = (node.data as AgentInstance).status
           const colors = {
+            initializing: "var(--color-status-pending)",
             running: "var(--color-status-running)",
+            idle: "var(--color-status-running)",
+            busy: "var(--color-status-running)",
             pending: "var(--color-status-pending)",
             error: "var(--color-status-error)",
             terminated: "var(--color-status-terminated)",

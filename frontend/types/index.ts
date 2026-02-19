@@ -2,7 +2,7 @@ export interface AgentInstance {
   id: string
   name: string
   type: "claude" | "codex"
-  status: "running" | "pending" | "terminated" | "error"
+  status: "initializing" | "running" | "idle" | "busy" | "pending" | "terminated" | "error"
   role: string
   parentId: string | null
   createdAt: string

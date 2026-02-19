@@ -693,6 +693,25 @@
 /* ==========================================
    Accessibility: Respect Reduced Motion Preference
    ========================================== */
+@keyframes idle-breathe {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.2),
+                0 0 30px rgba(var(--primary-rgb), 0.08);
+  }
+  50% {
+    opacity: 0.85;
+    box-shadow: 0 0 25px rgba(var(--primary-rgb), 0.4),
+                0 0 50px rgba(var(--primary-rgb), 0.15);
+  }
+}
+
+@layer utilities {
+  .animate-idle-breathe {
+    animation: idle-breathe 3s ease-in-out infinite;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-aurora-1,
   .animate-aurora-2,
@@ -716,7 +735,8 @@
   .animate-float-vertical,
   .animate-float-vertical-reverse,
   .animate-float-horizontal,
-  .animate-mesh-float {
+  .animate-mesh-float,
+  .animate-idle-breathe {
     animation: none !important;
     transform: none !important;
   }
