@@ -230,48 +230,18 @@ class TmuxInstanceManager:
         if "madrox" not in mcp_servers:
             # Codex only supports STDIO transport, Claude supports both
             if instance_type == "codex":
-                # Use STDIO transport with our orchestrator as subprocess
+                # Use STDIO transport with proxy to parent HTTP server
                 import sys
 
-                project_root = Path(__file__).parent.parent.parent
+                project_root = Path(__file__).parent.parent.parent.parent
                 orchestrator_script = str(project_root / "run_orchestrator.py")
 
-                # Prepare environment variables for child process
+                # STDIO subprocess proxies all tool calls to parent HTTP server
+                parent_url = f"http://localhost:{self.server_port}"
                 env_vars = {
-                    "MADROX_TRANSPORT": "stdio",  # Force STDIO mode
+                    "MADROX_TRANSPORT": "stdio",
+                    "MADROX_PARENT_URL": parent_url,
                 }
-
-                # Pass Manager connection details for IPC (Issue #1 fix)
-                if self.shared_state:
-                    import base64
-
-                    # Pass manager address and authkey
-                    # Address can be either (host, port) tuple or Unix socket path (string)
-                    manager_address = self.shared_state.manager_address
-
-                    if isinstance(manager_address, tuple):
-                        # TCP address: (host, port)
-                        manager_host, manager_port = manager_address
-                        env_vars["MADROX_MANAGER_HOST"] = str(manager_host)
-                        env_vars["MADROX_MANAGER_PORT"] = str(manager_port)
-                        # SECURITY FIX (CWE-532): Redact authkey in logs
-                        logger.debug(
-                            f"Passing Manager IPC credentials to child (TCP): {manager_host}:{manager_port}, "
-                            f"authkey={redact_authkey(self.shared_state.manager_authkey)}"
-                        )
-                    else:
-                        # Unix socket path
-                        env_vars["MADROX_MANAGER_SOCKET"] = str(manager_address)
-                        # SECURITY FIX (CWE-532): Redact authkey in logs
-                        logger.debug(
-                            f"Passing Manager IPC credentials to child (Unix socket): {manager_address}, "
-                            f"authkey={redact_authkey(self.shared_state.manager_authkey)}"
-                        )
-
-                    # Encode authkey as base64 for safe environment variable passing
-                    env_vars["MADROX_MANAGER_AUTHKEY"] = base64.b64encode(
-                        self.shared_state.manager_authkey
-                    ).decode("ascii")
 
                 mcp_servers["madrox"] = {
                     "transport": "stdio",
@@ -280,7 +250,7 @@ class TmuxInstanceManager:
                     "env": env_vars,
                 }
                 logger.debug(
-                    f"Configured Codex instance with STDIO madrox: {sys.executable} {orchestrator_script}"
+                    f"Configured Codex STDIO proxy: {sys.executable} {orchestrator_script} → {parent_url}"
                 )
             else:
                 # Claude supports HTTP transport - use it for cross-process visibility
@@ -1639,42 +1609,25 @@ class TmuxInstanceManager:
             if instance.get("parent_instance_id"):
                 parent_info = (
                     f"Your parent instance ID: {instance['parent_instance_id']}\n"
-                    f"You can send messages to your parent using: send_to_instance(parent_instance_id='{instance['parent_instance_id']}', message='your message')\n"
+                    f"If send_to_instance is available, you can message your parent using: send_to_instance(parent_instance_id='{instance['parent_instance_id']}', message='your message')\n"
                 )
                 instance_id_info += parent_info
 
-                # Add instructions for spawning children with parent tracking
+                # Add instructions for Codex child instances
+                # Note: Codex MCP tools may not always be available (STDIO subprocess can fail)
+                # so instructions use a clear text-output fallback
                 spawn_info = (
-                    f"\nWhen spawning child instances, pass your instance_id as parent_instance_id.\n"
-                    f"This enables bidirectional communication between parent and child.\n\n"
-                    f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
-                    f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
+                    f"\nRESPONDING TO MESSAGES:\n"
+                    f"When you receive messages, they may be formatted as:\n"
                     f"  [MSG:correlation-id] message content here\n\n"
-                    f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
+                    f"Simply output your response as text. The system will automatically capture it.\n"
+                    f"If the reply_to_caller tool is available in your environment, you may optionally use it:\n"
                     f"  reply_to_caller(\n"
                     f"    instance_id='{instance['id']}',\n"
                     f"    reply_message='your response here',\n"
                     f"    correlation_id='correlation-id-from-message'\n"
-                    f"  )\n\n"
-                    f"CRITICAL: When calling reply_to_caller, ALWAYS use YOUR OWN instance_id.\n"
-                    f"- Your instance_id: '{instance['id']}'\n"
-                    f"- Do NOT call get_main_instance_id() - that tool is deprecated\n"
-                    f"- Do NOT use correlation_id as the instance_id parameter\n"
-                    f"- Do NOT use any other instance's ID\n\n"
-                    f"Correct usage:\n"
-                    f"  reply_to_caller(\n"
-                    f"    instance_id='{instance['id']}',  # YOUR ID, not main/parent/coordinator\n"
-                    f"    reply_message='your response',\n"
-                    f"    correlation_id='correlation-id-from-message'\n"
-                    f"  )\n\n"
-                    f"Benefits of using reply_to_caller:\n"
-                    f"- Instant delivery (no polling delay)\n"
-                    f"- Proper request-response correlation\n"
-                    f"- More efficient than text output\n\n"
-                    f"PEER-TO-PEER COMMUNICATION:\n"
-                    f"- Use get_peers(instance_id='{instance['id']}') to discover your teammates (siblings with the same parent)\n"
-                    f"- Use send_to_instance(instance_id='peer_id', message='...') to message them directly\n"
-                    f"- Messages to busy peers are automatically queued and delivered when they become idle\n"
+                    f"  )\n"
+                    f"But this is NOT required — text output works fine.\n"
                 )
                 instance_id_info += spawn_info
             else:

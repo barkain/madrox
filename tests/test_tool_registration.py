@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quick test to verify all 27 tools are registered in STDIO mode."""
+"""Quick test to verify all 28 tools are registered in STDIO proxy mode."""
 
 import asyncio
 import sys
@@ -9,42 +9,33 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from orchestrator.mcp_server import OrchestrationMCPServer
-from orchestrator.simple_models import OrchestratorConfig
 
 
 async def test_tool_registration():
-    """Test that all 27 tools are properly registered."""
-    print("🧪 Testing STDIO tool registration...")
+    """Test that all 28 tools are properly registered."""
+    print("Testing STDIO proxy tool registration...")
     print()
 
-    # Create a minimal config for testing
-    config = OrchestratorConfig(
-        workspace_base_dir="/tmp/test_madrox_workspace",
-        log_dir="/tmp/test_madrox_logs",
-        log_level="INFO",
-    )
-
-    # Create the MCP server
-    print("📦 Creating OrchestrationMCPServer...")
-    server = OrchestrationMCPServer(config)
+    # Create the proxy MCP server (no InstanceManager needed)
+    print("Creating OrchestrationMCPServer proxy...")
+    server = OrchestrationMCPServer(parent_url="http://localhost:8001")
 
     # Get the list of registered tools
-    print("🔍 Checking registered tools...")
+    print("Checking registered tools...")
     tools = await server.mcp.get_tools()
 
-    print(f"\n✅ SUCCESS! Registered {len(tools)} tools")
+    print(f"\nRegistered {len(tools)} tools")
     print()
-    print("📋 Tool List:")
+    print("Tool List:")
     for i, tool_name in enumerate(sorted(tools.keys()), 1):
         print(f"  {i:2d}. {tool_name}")
 
-    # Expected count
-    expected_count = 27
+    expected_count = 28
     if len(tools) == expected_count:
-        print(f"\n✅ PASSED: All {expected_count} tools registered correctly!")
+        print(f"\nPASSED: All {expected_count} tools registered correctly!")
         return True
     else:
-        print(f"\n❌ FAILED: Expected {expected_count} tools, got {len(tools)}")
+        print(f"\nFAILED: Expected {expected_count} tools, got {len(tools)}")
         return False
 
 
