@@ -1614,20 +1614,20 @@ class TmuxInstanceManager:
                 instance_id_info += parent_info
 
                 # Add instructions for Codex child instances
-                # Note: Codex MCP tools may not always be available (STDIO subprocess can fail)
-                # so instructions use a clear text-output fallback
+                # STDIO proxy ensures MCP tools are available via parent HTTP server
                 spawn_info = (
                     f"\nRESPONDING TO MESSAGES:\n"
-                    f"When you receive messages, they may be formatted as:\n"
+                    f"When you receive messages, they will be formatted as:\n"
                     f"  [MSG:correlation-id] message content here\n\n"
-                    f"Simply output your response as text. The system will automatically capture it.\n"
-                    f"If the reply_to_caller tool is available in your environment, you may optionally use it:\n"
+                    f"You MUST use the reply_to_caller tool to respond. This is how the parent receives your reply.\n"
+                    f"Call it like this:\n"
                     f"  reply_to_caller(\n"
                     f"    instance_id='{instance['id']}',\n"
                     f"    reply_message='your response here',\n"
                     f"    correlation_id='correlation-id-from-message'\n"
                     f"  )\n"
-                    f"But this is NOT required — text output works fine.\n"
+                    f"IMPORTANT: Simply outputting text will NOT deliver your response to the parent.\n"
+                    f"You must use reply_to_caller for the parent to receive your answer.\n"
                 )
                 instance_id_info += spawn_info
             else:
