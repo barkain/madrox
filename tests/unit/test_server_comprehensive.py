@@ -132,6 +132,27 @@ def server(mock_config, mock_instance_manager, mock_mcp_adapter):
         server_instance = ClaudeOrchestratorServer(mock_config)
         server_instance.instance_manager = mock_instance_manager
         server_instance.mcp_adapter = mock_mcp_adapter
+
+        # Bypass FunctionTool descriptor lookup in _call_mcp_tool so that
+        # AsyncMock methods on the instance manager are called directly.
+        # Keep a set of known tool names so unknown tools still raise 400.
+        _known_tools = {
+            "spawn_instance", "send_to_instance", "terminate_instance",
+            "coordinate_instances", "get_instance_status",
+            "get_instance_output", "get_audit_logs", "health_check",
+        }
+
+        async def mock_call_mcp_tool(tool_name, arguments):
+            if tool_name not in _known_tools:
+                raise HTTPException(status_code=400, detail=f"Unknown tool: {tool_name}")
+            method = getattr(server_instance.instance_manager, tool_name)
+            result = method(**arguments)
+            if asyncio.iscoroutine(result):
+                result = await result
+            return result
+
+        server_instance._call_mcp_tool = mock_call_mcp_tool
+
         return server_instance
 
 
