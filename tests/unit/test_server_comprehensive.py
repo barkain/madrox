@@ -137,9 +137,14 @@ def server(mock_config, mock_instance_manager, mock_mcp_adapter):
         # AsyncMock methods on the instance manager are called directly.
         # Keep a set of known tool names so unknown tools still raise 400.
         _known_tools = {
-            "spawn_instance", "send_to_instance", "terminate_instance",
-            "coordinate_instances", "get_instance_status",
-            "get_instance_output", "get_audit_logs", "health_check",
+            "spawn_instance",
+            "send_to_instance",
+            "terminate_instance",
+            "coordinate_instances",
+            "get_instance_status",
+            "get_instance_output",
+            "get_audit_logs",
+            "health_check",
         }
 
         async def mock_call_mcp_tool(tool_name, arguments):
