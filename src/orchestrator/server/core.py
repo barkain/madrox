@@ -551,6 +551,15 @@ class ClaudeOrchestratorServer:
                                     "type": "string",
                                     "description": "Parent instance ID",
                                 },
+                                "use_worktree": {
+                                    "type": "boolean",
+                                    "description": "Create a git worktree for isolated parallel development. Each instance gets its own branch (madrox/{instance-name}) and working directory.",
+                                    "default": False,
+                                },
+                                "git_repo": {
+                                    "type": "string",
+                                    "description": "Path to source git repository for worktree creation. Auto-detected from parent instance workspace or server CWD if omitted.",
+                                },
                             },
                             "required": [],
                         },
@@ -982,6 +991,8 @@ class ClaudeOrchestratorServer:
         workspace_dir: str | None = None,
         parent_instance_id: str | None = None,
         use_pty: bool = False,  # Back to subprocess for reliability
+        use_worktree: bool = False,
+        git_repo: str | None = None,
         **kwargs,
     ) -> dict[str, Any]:
         """Spawn a new Claude instance."""
@@ -1024,6 +1035,8 @@ class ClaudeOrchestratorServer:
                 workspace_dir=workspace_dir,
                 parent_instance_id=parent_instance_id,
                 use_pty=use_pty,
+                use_worktree=use_worktree,
+                git_repo=git_repo,
                 **kwargs,
             )
 

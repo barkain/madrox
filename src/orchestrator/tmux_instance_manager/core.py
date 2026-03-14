@@ -512,7 +512,35 @@ class TmuxInstanceManager:
 
         # Create isolated workspace
         workspace_dir = self.workspace_base / instance_id
-        workspace_dir.mkdir(parents=True, exist_ok=True)
+
+        use_worktree = kwargs.get("use_worktree", False)
+        git_repo = kwargs.get("git_repo")
+        git_worktree_branch = None
+
+        if use_worktree:
+            repo_path = git_repo or await self._detect_git_repo(kwargs.get("parent_instance_id"))
+            if repo_path:
+                branch_name = f"madrox/{self._sanitize_branch_name(instance_name)}"
+                # Ensure parent directory exists (git worktree add creates the final dir)
+                workspace_dir.parent.mkdir(parents=True, exist_ok=True)
+                success = await self._create_worktree(repo_path, str(workspace_dir), branch_name)
+                if success:
+                    git_repo = repo_path
+                    git_worktree_branch = branch_name
+                else:
+                    logger.warning(
+                        f"Worktree creation failed for {instance_name}, using regular workspace"
+                    )
+                    use_worktree = False
+            else:
+                logger.warning(
+                    f"No git repo found for worktree, using regular workspace for {instance_name}"
+                )
+                use_worktree = False
+
+        if not use_worktree:
+            # Only create workspace dir if not using worktree (worktree add creates it)
+            workspace_dir.mkdir(parents=True, exist_ok=True)
 
         # Write instance metadata file so child knows its own ID
         metadata_file = workspace_dir / ".madrox_instance_id"
@@ -575,6 +603,9 @@ class TmuxInstanceManager:
             "statusline": "",
             "error_message": None,
             "retry_count": 0,
+            "use_worktree": use_worktree,
+            "git_repo": git_repo if use_worktree else None,
+            "git_worktree_branch": git_worktree_branch,
         }
 
         self.instances[instance_id] = instance
@@ -1276,6 +1307,10 @@ class TmuxInstanceManager:
             # Update instance state
             instance["state"] = "terminated"
             instance["terminated_at"] = datetime.now(UTC).isoformat()
+
+            # Clean up git worktree if applicable
+            if instance.get("use_worktree") and instance.get("git_repo"):
+                await self._remove_worktree(instance)
 
             # No artifact preservation needed - workspace IS the artifacts directory
             # All files remain in place, no copying or cleanup required
@@ -2571,3 +2606,140 @@ class TmuxInstanceManager:
             except asyncio.CancelledError:
                 pass
             logger.info("Queue poller stopped")
+
+    # ── Git worktree helpers ─────────────────────────────────────────────
+
+    async def _run_git_cmd(self, args: list[str], cwd: str) -> str | None:
+        """Run a git command asynchronously and return stdout on success.
+
+        Args:
+            args: Git subcommand arguments (e.g. ["rev-parse", "--show-toplevel"]).
+            cwd: Working directory for the command.
+
+        Returns:
+            Stripped stdout string on success, None on failure.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                *args,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode == 0:
+                return stdout.decode().strip()
+            logger.debug(
+                "git %s failed (rc=%s): %s",
+                " ".join(args),
+                proc.returncode,
+                stderr.decode().strip(),
+            )
+        except Exception:
+            logger.debug("git %s raised an exception", " ".join(args), exc_info=True)
+        return None
+
+    async def _detect_git_repo(self, parent_instance_id: str | None) -> str | None:
+        """Detect the git repository root for an instance.
+
+        Checks the parent instance's workspace first, then falls back to cwd.
+
+        Args:
+            parent_instance_id: Optional parent instance ID to inherit repo from.
+
+        Returns:
+            Absolute path to the git repo root, or None.
+        """
+        import os
+
+        # Try parent workspace first
+        if parent_instance_id and parent_instance_id in self.instances:
+            parent_ws = self.instances[parent_instance_id].get("workspace_dir")
+            if parent_ws:
+                result = await self._run_git_cmd(["rev-parse", "--show-toplevel"], cwd=parent_ws)
+                if result:
+                    return result
+
+        # Fallback to current working directory
+        result = await self._run_git_cmd(["rev-parse", "--show-toplevel"], cwd=os.getcwd())
+        return result
+
+    async def _create_worktree(self, repo: str, target_dir: str, branch: str) -> bool:
+        """Create a git worktree for an instance workspace.
+
+        Args:
+            repo: Path to the main git repository.
+            target_dir: Destination directory for the worktree.
+            branch: Branch name to create in the worktree.
+
+        Returns:
+            True on success, False on failure.
+        """
+        result = await self._run_git_cmd(
+            ["-C", repo, "worktree", "add", target_dir, "-b", branch], cwd=repo
+        )
+        if result is not None:
+            logger.info("Created worktree at %s on new branch %s", target_dir, branch)
+            return True
+
+        # Branch may already exist – try without -b
+        result = await self._run_git_cmd(
+            ["-C", repo, "worktree", "add", target_dir, branch], cwd=repo
+        )
+        if result is not None:
+            logger.info("Created worktree at %s on existing branch %s", target_dir, branch)
+            return True
+
+        logger.warning("Failed to create worktree at %s for branch %s", target_dir, branch)
+        return False
+
+    async def _remove_worktree(self, instance: dict) -> None:
+        """Remove a git worktree and its branch for a terminated instance.
+
+        Args:
+            instance: Instance dict containing workspace_dir, git_repo,
+                      and git_worktree_branch keys.
+        """
+        workspace = instance.get("workspace_dir")
+        repo = instance.get("git_repo")
+        branch = instance.get("git_worktree_branch")
+
+        if not (workspace and repo and branch):
+            return
+
+        # Remove the worktree
+        result = await self._run_git_cmd(
+            ["-C", repo, "worktree", "remove", workspace, "--force"], cwd=repo
+        )
+        if result is not None:
+            logger.info("Removed worktree at %s", workspace)
+        else:
+            logger.warning("Failed to remove worktree at %s", workspace)
+
+        # Clean up the branch
+        result = await self._run_git_cmd(["-C", repo, "branch", "-D", branch], cwd=repo)
+        if result is not None:
+            logger.info("Deleted branch %s", branch)
+        else:
+            logger.warning("Failed to delete branch %s", branch)
+
+    @staticmethod
+    def _sanitize_branch_name(name: str) -> str:
+        """Convert an instance name to a valid git branch name.
+
+        Lowercases the name, replaces non-alphanumeric/hyphen characters with
+        hyphens, collapses consecutive hyphens, and strips leading/trailing
+        hyphens.
+
+        Args:
+            name: Raw instance name.
+
+        Returns:
+            Sanitized branch name.
+        """
+        name = name.lower()
+        name = re.sub(r"[^a-z0-9-]", "-", name)
+        name = re.sub(r"-{2,}", "-", name)
+        name = name.strip("-")
+        return name

@@ -29,6 +29,8 @@ class SpawningMixin:
         wait_for_ready: bool = True,
         initial_prompt: str | None = None,
         mcp_servers: str | None = None,
+        use_worktree: bool = False,
+        git_repo: str | None = None,
     ) -> dict[str, Any]:
         """Spawn a new Claude instance with specific role and configuration.
 
@@ -46,6 +48,8 @@ class SpawningMixin:
             initial_prompt: Initial prompt to send as CLI argument (bypasses paste detection)
             mcp_servers: JSON string of MCP server configurations. Format:
                         '{"server_name": {"transport": "http", "url": "http://localhost:8002/mcp"}}'
+            use_worktree: Create a git worktree for workspace isolation (default: false)
+            git_repo: Path to git repository for worktree creation (required if use_worktree is true)
 
         Returns:
             Dictionary with instance_id and status
@@ -62,6 +66,8 @@ class SpawningMixin:
             wait_for_ready=wait_for_ready,
             initial_prompt=initial_prompt,
             mcp_servers=mcp_servers,
+            use_worktree=use_worktree,
+            git_repo=git_repo,
         )
         return {"instance_id": instance_id, "status": "spawned", "name": name}
 
@@ -98,6 +104,8 @@ class SpawningMixin:
         bypass_isolation: bool = False,
         parent_instance_id: str | None = None,
         mcp_servers: str | None = None,
+        use_worktree: bool = False,
+        git_repo: str | None = None,
     ) -> dict[str, Any]:
         """Spawn a new Codex CLI instance (OpenAI GPT models only).
 
@@ -112,6 +120,8 @@ class SpawningMixin:
             parent_instance_id: Parent instance ID for tracking
             mcp_servers: JSON string of MCP server configurations. Format:
                         '{"server_name": {"transport": "http", "url": "http://localhost:8002/mcp"}}'
+            use_worktree: Create a git worktree for workspace isolation (default: false)
+            git_repo: Path to git repository for worktree creation (required if use_worktree is true)
 
         Returns:
             Dictionary with instance_id and status
@@ -128,6 +138,8 @@ class SpawningMixin:
             instance_type="codex",
             parent_instance_id=parent_instance_id,
             mcp_servers=mcp_servers,
+            use_worktree=use_worktree,
+            git_repo=git_repo,
         )
         self.instances[instance_id]["instance_type"] = "codex"
         return {
