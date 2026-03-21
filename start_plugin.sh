@@ -56,7 +56,7 @@ if [ -d "$FRONTEND_DIR" ]; then
   fi
 
   echo "Starting Madrox dashboard on port 3002..." >&2
-  npx --prefix "$FRONTEND_DIR" next dev -p 3002 \
+  (cd "$FRONTEND_DIR" && npx next dev -p 3002) \
     >"$LOG_DIR/frontend.log" 2>&1 &
   FE_PID=$!
 fi

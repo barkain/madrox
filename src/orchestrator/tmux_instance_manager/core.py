@@ -1580,7 +1580,7 @@ class TmuxInstanceManager:
 
         # Adaptive wait - poll until CLI is ready
         # Performance-optimized: fast polling with early exit detection
-        max_init_wait = 6  # Optimized: Claude ready in 2-4s, 6s allows margin
+        max_init_wait = 10  # Allow time for trust prompt + CLI init (2-4s normal, +4s for trust dialog)
         init_start = time.time()
         cli_ready = False
 
@@ -1589,6 +1589,14 @@ class TmuxInstanceManager:
                 0.15
             )  # Optimized polling: 150ms balance between responsiveness and CPU
             output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+
+            # Auto-accept workspace trust prompt if it appears
+            # This occurs when Claude opens a new/unfamiliar directory
+            if "Yes, I trust this folder" in output and "No, exit" in output:
+                pane.send_keys("1", enter=True)
+                logger.debug("Auto-accepted workspace trust prompt")
+                await asyncio.sleep(0.5)  # Wait for CLI to proceed past trust dialog
+                continue
 
             # Detect ready state by checking for interactive indicators
             # Claude CLI shows various prompts, Codex shows ready state

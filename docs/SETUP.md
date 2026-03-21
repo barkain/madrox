@@ -54,8 +54,59 @@ Choose the installation method that best fits your needs:
 
 | Method | Best For | Setup Time | Auth Requirements |
 |--------|----------|------------|-------------------|
+| **Claude Code Plugin** | Easiest setup, daily use | 2 minutes | OAuth or API key |
 | **Quick Start** | Development, testing | 5 minutes | OAuth or API key |
 | **Manual** | Custom setups, debugging | 15 minutes | OAuth or API key |
+
+---
+
+## Claude Code Plugin
+
+The simplest way to get started. Install Madrox as a Claude Code plugin and everything is managed automatically.
+
+### 1. Clone Repository
+
+```bash
+git clone https://github.com/barkain/madrox.git
+cd madrox
+```
+
+### 2. Install Dependencies
+
+```bash
+uv sync --all-groups
+cd frontend && npm install && cd ..
+```
+
+### 3. Install the Plugin
+
+From within a Claude Code session:
+
+```
+/plugin install /path/to/madrox
+```
+
+### 4. Restart Claude Code
+
+Start a new Claude Code session. Madrox tools will be available automatically.
+
+### 5. Verify
+
+Ask Claude Code to list its MCP tools — you should see the Madrox tools (e.g., `spawn_claude`, `send_to_instance`).
+
+You can also check that the backend is running:
+
+```bash
+curl http://localhost:8001/health
+```
+
+### 6. Open the Dashboard
+
+Use the `/madrox:dashboard` skill to open the Madrox Monitor dashboard at http://localhost:3002.
+
+**How the plugin works:** The plugin runs `start_plugin.sh`, which starts the HTTP backend (port 8001) and Next.js dashboard (port 3002) in the background, then connects a STDIO MCP proxy to Claude Code. All tool calls are forwarded from the STDIO proxy to the HTTP backend. On exit, background processes are cleaned up automatically.
+
+**Next:** Start using Madrox — try `spawn a madrox dev team from template`.
 
 ---
 
