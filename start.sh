@@ -7,6 +7,7 @@
 #   ./start.sh --be     # Backend only  (port 8001)
 #   ./start.sh --fe     # Frontend only (port 3002)
 #
+# Note: When installed as a Claude Code plugin, start_plugin.sh is used instead.
 
 set -e
 
