@@ -520,7 +520,9 @@ class TmuxInstanceManager:
         if use_worktree:
             repo_path = git_repo or await self._detect_git_repo(kwargs.get("parent_instance_id"))
             if repo_path:
-                branch_name = f"madrox/{self._sanitize_branch_name(instance_name)}-{instance_id[:8]}"
+                branch_name = (
+                    f"madrox/{self._sanitize_branch_name(instance_name)}-{instance_id[:8]}"
+                )
                 # Ensure parent directory exists (git worktree add creates the final dir)
                 workspace_dir.parent.mkdir(parents=True, exist_ok=True)
                 success = await self._create_worktree(repo_path, str(workspace_dir), branch_name)
@@ -1580,7 +1582,9 @@ class TmuxInstanceManager:
 
         # Adaptive wait - poll until CLI is ready
         # Performance-optimized: fast polling with early exit detection
-        max_init_wait = 10  # Allow time for trust prompt + CLI init (2-4s normal, +4s for trust dialog)
+        max_init_wait = (
+            10  # Allow time for trust prompt + CLI init (2-4s normal, +4s for trust dialog)
+        )
         init_start = time.time()
         cli_ready = False
 
