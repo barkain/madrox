@@ -7,7 +7,7 @@ packages = ["src/supervision", "src/orchestrator"]
 
 [project]
 name = "claude-orchestrator-mcp"
-version = "0.1.0"
+version = "1.4.0"
 description = "Claude Conversational Orchestrator MCP Server - Enable Claude to spawn and manage multiple Claude instances"
 readme = "README.md"
 requires-python = ">=3.11"
