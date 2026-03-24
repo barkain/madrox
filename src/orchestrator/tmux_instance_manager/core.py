@@ -520,7 +520,7 @@ class TmuxInstanceManager:
         if use_worktree:
             repo_path = git_repo or await self._detect_git_repo(kwargs.get("parent_instance_id"))
             if repo_path:
-                branch_name = f"madrox/{self._sanitize_branch_name(instance_name)}"
+                branch_name = f"madrox/{self._sanitize_branch_name(instance_name)}-{instance_id[:8]}"
                 # Ensure parent directory exists (git worktree add creates the final dir)
                 workspace_dir.parent.mkdir(parents=True, exist_ok=True)
                 success = await self._create_worktree(repo_path, str(workspace_dir), branch_name)
