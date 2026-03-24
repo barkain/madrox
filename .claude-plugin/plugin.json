@@ -1,0 +1,11 @@
+{
+  "name": "madrox",
+  "version": "0.1.0",
+  "description": "MCP server that orchestrates multiple Claude CLI instances as parallel workers with a real-time dashboard",
+  "author": {
+    "name": "Nadav Barkai"
+  },
+  "repository": "https://github.com/barkain/madrox",
+  "license": "MIT",
+  "keywords": ["mcp", "orchestration", "multi-agent", "parallel", "dashboard"]
+}
