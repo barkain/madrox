@@ -24,7 +24,22 @@ An MCP server that lets AI instances spawn and manage hierarchical networks of C
 | Workspace | Shared | Isolated per-instance |
 | Resource tracking | None | Tokens, cost limits, auto-cleanup |
 
-## Quick Start
+## Plugin Installation (Recommended)
+
+The fastest way to get started — install Madrox as a Claude Code plugin:
+
+```bash
+# Install from local clone
+/plugin install /path/to/madrox
+```
+
+After installing, restart your Claude Code session. All Madrox MCP tools become available automatically. The plugin starts the HTTP backend (port 8001) and the monitor dashboard (port 3002) in the background.
+
+Use the `/madrox:dashboard` skill to open the real-time monitor dashboard in your browser.
+
+**Prerequisites:** Python 3.11+, [tmux](https://github.com/tmux/tmux/wiki/Installing), [uv](https://docs.astral.sh/uv/), npm
+
+## Quick Start (Manual)
 
 ```bash
 # 1. Install
@@ -37,8 +52,6 @@ uv sync && source .venv/bin/activate
 # 3. Register with Claude Code
 claude mcp add madrox http://localhost:8001/mcp --transport http
 ```
-
-**Prerequisites:** Python 3.11+, [tmux](https://github.com/tmux/tmux/wiki/Installing), [uv](https://docs.astral.sh/uv/), npm
 
 Then ask Claude Code to `spawn a madrox dev team from template` — or see [`examples/`](examples/) for scripted usage.
 

@@ -13,6 +13,25 @@ uv sync --all-groups
 source .venv/bin/activate
 ```
 
+### Plugin Mode (Claude Code)
+
+Madrox can be installed as a Claude Code plugin. The plugin is configured via `.mcp.json` and managed by `start_plugin.sh`.
+
+```bash
+# Install from within Claude Code
+/plugin install /path/to/madrox
+```
+
+**How it works:**
+- Claude Code runs `start_plugin.sh` on startup
+- The script starts the HTTP backend (port 8001) and Next.js frontend dashboard (port 3002) in the background
+- Waits for the backend health check to pass
+- Runs a STDIO MCP proxy in the foreground (Claude Code connects to this)
+- On exit, background processes are cleaned up automatically
+- The STDIO server is a proxy — all tool calls are forwarded to the HTTP backend via HTTP
+
+**`/madrox:dashboard` skill:** Opens the Madrox Monitor dashboard at http://localhost:3002 in the browser. Defined in `skills/dashboard/SKILL.md`.
+
 ### Running the Server
 
 The server supports two transport modes that are auto-detected:
