@@ -2725,12 +2725,17 @@ class TmuxInstanceManager:
         else:
             logger.warning("Failed to remove worktree at %s", workspace)
 
-        # Clean up the branch
-        result = await self._run_git_cmd(["-C", repo, "branch", "-D", branch], cwd=repo)
+        # Clean up the branch (safe delete — refuses to delete unmerged branches)
+        result = await self._run_git_cmd(["-C", repo, "branch", "-d", branch], cwd=repo)
         if result is not None:
             logger.info("Deleted branch %s", branch)
         else:
-            logger.warning("Failed to delete branch %s", branch)
+            logger.warning(
+                "Worktree branch '%s' has unmerged changes and was preserved. "
+                "Merge manually with: git merge %s",
+                branch,
+                branch,
+            )
 
     @staticmethod
     def _sanitize_branch_name(name: str) -> str:
