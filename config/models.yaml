@@ -10,6 +10,7 @@ codex:
   allowed_models:
     - gpt-5-codex
     - gpt-5.3-codex
+    - gpt-5.4
 
 # Claude provider (Anthropic Claude models)
 claude:
