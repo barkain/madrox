@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { useLogStore } from "@/store/log-store"
 import type { LogWebSocketMessage, SystemLog, AuditLog } from "@/types"
 
-const WS_URL = "ws://localhost:8001/ws/logs"
+const WS_URL = `ws://localhost:${process.env.NEXT_PUBLIC_BACKEND_PORT || "8001"}/ws/logs`
 const RECONNECT_DELAY = 3000
 const MAX_RECONNECT_DELAY = 30000
 
