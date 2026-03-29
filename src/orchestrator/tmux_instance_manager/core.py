@@ -1647,17 +1647,27 @@ class TmuxInstanceManager:
             # the bootstrap message would be typed into the bare shell instead of
             # the Codex CLI.  Give Codex extra time to finish starting.
             if not cli_ready:
-                logger.warning("Codex CLI not detected as ready - waiting additional time before bootstrap")
+                logger.warning(
+                    "Codex CLI not detected as ready - waiting additional time before bootstrap"
+                )
                 extra_wait_start = time.time()
                 while time.time() - extra_wait_start < 10:
                     await asyncio.sleep(0.5)
                     output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
-                    if any(indicator in output for indicator in ["codex>", "Working on:", "Thinking..."]):
+                    if any(
+                        indicator in output
+                        for indicator in ["codex>", "Working on:", "Thinking..."]
+                    ):
                         cli_ready = True
                         logger.debug("Codex CLI became ready during extended wait")
                         break
                 if not cli_ready:
-                    logger.error("Codex CLI still not ready after extended wait - bootstrap message may leak to shell")
+                    logger.error(
+                        "Codex CLI not ready after extended wait - skipping bootstrap to avoid shell execution"
+                    )
+                    instance["state"] = "error"
+                    instance["error"] = "Codex CLI failed to start within timeout"
+                    return instance
             await asyncio.sleep(0.3)  # Brief settle time for Codex input readiness
 
         # Handle initial prompts based on instance type
