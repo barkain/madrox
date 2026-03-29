@@ -24,6 +24,8 @@ class TemplateMixin:
         task_description: str = "Standby - awaiting task assignment",
         supervisor_role: str | None = None,
         parent_instance_id: str | None = None,
+        instance_type: str = "claude",
+        model: str | None = None,
     ) -> str:
         """Spawn a complete team from a predefined template.
 
@@ -38,6 +40,8 @@ class TemplateMixin:
             task_description: Optional description of the task for the team (defaults to standby)
             supervisor_role: Optional supervisor role (defaults to template's recommended role)
             parent_instance_id: Optional parent instance ID for supervisor
+            instance_type: Type of instance to spawn - "claude" or "codex" (default: "claude")
+            model: Optional model override for all spawned instances
 
         Returns:
             Formatted result text with supervisor ID and network topology
@@ -70,7 +74,10 @@ class TemplateMixin:
         role = supervisor_role or template_meta["supervisor_role"]
 
         instruction = self._build_template_instruction(
-            template_content=template_content, task_description=task_description
+            template_content=template_content,
+            task_description=task_description,
+            instance_type=instance_type,
+            model=model,
         )
 
         supervisor_id = await self.spawn_instance(
@@ -79,6 +86,9 @@ class TemplateMixin:
             wait_for_ready=True,
             initial_prompt=instruction,
             parent_instance_id=parent_instance_id,
+            instance_type=instance_type,
+            model=model,
+            bypass_isolation=True,
         )
 
         logger.info(
@@ -190,7 +200,13 @@ Use get_instance_tree() to see the full network hierarchy."""
 
         return "\n".join(section_lines).strip()
 
-    def _build_template_instruction(self, template_content: str, task_description: str) -> str:
+    def _build_template_instruction(
+        self,
+        template_content: str,
+        task_description: str,
+        instance_type: str = "claude",
+        model: str | None = None,
+    ) -> str:
         """Build instruction message for supervisor from template."""
         team_structure = self._extract_section(template_content, "## Team Structure")
         workflow_phases = self._extract_section(template_content, "## Workflow Phases")
@@ -220,5 +236,11 @@ CRITICAL EXECUTION INSTRUCTIONS:
 7. Report final deliverables and status when complete
 
 Begin execution now. Spawn your team and start the workflow."""
+
+        if instance_type == "codex":
+            codex_section = "\n\nINSTANCE CONFIGURATION:\n- Spawn all team members using spawn_codex (not spawn_claude)"
+            if model:
+                codex_section += f"\n- Model: {model}"
+            instruction += codex_section
 
         return instruction

@@ -1540,11 +1540,19 @@ class TmuxInstanceManager:
                 if "projects" not in codex_config:
                     codex_config["projects"] = {}
                 project_key = str(workspace_path)
-                if project_key not in codex_config["projects"]:
-                    codex_config["projects"][project_key] = {"trust_level": "trusted"}
+                # On macOS, /tmp -> /private/tmp; Codex resolves the real path
+                # so we must trust BOTH the original and resolved paths
+                resolved_key = str(Path(workspace_path).resolve())
+                keys_to_trust = {project_key, resolved_key}
+                needs_write = False
+                for key in keys_to_trust:
+                    if key not in codex_config["projects"]:
+                        codex_config["projects"][key] = {"trust_level": "trusted"}
+                        needs_write = True
+                if needs_write:
                     with codex_config_path.open("w") as f:
                         toml.dump(codex_config, f)
-                    logger.info(f"Pre-trusted Codex workspace: {project_key}")
+                    logger.info(f"Pre-trusted Codex workspace: {keys_to_trust}")
                 else:
                     logger.debug(f"Codex workspace already trusted: {project_key}")
             except Exception as e:
@@ -1639,7 +1647,14 @@ class TmuxInstanceManager:
             if instance_type == "codex":
                 # Codex ready when it shows prompt or waits for input
                 if any(
-                    indicator in output for indicator in ["codex>", "Working on:", "Thinking..."]
+                    indicator in output
+                    for indicator in [
+                        "codex>",
+                        "Working on:",
+                        "Thinking...",
+                        "OpenAI Codex",  # Codex v0.117+ banner
+                        "›",  # Codex interactive prompt character
+                    ]
                 ):
                     cli_ready = True
                     break
@@ -1688,7 +1703,13 @@ class TmuxInstanceManager:
                     output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
                     if any(
                         indicator in output
-                        for indicator in ["codex>", "Working on:", "Thinking..."]
+                        for indicator in [
+                            "codex>",
+                            "Working on:",
+                            "Thinking...",
+                            "OpenAI Codex",
+                            "›",
+                        ]
                     ):
                         cli_ready = True
                         logger.debug("Codex CLI became ready during extended wait")
