@@ -1524,6 +1524,32 @@ class TmuxInstanceManager:
 
         # Build CLI command based on instance type
         if instance_type == "codex":
+            # Pre-trust the workspace directory in ~/.codex/config.toml
+            # This prevents the interactive trust prompt that defaults to "No, quit"
+            # and would cause Codex to exit immediately, leaking bootstrap text into zsh
+            workspace_path = instance["workspace_dir"]
+            try:
+                import toml
+
+                codex_config_path = Path.home() / ".codex" / "config.toml"
+                codex_config_path.parent.mkdir(parents=True, exist_ok=True)
+                if codex_config_path.exists():
+                    codex_config = toml.load(codex_config_path)
+                else:
+                    codex_config = {}
+                if "projects" not in codex_config:
+                    codex_config["projects"] = {}
+                project_key = str(workspace_path)
+                if project_key not in codex_config["projects"]:
+                    codex_config["projects"][project_key] = {"trust_level": "trusted"}
+                    with codex_config_path.open("w") as f:
+                        toml.dump(codex_config, f)
+                    logger.info(f"Pre-trusted Codex workspace: {project_key}")
+                else:
+                    logger.debug(f"Codex workspace already trusted: {project_key}")
+            except Exception as e:
+                logger.warning(f"Failed to pre-trust Codex workspace: {e}")
+
             cmd_parts = ["codex"]
 
             # Add permission bypass if requested (equivalent to Claude's --dangerously-skip-permissions)
@@ -1595,8 +1621,14 @@ class TmuxInstanceManager:
             output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
 
             # Auto-accept workspace trust prompt if it appears
-            # This occurs when Claude opens a new/unfamiliar directory
-            if "Yes, I trust this folder" in output and "No, exit" in output:
+            # This occurs when Claude/Codex opens a new/unfamiliar directory
+            # Claude prompt: "Yes, I trust this folder" / "No, exit"
+            # Codex prompt: "Do you trust the contents of this directory?" with options 1=Yes, 2=No
+            if ("Yes, I trust this folder" in output and "No, exit" in output) or (
+                "trust" in output.lower()
+                and ("Yes" in output or "No, quit" in output)
+                and instance_type == "codex"
+            ):
                 pane.send_keys("1", enter=True)
                 logger.debug("Auto-accepted workspace trust prompt")
                 await asyncio.sleep(0.5)  # Wait for CLI to proceed past trust dialog
