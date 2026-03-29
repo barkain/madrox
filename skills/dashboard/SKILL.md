@@ -4,10 +4,6 @@ description: Open the Madrox Monitor dashboard in the browser
 user_invocable: true
 ---
 
-Open the Madrox Monitor dashboard at http://localhost:3002 in the default browser.
+Call the `get_dashboard_url` MCP tool to get the dashboard URL for this session, then open it in the user's browser.
 
-```bash
-open "http://localhost:3002" 2>/dev/null || xdg-open "http://localhost:3002" 2>/dev/null
-```
-
-Tell the user the dashboard is opening at http://localhost:3002.
+Tell the user the URL so they can also open it manually.

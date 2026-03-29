@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { useInstanceStore } from "@/store/instance-store"
 import type { AuditLogEntry } from "@/types"
 
-const WS_URL = "ws://localhost:8001/ws/monitor"
+const WS_URL = `ws://localhost:${process.env.NEXT_PUBLIC_BACKEND_PORT || "8001"}/ws/monitor`
 const RECONNECT_DELAY = 3000
 const MAX_RECONNECT_DELAY = 30000
 

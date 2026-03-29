@@ -1431,7 +1431,9 @@ Begin execution now. Spawn your team and start the workflow."""
                         from pathlib import Path
 
                         template_name = tool_args["template_name"]
-                        task_description = tool_args["task_description"]
+                        task_description = tool_args.get(
+                            "task_description", "Standby - awaiting task assignment"
+                        )
                         supervisor_role = tool_args.get("supervisor_role")
                         parent_id = tool_args.get("parent_instance_id")
 

@@ -21,7 +21,7 @@ class TemplateMixin:
     async def spawn_team_from_template(
         self,
         template_name: str,
-        task_description: str,
+        task_description: str = "Standby - awaiting task assignment",
         supervisor_role: str | None = None,
         parent_instance_id: str | None = None,
     ) -> str:
@@ -35,7 +35,7 @@ class TemplateMixin:
 
         Args:
             template_name: Name of the template to use
-            task_description: Description of the task for the team
+            task_description: Optional description of the task for the team (defaults to standby)
             supervisor_role: Optional supervisor role (defaults to template's recommended role)
             parent_instance_id: Optional parent instance ID for supervisor
 
