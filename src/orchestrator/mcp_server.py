@@ -103,6 +103,17 @@ class OrchestrationMCPServer:
             proxy_fn = _make_proxy_fn(self, tool_name, original_fn)
             self.mcp.tool()(proxy_fn)
 
+        # Register local-only tools (not proxied to parent)
+        @self.mcp.tool
+        async def get_dashboard_url() -> str:
+            """Get the URL for the Madrox Monitor dashboard.
+
+            Returns:
+                The dashboard URL with the correct port for this session.
+            """
+            port = os.getenv("MADROX_FRONTEND_PORT", "3002")
+            return f"http://localhost:{port}"
+
         logger.info(f"Registered {len(source_tools)} proxy tools")
 
     async def _call_parent(self, tool_name: str, arguments: dict) -> dict | list | str:

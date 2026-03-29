@@ -80,4 +80,5 @@ fi
 # --- 3. Run STDIO MCP proxy (foreground) ---
 # This process owns stdout for the MCP protocol
 echo "Madrox dashboard available at: http://localhost:$FE_PORT" >&2
+export MADROX_FRONTEND_PORT="$FE_PORT"
 exec uv run --directory "$PLUGIN_ROOT" python run_orchestrator.py

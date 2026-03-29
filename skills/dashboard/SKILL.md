@@ -4,6 +4,6 @@ description: Open the Madrox Monitor dashboard in the browser
 user_invocable: true
 ---
 
-The Madrox Monitor dashboard URL was printed to stderr when the plugin started. Look for the line "Madrox dashboard available at: http://localhost:<port>" in the session startup output.
+Call the `get_dashboard_url` MCP tool to get the dashboard URL for this session, then open it in the user's browser.
 
-Tell the user the dashboard URL. If you can't find it, suggest they check the startup logs or try http://localhost:3002 as the default.
+Tell the user the URL so they can also open it manually.
