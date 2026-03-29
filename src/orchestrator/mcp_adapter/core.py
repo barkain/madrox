@@ -1438,6 +1438,8 @@ Begin execution now. Spawn your team and start the workflow."""
                         )
                         supervisor_role = tool_args.get("supervisor_role")
                         parent_id = tool_args.get("parent_instance_id")
+                        instance_type = tool_args.get("instance_type", "claude")
+                        model = tool_args.get("model")
 
                         # Auto-detect caller if parent not provided
                         if not parent_id:
@@ -1476,6 +1478,8 @@ Begin execution now. Spawn your team and start the workflow."""
                             wait_for_ready=True,
                             initial_prompt=instruction,
                             parent_instance_id=parent_id,
+                            instance_type=instance_type,
+                            model=model,
                         )
 
                         # No need to send_message - instruction already received via CLI argument

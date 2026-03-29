@@ -24,6 +24,8 @@ class TemplateMixin:
         task_description: str = "Standby - awaiting task assignment",
         supervisor_role: str | None = None,
         parent_instance_id: str | None = None,
+        instance_type: str = "claude",
+        model: str | None = None,
     ) -> str:
         """Spawn a complete team from a predefined template.
 
@@ -38,6 +40,8 @@ class TemplateMixin:
             task_description: Optional description of the task for the team (defaults to standby)
             supervisor_role: Optional supervisor role (defaults to template's recommended role)
             parent_instance_id: Optional parent instance ID for supervisor
+            instance_type: Type of instance to spawn - "claude" or "codex" (default: "claude")
+            model: Optional model override for all spawned instances
 
         Returns:
             Formatted result text with supervisor ID and network topology
@@ -79,6 +83,8 @@ class TemplateMixin:
             wait_for_ready=True,
             initial_prompt=instruction,
             parent_instance_id=parent_instance_id,
+            instance_type=instance_type,
+            model=model,
         )
 
         logger.info(
