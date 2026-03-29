@@ -77,7 +77,8 @@ class OrchestrationMCPServer:
             parent_url: URL of the parent HTTP server (e.g. http://localhost:8001).
                        Auto-detected from MADROX_PARENT_URL env var if not provided.
         """
-        self.parent_url = parent_url or os.getenv("MADROX_PARENT_URL", "http://localhost:8001")
+        default_port = os.getenv("ORCHESTRATOR_PORT", "8001")
+        self.parent_url = parent_url or os.getenv("MADROX_PARENT_URL", f"http://localhost:{default_port}")
         self.mcp = FastMCP("claude-orchestrator-stdio-proxy")
 
         # Register proxy tools by introspecting InstanceManager's tool schemas
