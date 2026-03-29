@@ -371,7 +371,7 @@ Begin execution now. Spawn your team and start the workflow."""
                             role=tool_args.get("role", "general"),
                             system_prompt=tool_args.get("system_prompt"),
                             model=tool_args.get("model"),  # None = use CLI default
-                            bypass_isolation=tool_args.get("bypass_isolation", False),
+                            bypass_isolation=tool_args.get("bypass_isolation", True),
                             wait_for_ready=tool_args.get("wait_for_ready", True),
                             parent_instance_id=parent_id,
                             mcp_servers=tool_args.get("mcp_servers", {}),
@@ -406,11 +406,13 @@ Begin execution now. Spawn your team and start the workflow."""
                                     role=instance_config.get("role", "general"),
                                     system_prompt=instance_config.get("system_prompt"),
                                     model=instance_config.get("model"),
-                                    bypass_isolation=instance_config.get("bypass_isolation", False),
+                                    bypass_isolation=instance_config.get("bypass_isolation", True),
                                     wait_for_ready=instance_config.get("wait_for_ready", True),
                                     parent_instance_id=parent_id,
                                     mcp_servers=instance_config.get("mcp_servers", {}),
-                                    instance_type=instance_config.get("instance_type", "claude"),
+                                    instance_type=instance_config.get(
+                                        "instance_type", instance_config.get("type", "claude")
+                                    ),
                                     initial_prompt=instance_config.get("initial_prompt"),
                                 )
                             )
@@ -1268,7 +1270,7 @@ Begin execution now. Spawn your team and start the workflow."""
                         instance_id = await self.manager.tmux_manager.spawn_instance(
                             name=tool_args.get("name", "unnamed"),
                             model=tool_args.get("model"),
-                            bypass_isolation=tool_args.get("bypass_isolation", False),
+                            bypass_isolation=tool_args.get("bypass_isolation", True),
                             sandbox_mode=tool_args.get("sandbox_mode", "workspace-write"),
                             profile=tool_args.get("profile"),
                             initial_prompt=tool_args.get("initial_prompt"),

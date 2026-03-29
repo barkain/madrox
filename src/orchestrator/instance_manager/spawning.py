@@ -77,10 +77,13 @@ class SpawningMixin:
         self,
         instances: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Spawn multiple Claude instances in parallel for better performance.
+        """Spawn multiple Claude or Codex instances in parallel for better performance.
 
         Args:
-            instances: List of instance configurations to spawn
+            instances: List of instance configurations to spawn.
+                       Each config supports: name, type ("claude" or "codex"),
+                       role, system_prompt, model, initial_prompt, bypass_isolation,
+                       sandbox_mode (codex only), parent_instance_id, use_worktree, git_repo.
 
         Returns:
             Dictionary with spawned instance IDs and any errors
@@ -88,7 +91,11 @@ class SpawningMixin:
         results: dict[str, list[Any]] = {"spawned": [], "errors": []}
         for instance_config in instances:
             try:
-                instance_id = await self.spawn_instance(**instance_config)
+                # Map "type" to "instance_type" for spawn_instance()
+                config = dict(instance_config)
+                if "type" in config:
+                    config["instance_type"] = config.pop("type")
+                instance_id = await self.spawn_instance(**config)
                 results["spawned"].append({"instance_id": instance_id, **instance_config})
             except Exception as e:
                 results["errors"].append({"config": instance_config, "error": str(e)})
@@ -102,7 +109,7 @@ class SpawningMixin:
         sandbox_mode: str = "workspace-write",
         profile: str | None = None,
         initial_prompt: str | None = None,
-        bypass_isolation: bool = False,
+        bypass_isolation: bool = True,
         parent_instance_id: str | None = None,
         mcp_servers: str | None = None,
         use_worktree: bool = False,
