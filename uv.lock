@@ -323,7 +323,7 @@ wheels = [
 
 [[package]]
 name = "claude-orchestrator-mcp"
-version = "0.1.0"
+version = "1.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

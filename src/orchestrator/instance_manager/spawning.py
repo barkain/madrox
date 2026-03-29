@@ -40,6 +40,7 @@ class SpawningMixin:
             system_prompt: Custom system prompt (overrides role)
             model: Claude model to use. Options:
                    - claude-sonnet-4-5 (default, recommended, smartest model for daily use)
+                   - claude-opus-4-6 (latest Opus, most capable)
                    - claude-opus-4-1 (legacy, reaches usage limits faster)
                    - claude-haiku-4-5 (fastest model for simple tasks)
             bypass_isolation: Allow full filesystem access (default: true)
@@ -112,7 +113,8 @@ class SpawningMixin:
         Args:
             name: Instance name
             model: OpenAI GPT model to use. Options:
-                   - gpt-5-codex (default and only allowed model)
+                   - gpt-5-codex (default)
+                   - gpt-5.3-codex
             sandbox_mode: Sandbox policy for shell commands (read-only, workspace-write, danger-full-access)
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session
