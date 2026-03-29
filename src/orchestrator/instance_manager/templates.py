@@ -88,6 +88,7 @@ class TemplateMixin:
             parent_instance_id=parent_instance_id,
             instance_type=instance_type,
             model=model,
+            bypass_isolation=True,
         )
 
         logger.info(
