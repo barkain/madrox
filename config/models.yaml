@@ -7,9 +7,9 @@ codex:
   default: gpt-5-codex
 
   # List of allowed Codex models
-  # Note: Currently only gpt-5-codex is supported by Codex CLI
   allowed_models:
     - gpt-5-codex
+    - gpt-5.3-codex
 
 # Claude provider (Anthropic Claude models)
 claude:
@@ -20,5 +20,6 @@ claude:
   # List of allowed Claude models
   allowed_models:
     - claude-sonnet-4-5   # Recommended: Smartest model for daily use
+    - claude-opus-4-6     # Latest Opus: Most capable model
     - claude-opus-4-1     # Legacy: Reaches usage limits faster, use sparingly
     - claude-haiku-4-5    # Fastest: Best for simple, quick tasks

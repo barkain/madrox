@@ -1,6 +1,7 @@
 """Model configuration for Madrox orchestrator."""
 
 import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -63,6 +64,13 @@ def validate_model(provider: str, model: str | None) -> str:
     # Use default if no model specified
     if model is None:
         return provider_config["default"]
+
+    # Normalize trailing version suffixes (e.g. claude-opus-4-6-0 -> claude-opus-4-6)
+    # The Claude CLI rejects date/patch suffixes that Madrox callers may pass.
+    normalized = re.sub(r"-0$", "", model)
+    if normalized != model and normalized in provider_config["allowed_models"]:
+        logger.info(f"Normalized model '{model}' -> '{normalized}'")
+        model = normalized
 
     # Validate model is in allowed list
     if model not in provider_config["allowed_models"]:
