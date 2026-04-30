@@ -144,6 +144,22 @@ class InstanceManager(
         self.instances[instance_id] = self.tmux_manager.instances[instance_id]
         return instance_id
 
+    def reconnect_instance(self, persisted_record: dict[str, Any]) -> str:
+        """Reconnect a persisted instance whose tmux session is still alive."""
+        instance_id = self.tmux_manager.reconnect_instance(persisted_record)
+        self.instances[instance_id] = self.tmux_manager.instances[instance_id]
+        if persisted_record.get("name") == "main-orchestrator":
+            self.main_instance_id = instance_id
+        return instance_id
+
+    def recover_instance(self, persisted_record: dict[str, Any]) -> str:
+        """Recover a persisted instance whose tmux session has died."""
+        instance_id = self.tmux_manager.recover_instance(persisted_record)
+        self.instances[instance_id] = self.tmux_manager.instances[instance_id]
+        if persisted_record.get("name") == "main-orchestrator":
+            self.main_instance_id = instance_id
+        return instance_id
+
     def _get_role_prompt(self, role: str) -> str:
         """Get system prompt for a role by loading from resources/prompts directory."""
         current_file = Path(__file__)

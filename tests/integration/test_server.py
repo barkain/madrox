@@ -36,25 +36,26 @@ def server(orchestrator_config, mock_env_vars):
     """Create ClaudeOrchestratorServer instance for testing."""
     with patch("orchestrator.server.core.LoggingManager"):
         with patch("orchestrator.server.core.InstanceManager") as mock_im:
-            # Mock instance manager
-            mock_instance_manager = MagicMock()
-            mock_instance_manager.instances = {}
-            mock_instance_manager.mcp = MagicMock()
-            mock_instance_manager._get_instance_status_internal = MagicMock(
-                return_value={"instances": {}, "total_instances": 0}
-            )
+            with patch("orchestrator.server.core.StateStore"):
+                # Mock instance manager
+                mock_instance_manager = MagicMock()
+                mock_instance_manager.instances = {}
+                mock_instance_manager.mcp = MagicMock()
+                mock_instance_manager._get_instance_status_internal = MagicMock(
+                    return_value={"instances": {}, "total_instances": 0}
+                )
 
-            # Mock MCP tools
-            async def mock_get_tools():
-                return {}
+                # Mock MCP tools
+                async def mock_get_tools():
+                    return {}
 
-            mock_instance_manager.mcp.get_tools = mock_get_tools
-            mock_im.return_value = mock_instance_manager
+                mock_instance_manager.mcp.get_tools = mock_get_tools
+                mock_im.return_value = mock_instance_manager
 
-            server = ClaudeOrchestratorServer(orchestrator_config)
-            server.instance_manager = mock_instance_manager
+                server = ClaudeOrchestratorServer(orchestrator_config)
+                server.instance_manager = mock_instance_manager
 
-            return server
+                return server
 
 
 @pytest.fixture
@@ -70,11 +71,12 @@ class TestServerInitialization:
         """Test server initializes with configuration."""
         with patch("orchestrator.server.core.LoggingManager"):
             with patch("orchestrator.server.core.InstanceManager"):
-                server = ClaudeOrchestratorServer(orchestrator_config)
+                with patch("orchestrator.server.core.StateStore"):
+                    server = ClaudeOrchestratorServer(orchestrator_config)
 
-                assert server.config == orchestrator_config
-                assert server.app is not None
-                assert server.instance_manager is not None
+                    assert server.config == orchestrator_config
+                    assert server.app is not None
+                    assert server.instance_manager is not None
 
     def test_logging_manager_setup(self, server):
         """Test logging manager is configured."""
@@ -292,15 +294,16 @@ class TestErrorHandling:
 class TestServerLifecycle:
     """Test server lifecycle operations."""
 
-    def test_cleanup_orphaned_sessions_called(self, orchestrator_config, mock_env_vars):
-        """Test that cleanup of orphaned tmux sessions is called during init."""
+    def test_reconnect_or_cleanup_sessions_called(self, orchestrator_config, mock_env_vars):
+        """Test that reconnect/cleanup of tmux sessions is called during init."""
         with patch("orchestrator.server.core.LoggingManager"):
             with patch("orchestrator.server.core.InstanceManager"):
-                with patch.object(
-                    ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"
-                ) as mock_cleanup:
-                    ClaudeOrchestratorServer(orchestrator_config)
-                    mock_cleanup.assert_called_once()
+                with patch("orchestrator.server.core.StateStore"):
+                    with patch.object(
+                        ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"
+                    ) as mock_reconnect:
+                        ClaudeOrchestratorServer(orchestrator_config)
+                        mock_reconnect.assert_called_once()
 
     def test_instance_manager_configured_with_session_id(self, server):
         """Test instance manager receives session configuration."""

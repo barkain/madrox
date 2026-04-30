@@ -127,7 +127,8 @@ def server(mock_config, mock_instance_manager, mock_mcp_adapter):
         patch("orchestrator.server.core.InstanceManager", return_value=mock_instance_manager),
         patch("orchestrator.server.core.MCPAdapter", return_value=mock_mcp_adapter),
         patch("orchestrator.server.core.LoggingManager"),
-        patch("orchestrator.server.core.ClaudeOrchestratorServer._cleanup_orphaned_tmux_sessions"),
+        patch("orchestrator.server.core.StateStore"),
+        patch("orchestrator.server.core.ClaudeOrchestratorServer._reconnect_or_cleanup_sessions"),
     ):
         server_instance = ClaudeOrchestratorServer(mock_config)
         server_instance.instance_manager = mock_instance_manager
@@ -1028,8 +1029,9 @@ class TestServerLifecycle:
             patch("orchestrator.server.core.InstanceManager"),
             patch("orchestrator.server.core.MCPAdapter"),
             patch("orchestrator.server.core.LoggingManager"),
+            patch("orchestrator.server.core.StateStore"),
             patch(
-                "orchestrator.server.core.ClaudeOrchestratorServer._cleanup_orphaned_tmux_sessions"
+                "orchestrator.server.core.ClaudeOrchestratorServer._reconnect_or_cleanup_sessions"
             ),
         ):
             server = ClaudeOrchestratorServer(mock_config)
@@ -1068,27 +1070,32 @@ class TestServerLifecycle:
         # Should not raise exception
         await run_limited_health_check()
 
-    def test_cleanup_orphaned_tmux_sessions(self, server):
-        """Test that orphaned tmux sessions are cleaned up."""
+    def test_reconnect_or_cleanup_sessions(self, server):
+        """Test that orphaned tmux sessions are cleaned up and persisted ones reconnected."""
         with patch("subprocess.run") as mock_run:
             # Mock tmux list-sessions returning madrox sessions
             mock_run.return_value = MagicMock(
                 returncode=0, stdout="madrox-inst-123\nmadrox-inst-456\nother-session\n"
             )
+            # Mock state_store with no persisted instances (all sessions orphaned)
+            server.state_store = MagicMock()
+            server.state_store.load_all.return_value = {}
 
-            server._cleanup_orphaned_tmux_sessions()
+            server._reconnect_or_cleanup_sessions()
 
-            # Verify kill-session was called for madrox sessions
-            kill_calls = [call for call in mock_run.call_args_list if "kill-session" in call[0][0]]
+            # Verify kill-session was called for madrox sessions (orphaned)
+            kill_calls = [call for call in mock_run.call_args_list if "kill-session" in str(call)]
             assert len(kill_calls) == 2
 
-    def test_cleanup_handles_no_tmux_sessions(self, server):
-        """Test that cleanup handles no tmux sessions gracefully."""
+    def test_reconnect_handles_no_tmux_sessions(self, server):
+        """Test that reconnect handles no tmux sessions gracefully."""
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stdout="")
+            server.state_store = MagicMock()
+            server.state_store.load_all.return_value = {}
 
             # Should not raise exception
-            server._cleanup_orphaned_tmux_sessions()
+            server._reconnect_or_cleanup_sessions()
 
 
 # ============================================================================

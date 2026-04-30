@@ -21,6 +21,7 @@ from ..simple_models import (
     InstanceRole,
     OrchestratorConfig,
 )
+from ..state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +72,13 @@ class ClaudeOrchestratorServer:
         # Test the reconfigured module-level logger
         server_logger.info("Module-level logger reconfigured successfully")
 
-        # Generate session ID for artifact organization (before instance manager init)
-        self.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Initialize state store for persistent instance state
+        state_dir = os.path.join(log_dir, "state")
+        self.state_store = StateStore(state_dir=state_dir)
+        self.state_store.prune_terminated()
+
+        # Stable session_id: reuse from previous run if artifacts dir still exists
+        self.session_id = self._resolve_session_id()
 
         # Use session artifacts directory as workspace - instances work directly in final location
         session_workspace_dir = os.path.join(self.artifacts_base_dir, self.session_id)
@@ -86,12 +92,13 @@ class ClaudeOrchestratorServer:
                 "preserve_artifacts": self.preserve_artifacts,
                 "artifact_patterns": self.artifact_patterns,
                 "session_id": self.session_id,
+                "_state_store": self.state_store,
             }
         )
         self.instance_manager = InstanceManager(instance_manager_config)
 
-        # Clean up orphaned tmux sessions from previous server runs
-        self._cleanup_orphaned_tmux_sessions()
+        # Reconnect persisted instances or clean up truly orphaned sessions
+        self._reconnect_or_cleanup_sessions()
 
         # Track server start time for session-only audit logs (use local time to match audit log timestamps)
         self.server_start_time = datetime.now().isoformat()
@@ -1480,38 +1487,103 @@ class ClaudeOrchestratorServer:
                 logger.error(f"Error in health check loop: {e}")
                 await asyncio.sleep(10)  # Retry in 10 seconds on error
 
-    def _cleanup_orphaned_tmux_sessions(self):
-        """Clean up tmux sessions from previous server runs.
+    def _resolve_session_id(self) -> str:
+        """Resolve session_id: reuse previous if artifacts dir still exists, else generate new."""
+        prev = self.state_store.load_server_state()
+        if prev and "session_id" in prev:
+            prev_dir = os.path.join(self.artifacts_base_dir, prev["session_id"])
+            if os.path.isdir(prev_dir):
+                logger.info(f"Reusing previous session_id: {prev['session_id']}")
+                return prev["session_id"]
 
-        Kills all madrox-* tmux sessions to ensure UI shows only current session instances.
-        """
+        session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.state_store.save_server_state({"session_id": session_id})
+        logger.info(f"Generated new session_id: {session_id}")
+        return session_id
+
+    def _reconnect_or_cleanup_sessions(self):
+        """Reconnect persisted instances or clean up truly orphaned tmux sessions."""
         import subprocess
 
+        persisted = self.state_store.load_all()
+
+        # Get live madrox-* tmux sessions
+        live_sessions: set[str] = set()
         try:
-            # Get all madrox tmux sessions
             result = subprocess.run(
                 ["tmux", "list-sessions", "-F", "#{session_name}"],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-
             if result.returncode == 0:
-                session_count = 0
                 for line in result.stdout.strip().split("\n"):
                     if line.startswith("madrox-"):
-                        # Kill the session
-                        subprocess.run(
-                            ["tmux", "kill-session", "-t", line], capture_output=True, check=False
-                        )
-                        session_count += 1
-
-                if session_count > 0:
-                    logger.info(
-                        f"Cleaned up {session_count} orphaned tmux sessions from previous runs"
-                    )
+                        live_sessions.add(line)
         except Exception as e:
-            logger.warning(f"Failed to cleanup orphaned tmux sessions: {e}")
+            logger.warning(f"Failed to list tmux sessions: {e}")
+
+        # Track which live sessions are accounted for
+        accounted_sessions: set[str] = set()
+        reconnected = 0
+        marked_for_recovery = 0
+
+        for iid, record in persisted.items():
+            state = record.get("state", "")
+            session_name = f"madrox-{iid}"
+
+            # Skip already-dead instances
+            if state in ("terminated", "error"):
+                continue
+
+            # Handle partially initialized instances
+            if state == "initializing":
+                if session_name in live_sessions:
+                    subprocess.run(
+                        ["tmux", "kill-session", "-t", session_name],
+                        capture_output=True,
+                        check=False,
+                    )
+                    accounted_sessions.add(session_name)
+                record["state"] = "error"
+                record["error_message"] = "Server restarted during initialization"
+                self.state_store.save_instance(record)
+                continue
+
+            if session_name in live_sessions:
+                # Tmux session alive → reconnect
+                accounted_sessions.add(session_name)
+                try:
+                    self.instance_manager.reconnect_instance(record)
+                    reconnected += 1
+                    logger.info(f"Reconnected instance {iid} ({record.get('name')})")
+                except Exception as e:
+                    logger.error(f"Failed to reconnect instance {iid}: {e}")
+            else:
+                # Tmux session gone → mark for recovery
+                record["_needs_recovery"] = True
+                try:
+                    self.instance_manager.recover_instance(record)
+                    marked_for_recovery += 1
+                    logger.info(f"Queued recovery for instance {iid} ({record.get('name')})")
+                except Exception as e:
+                    logger.error(f"Failed to recover instance {iid}: {e}")
+
+        # Kill truly orphaned sessions (not in persisted state)
+        orphaned = live_sessions - accounted_sessions
+        for session_name in orphaned:
+            subprocess.run(
+                ["tmux", "kill-session", "-t", session_name],
+                capture_output=True,
+                check=False,
+            )
+
+        if orphaned:
+            logger.info(f"Cleaned up {len(orphaned)} orphaned tmux sessions")
+        if reconnected:
+            logger.info(f"Reconnected {reconnected} persisted instances")
+        if marked_for_recovery:
+            logger.info(f"Queued {marked_for_recovery} instances for recovery")
 
 
 async def main():

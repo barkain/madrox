@@ -41,6 +41,9 @@ class TmuxInstanceManager:
         self.message_history: dict[str, list[dict]] = {}
         self.logging_manager = logging_manager
 
+        # Persistent state store (injected by server)
+        self.state_store = config.get("_state_store")
+
         # NEW: Use shared state manager for IPC
         self.shared_state = shared_state_manager
 
@@ -126,6 +129,14 @@ class TmuxInstanceManager:
                     f"Trimmed {excess} old messages from history for instance {instance_id} "
                     f"(keeping last {MAX_MESSAGE_HISTORY_PER_INSTANCE})"
                 )
+
+    def _save_state(self) -> None:
+        """Persist current instance state to disk (if state_store configured)."""
+        if self.state_store:
+            try:
+                self.state_store.save_all(self.instances)
+            except Exception as e:
+                logger.error(f"Failed to persist instance state: {e}")
 
     async def _get_from_shared_queue(self, instance_id: str, timeout: int) -> dict:
         """Get message from shared queue with async wrapper.
@@ -674,6 +685,8 @@ class TmuxInstanceManager:
                     },
                 )
 
+                self._save_state()
+
                 if self.logging_manager:
                     instance_logger = self.logging_manager.get_instance_logger(
                         instance_id, instance_name
@@ -683,6 +696,7 @@ class TmuxInstanceManager:
             except Exception as e:
                 instance["state"] = "error"
                 instance["error_message"] = str(e)
+                self._save_state()
                 logger.error(
                     f"Failed to initialize tmux instance {instance_id}: {e}",
                     extra={"instance_id": instance_id, "error": str(e)},
@@ -720,6 +734,7 @@ class TmuxInstanceManager:
         try:
             await self._initialize_tmux_session(instance_id)
             instance["state"] = "idle"
+            self._save_state()
             await self._process_queued_messages(instance_id)
             logger.info(
                 f"Background initialization completed for instance {instance_id} ({instance['name']})",
@@ -728,6 +743,7 @@ class TmuxInstanceManager:
         except Exception as e:
             instance["state"] = "error"
             instance["error_message"] = str(e)
+            self._save_state()
             logger.error(
                 f"Background initialization failed for instance {instance_id}: {e}",
                 extra={"instance_id": instance_id, "error": str(e)},
@@ -779,6 +795,7 @@ class TmuxInstanceManager:
         # Update instance state
         instance["state"] = "busy"
         instance["last_activity"] = datetime.now(UTC).isoformat()
+        self._save_state()
 
         # Generate message ID for tracking
         message_id = str(uuid.uuid4())
@@ -1100,6 +1117,7 @@ class TmuxInstanceManager:
             # Update state back to idle
             if instance["state"] == "busy":
                 instance["state"] = "idle"
+                self._save_state()
                 # Process any queued messages
                 await self._process_queued_messages(instance_id)
 
@@ -1309,6 +1327,7 @@ class TmuxInstanceManager:
             # Update instance state
             instance["state"] = "terminated"
             instance["terminated_at"] = datetime.now(UTC).isoformat()
+            self._save_state()
 
             # Clean up git worktree if applicable
             if instance.get("use_worktree") and instance.get("git_repo"):
@@ -1368,6 +1387,127 @@ class TmuxInstanceManager:
             )
             instance["error_message"] = str(e)
             return False
+
+    def reconnect_instance(self, persisted_record: dict[str, Any]) -> str:
+        """Reconnect to a persisted instance whose tmux session is still alive."""
+        instance_id = persisted_record["id"]
+        session_name = f"madrox-{instance_id}"
+
+        try:
+            session = self.tmux_server.find_where({"session_name": session_name})
+        except Exception:
+            session = None
+
+        if not session:
+            raise RuntimeError(f"Tmux session {session_name} not found for reconnect")
+
+        # Restore instance record (without transient keys — they'll be rebuilt)
+        self.instances[instance_id] = persisted_record
+        self.tmux_sessions[instance_id] = session
+        self.message_history[instance_id] = []
+
+        # Create response queue
+        if self.shared_state:
+            self.shared_state.create_response_queue(instance_id)
+        else:
+            self.response_queues[instance_id] = asyncio.Queue()
+
+        # Restore MCP config path if file exists on disk
+        workspace_dir = persisted_record.get("workspace_dir", "")
+        mcp_config_path = Path(workspace_dir) / ".claude_mcp_config.json"
+        if mcp_config_path.exists():
+            persisted_record["_mcp_config_path"] = str(mcp_config_path)
+
+        # Detect current CLI state from pane content
+        try:
+            window = session.windows[0]
+            pane = window.panes[0]
+            output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+
+            idle_indicators = ['Try "', "⏵⏵", "bypass permissions", "How can I help", "What would you like"]
+            busy_indicators = ["Thinking", "Running", "⏳"]
+
+            if any(ind in output for ind in busy_indicators):
+                persisted_record["state"] = "busy"
+            elif any(ind in output for ind in idle_indicators):
+                persisted_record["state"] = "idle"
+            # else: keep persisted state
+        except Exception as e:
+            logger.warning(f"Could not detect CLI state for {instance_id}: {e}")
+
+        # Restore main_instance_id if this is the main orchestrator
+        if persisted_record.get("name") == "main-orchestrator":
+            self.main_instance_id = instance_id
+
+        if self.logging_manager:
+            self.logging_manager.log_audit_event(
+                event_type="instance_reconnected",
+                instance_id=instance_id,
+                details={"instance_name": persisted_record.get("name"), "state": persisted_record.get("state")},
+            )
+
+        logger.info(f"Reconnected instance {instance_id} in state '{persisted_record.get('state')}'")
+        self._save_state()
+        return instance_id
+
+    def recover_instance(self, persisted_record: dict[str, Any]) -> str:
+        """Recover a persisted instance whose tmux session has died.
+
+        Respawns with --continue to preserve conversation context.
+        """
+        instance_id = persisted_record["id"]
+        workspace_dir = persisted_record.get("workspace_dir", "")
+
+        # Verify workspace still exists
+        ws_path = Path(workspace_dir)
+        metadata_file = ws_path / ".madrox_instance_id"
+        if not ws_path.exists() or not metadata_file.exists():
+            raise RuntimeError(f"Workspace {workspace_dir} or metadata missing, cannot recover")
+
+        # Restore instance record
+        persisted_record["state"] = "initializing"
+        persisted_record["retry_count"] = persisted_record.get("retry_count", 0) + 1
+        self.instances[instance_id] = persisted_record
+        self.message_history[instance_id] = []
+
+        # Create response queue
+        if self.shared_state:
+            self.shared_state.create_response_queue(instance_id)
+        else:
+            self.response_queues[instance_id] = asyncio.Queue()
+
+        # Schedule async recovery (tmux session creation needs to happen in background)
+        asyncio.create_task(self._recover_instance_async(instance_id))
+
+        self._save_state()
+        return instance_id
+
+    async def _recover_instance_async(self, instance_id: str) -> None:
+        """Async recovery: create tmux session with --continue flag."""
+        instance = self.instances.get(instance_id)
+        if not instance:
+            return
+
+        try:
+            await self._initialize_tmux_session_for_recovery(instance_id)
+            instance["state"] = "idle"
+            self._save_state()
+            logger.info(f"Successfully recovered instance {instance_id} ({instance.get('name')})")
+
+            if self.logging_manager:
+                self.logging_manager.log_audit_event(
+                    event_type="instance_recovered",
+                    instance_id=instance_id,
+                    details={
+                        "instance_name": instance.get("name"),
+                        "retry_count": instance.get("retry_count", 0),
+                    },
+                )
+        except Exception as e:
+            instance["state"] = "error"
+            instance["error_message"] = f"Recovery failed: {e}"
+            self._save_state()
+            logger.error(f"Failed to recover instance {instance_id}: {e}", exc_info=True)
 
     def get_instance_status(self, instance_id: str | None = None) -> dict[str, Any]:
         """Get status of instance(s).
@@ -1896,6 +2036,130 @@ class TmuxInstanceManager:
                 logger.debug("System prompt stored for sending with first user message")
 
         logger.info(f"Tmux session initialized for {instance_type} instance {instance_id}")
+
+    async def _initialize_tmux_session_for_recovery(self, instance_id: str):
+        """Initialize a tmux session for recovery using --continue to resume conversation."""
+        instance = self.instances[instance_id]
+        workspace_dir = instance["workspace_dir"]
+        instance_type = instance.get("instance_type", "claude")
+        session_name = f"madrox-{instance_id}"
+
+        logger.info(f"Recovery: creating tmux session {session_name} with --continue")
+
+        # Kill existing session if any (shouldn't exist, but be safe)
+        try:
+            existing = self.tmux_server.find_where({"session_name": session_name})
+            if existing:
+                existing.kill_session()
+        except Exception:
+            pass
+
+        # Prepare environment variables (same as _initialize_tmux_session)
+        session_env = {}
+        if self.shared_state:
+            import base64
+
+            manager_address = self.shared_state.manager_address
+            if isinstance(manager_address, tuple):
+                manager_host, manager_port = manager_address
+                session_env["MADROX_MANAGER_HOST"] = str(manager_host)
+                session_env["MADROX_MANAGER_PORT"] = str(manager_port)
+            else:
+                session_env["MADROX_MANAGER_SOCKET"] = str(manager_address)
+            session_env["MADROX_MANAGER_AUTHKEY"] = base64.b64encode(
+                self.shared_state.manager_authkey
+            ).decode("ascii")
+
+        # Create tmux session
+        session = self.tmux_server.new_session(
+            session_name=session_name,
+            window_name=instance_type,
+            start_directory=workspace_dir,
+            x=160,
+            y=50,
+            environment=session_env if session_env else None,
+        )
+        self.tmux_sessions[instance_id] = session
+
+        window = session.windows[0]
+        pane = window.panes[0]
+
+        # Set and export environment variables
+        if session_env:
+            for key, value in session_env.items():
+                try:
+                    session.set_environment(key, value)
+                except Exception:
+                    pass
+            for key, value in session_env.items():
+                escaped_value = value.replace("'", "'\\''")
+                pane.send_keys(f"export {key}='{escaped_value}'", enter=True)
+
+        # Reconfigure MCP servers
+        self._configure_mcp_servers(pane, instance)
+
+        if instance_type == "codex":
+            # Codex has no --continue equivalent; respawn normally
+            cmd_parts = ["codex"]
+            if instance.get("bypass_isolation"):
+                cmd_parts.append("--dangerously-bypass-approvals-and-sandbox")
+            if model := instance.get("model"):
+                cmd_parts.extend(["--model", model])
+        else:
+            # Claude CLI with --continue to resume last conversation
+            cmd_parts = [
+                "claude",
+                "--continue",
+                "--permission-mode",
+                "bypassPermissions",
+                "--dangerously-skip-permissions",
+            ]
+
+            if mcp_config_path := instance.get("_mcp_config_path"):
+                cmd_parts.extend(["--mcp-config", mcp_config_path])
+
+            cmd_parts.extend(["--setting-sources", "local,project"])
+
+            if model := instance.get("model"):
+                cmd_parts.extend(["--model", model])
+
+        cmd = " ".join(cmd_parts)
+        pane.send_keys(cmd, enter=True)
+        logger.debug(f"Recovery: started {instance_type} CLI: {cmd}")
+
+        # Same ready-detection polling as _initialize_tmux_session
+        max_init_wait = 10
+        init_start = time.time()
+        cli_ready = False
+
+        while time.time() - init_start < max_init_wait:
+            await asyncio.sleep(0.15)
+            output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+
+            if "Yes, I trust this folder" in output and "No, exit" in output:
+                pane.send_keys("1", enter=True)
+                await asyncio.sleep(0.5)
+                continue
+
+            if instance_type == "codex":
+                if any(ind in output for ind in ["codex>", "Working on:", "OpenAI Codex", "›"]):
+                    cli_ready = True
+                    break
+            else:
+                if any(ind in output for ind in ['Try "', "⏵⏵", "bypass permissions", "How can I help"]):
+                    cli_ready = True
+                    break
+
+        if not cli_ready:
+            logger.warning(f"Recovery: CLI may not be ready after {time.time() - init_start:.1f}s")
+        else:
+            logger.info(f"Recovery: CLI ready in {time.time() - init_start:.1f}s")
+
+        # Brief safety wait
+        await asyncio.sleep(0.15)
+
+        # Skip system prompt injection — conversation context is preserved via --continue
+        logger.info(f"Recovery: tmux session initialized for {instance_type} instance {instance_id}")
 
     def _send_multiline_message_to_pane(self, pane, message: str) -> None:
         """Send multiline message to tmux pane without triggering paste detection.
