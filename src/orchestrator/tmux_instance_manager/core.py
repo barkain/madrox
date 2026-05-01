@@ -2099,10 +2099,12 @@ class TmuxInstanceManager:
         self._configure_mcp_servers(pane, instance)
 
         if instance_type == "codex":
-            # Codex resume: picks up previous conversation context
-            cmd_parts = ["codex", "resume", "-a", "never"]
+            # Codex resume --last: auto-picks the most recent session in this workspace
+            # -a never and --dangerously-bypass-approvals-and-sandbox are mutually exclusive
             if instance.get("bypass_isolation"):
-                cmd_parts.append("--dangerously-bypass-approvals-and-sandbox")
+                cmd_parts = ["codex", "resume", "--last", "--dangerously-bypass-approvals-and-sandbox"]
+            else:
+                cmd_parts = ["codex", "resume", "--last", "-a", "never"]
             if model := instance.get("model"):
                 cmd_parts.extend(["--model", model])
         else:
