@@ -131,12 +131,23 @@ class TmuxInstanceManager:
                 )
 
     def _save_state(self) -> None:
-        """Persist current instance state to disk (if state_store configured)."""
+        """Persist current instance state to disk (if state_store configured).
+
+        Safe to call from both sync and async contexts. File I/O is fast
+        (<1ms for typical state) but callers in hot async paths should
+        prefer _save_state_async() to avoid blocking the event loop.
+        """
         if self.state_store:
             try:
                 self.state_store.save_all(self.instances)
             except Exception as e:
                 logger.error(f"Failed to persist instance state: {e}")
+
+    async def _save_state_async(self) -> None:
+        """Async version of _save_state — runs file I/O in executor."""
+        if self.state_store:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._save_state)
 
     async def _get_from_shared_queue(self, instance_id: str, timeout: int) -> dict:
         """Get message from shared queue with async wrapper.
@@ -795,7 +806,7 @@ class TmuxInstanceManager:
         # Update instance state
         instance["state"] = "busy"
         instance["last_activity"] = datetime.now(UTC).isoformat()
-        self._save_state()
+        await self._save_state_async()
 
         # Generate message ID for tracking
         message_id = str(uuid.uuid4())
@@ -1117,7 +1128,7 @@ class TmuxInstanceManager:
             # Update state back to idle
             if instance["state"] == "busy":
                 instance["state"] = "idle"
-                self._save_state()
+                await self._save_state_async()
                 # Process any queued messages
                 await self._process_queued_messages(instance_id)
 

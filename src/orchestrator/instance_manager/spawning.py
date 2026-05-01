@@ -1,6 +1,7 @@
 """Instance spawning MCP tools and helpers."""
 
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -261,19 +262,21 @@ class SpawningMixin:
         resumed_name = name or f"{record.get('name', 'instance')}-resumed"
         resumed_model = model or record.get("model")
 
-        # Use the recovery path which spawns with --continue in existing workspace
-        record["id"] = instance_id
-        record["retry_count"] = record.get("retry_count", 0)
-        if resumed_name != record.get("name"):
-            record["name"] = resumed_name
+        # Generate new UUID so the resumed instance has its own identity
+        new_id = str(uuid.uuid4())
+        new_record = dict(record)
+        new_record["id"] = new_id
+        new_record["name"] = resumed_name
+        new_record["retry_count"] = record.get("retry_count", 0)
+        new_record["resumed_from"] = instance_id
         if resumed_model:
-            record["model"] = resumed_model
+            new_record["model"] = resumed_model
 
-        new_id = self.tmux_manager.recover_instance(record)
-        self.instances[new_id] = self.tmux_manager.instances[new_id]
+        recovered_id = self.tmux_manager.recover_instance(new_record)
+        self.instances[recovered_id] = self.tmux_manager.instances[recovered_id]
 
         return {
-            "instance_id": new_id,
+            "instance_id": recovered_id,
             "name": resumed_name,
             "status": "resuming",
             "resumed_from": instance_id,
