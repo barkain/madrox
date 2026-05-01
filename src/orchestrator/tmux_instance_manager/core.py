@@ -2174,9 +2174,11 @@ class TmuxInstanceManager:
         import time
 
         # Health check: verify Claude CLI is running (not at shell prompt)
-        pane_lines = pane.cmd("capture-pane", "-p").stdout[-500:]
-        pane_content = "\n".join(pane_lines) if isinstance(pane_lines, list) else pane_lines
-        shell_indicators = ["zsh: ", "bash: ", "$ "]
+        # Only check visible screen (not scroll buffer which contains export commands)
+        pane_lines = pane.cmd("capture-pane", "-p").stdout
+        visible_lines = pane_lines[-10:] if isinstance(pane_lines, list) else pane_lines
+        pane_content = "\n".join(visible_lines) if isinstance(visible_lines, list) else visible_lines
+        shell_indicators = ["zsh: ", "bash: "]
         if any(indicator in pane_content for indicator in shell_indicators):
             raise RuntimeError("Claude CLI has exited. Instance at shell prompt. Restart needed.")
 

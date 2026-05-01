@@ -137,7 +137,9 @@ uv run mypy src/
 Instances follow a state machine pattern:
 - `initializing` → `running` → `busy` (when processing) → `idle` → `terminated`
 - Error states: `error`, `timeout`
-- Resource enforcement triggers automatic termination
+- Resource enforcement triggers automatic termination (only if explicit limits configured)
+
+**Persistent Instances**: Instances survive backend restarts by default. State is persisted to `{log_dir}/state/instances.json` via atomic writes. On startup, live tmux sessions are reconnected; dead sessions are recovered using `claude --continue` or `codex resume -a never` to preserve conversation context.
 
 ### Role System
 
@@ -159,15 +161,32 @@ Each instance tracks:
 - Token usage (per-instance and global)
 - Cost accumulation
 - Request counts
-- Timeout monitoring (configurable, default 60 minutes)
-- Resource limits enforcement via health checks
+- Timeout monitoring (disabled by default for persistent instances; set `instance_timeout_minutes` > 0 to enable)
+- Resource limits enforcement via health checks (token/cost limits only)
 
 ### Workspace Isolation
 
 Each instance gets an isolated workspace directory:
-- Base: `/tmp/claude_orchestrator/` (configurable)
+- Base: `/tmp/madrox_logs/artifacts/{session_id}/` (configurable via `ARTIFACTS_DIR`)
 - Instance workspace: `{base}/{instance_id}/`
-- Automatic cleanup on termination
+- Workspaces persist across backend restarts (stable `session_id` reused)
+- Conversation context stored by Claude CLI in `~/.claude/projects/` keyed by workspace path
+
+### State Persistence
+
+Instance state is persisted to disk for reliability across backend restarts:
+
+- **StateStore** (`src/orchestrator/state_store.py`): JSON file with atomic writes (fcntl locking + temp file rename)
+- **Location**: `{log_dir}/state/instances.json` and `server.json`
+- **Saved on**: every state mutation (spawn, idle/busy transitions, terminate)
+- **Server state**: stable `session_id` reused across restarts to keep workspace paths consistent
+- **On startup**: `_reconnect_or_cleanup_sessions()` reconnects live tmux sessions, recovers dead ones, kills orphans
+- **Recovery**: dead sessions respawned with `claude --continue` / `codex resume -a never`
+- **Shutdown**: `shutdown()` saves state but does NOT terminate instances — tmux sessions survive for reconnection
+
+**MCP Tools for persistence:**
+- `list_persisted_instances`: discover previous instances available to resume
+- `resume_instance(instance_id, name?, model?)`: spawn new instance continuing a previous one's conversation
 
 ### Claude CLI Process Communication
 
@@ -223,9 +242,10 @@ Environment variables:
 - `ORCHESTRATOR_HOST`: HTTP server host (default: localhost, HTTP mode only)
 - `MAX_INSTANCES`: Concurrent instance limit (default: 10)
 - `WORKSPACE_DIR`: Base workspace path (default: /tmp/claude_orchestrator)
-- `LOG_DIR`: Log directory (default: /tmp/madrox_logs)
+- `LOG_DIR`: Log directory (default: /tmp/madrox_logs). State files stored in `{LOG_DIR}/state/`
 - `LOG_LEVEL`: Logging verbosity (default: INFO)
 - `OPENROUTER_API_KEY`: Optional API key for LLM-based activity summarization (OpenRouter)
+- `ARTIFACTS_DIR`: Base artifacts directory (default: /tmp/madrox_logs/artifacts)
 
 **Transport Modes:**
 - **HTTP/SSE**: Used by Claude Code clients, provides web UI and REST API
