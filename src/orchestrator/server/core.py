@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import os
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
@@ -108,11 +110,18 @@ class ClaudeOrchestratorServer:
         self.active_ws_connections = 0
         self._ws_connection_lock = asyncio.Lock()
 
-        # Initialize FastAPI app
+        # Initialize FastAPI app with lifespan for clean shutdown
+        @asynccontextmanager
+        async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+            yield
+            logger.info("FastAPI shutting down — preserving instances")
+            await self.instance_manager.shutdown()
+
         self.app = FastAPI(
             title="Claude Conversational Orchestrator",
             description="MCP server for spawning and managing multiple Claude instances",
             version="1.0.0",
+            lifespan=lifespan,
         )
 
         # Add CORS middleware
