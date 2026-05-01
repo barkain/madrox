@@ -2099,8 +2099,8 @@ class TmuxInstanceManager:
         self._configure_mcp_servers(pane, instance)
 
         if instance_type == "codex":
-            # Codex has no --continue equivalent; respawn normally
-            cmd_parts = ["codex"]
+            # Codex resume: picks up previous conversation context
+            cmd_parts = ["codex", "resume", "-a", "never"]
             if instance.get("bypass_isolation"):
                 cmd_parts.append("--dangerously-bypass-approvals-and-sandbox")
             if model := instance.get("model"):
