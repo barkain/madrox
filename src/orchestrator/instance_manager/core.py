@@ -144,6 +144,22 @@ class InstanceManager(
         self.instances[instance_id] = self.tmux_manager.instances[instance_id]
         return instance_id
 
+    def reconnect_instance(self, persisted_record: dict[str, Any]) -> str:
+        """Reconnect a persisted instance whose tmux session is still alive."""
+        instance_id = self.tmux_manager.reconnect_instance(persisted_record)
+        self.instances[instance_id] = self.tmux_manager.instances[instance_id]
+        if persisted_record.get("name") == "main-orchestrator":
+            self.main_instance_id = instance_id
+        return instance_id
+
+    def recover_instance(self, persisted_record: dict[str, Any]) -> str:
+        """Recover a persisted instance whose tmux session has died."""
+        instance_id = self.tmux_manager.recover_instance(persisted_record)
+        self.instances[instance_id] = self.tmux_manager.instances[instance_id]
+        if persisted_record.get("name") == "main-orchestrator":
+            self.main_instance_id = instance_id
+        return instance_id
+
     def _get_role_prompt(self, role: str) -> str:
         """Get system prompt for a role by loading from resources/prompts directory."""
         current_file = Path(__file__)
@@ -185,19 +201,22 @@ class InstanceManager(
         logger.info("Performing health check on all instances")
 
         current_time = datetime.now(UTC)
-        timeout_minutes = self.config.get("instance_timeout_minutes", 60)
+        timeout_minutes = self.config.get("instance_timeout_minutes", 0)
 
         for instance_id, instance in list(self.instances.items()):
             if instance["state"] == "terminated":
                 continue
 
-            last_activity = datetime.fromisoformat(instance["last_activity"])
-            if last_activity.tzinfo is None:
-                last_activity = last_activity.replace(tzinfo=UTC)
-            if current_time - last_activity > timedelta(minutes=timeout_minutes):
-                logger.warning(f"Instance {instance_id} timed out, terminating")
-                await self._terminate_instance_internal(instance_id, force=True)
-                continue
+            # Idle timeout disabled by default (0 = no timeout) for persistent instances.
+            # Only enforce if explicitly configured via instance_timeout_minutes > 0.
+            if timeout_minutes > 0:
+                last_activity = datetime.fromisoformat(instance["last_activity"])
+                if last_activity.tzinfo is None:
+                    last_activity = last_activity.replace(tzinfo=UTC)
+                if current_time - last_activity > timedelta(minutes=timeout_minutes):
+                    logger.warning(f"Instance {instance_id} timed out, terminating")
+                    await self._terminate_instance_internal(instance_id, force=True)
+                    continue
 
             max_tokens = instance.get("resource_limits", {}).get("max_total_tokens")
             if max_tokens and instance["total_tokens_used"] > max_tokens:
@@ -414,8 +433,12 @@ class InstanceManager(
         return instances_info
 
     async def shutdown(self):
-        """Shutdown the instance manager and clean up resources."""
-        logger.info("Shutting down instance manager")
+        """Shutdown the instance manager, preserving instances for reconnection.
+
+        Instances are NOT terminated — their tmux sessions continue running
+        and will be reconnected on next backend startup.
+        """
+        logger.info("Shutting down instance manager (preserving instances for reconnection)")
 
         if self._main_monitor_task is not None and not self._main_monitor_task.done():
             self._main_monitor_task.cancel()
@@ -424,11 +447,14 @@ class InstanceManager(
             except asyncio.CancelledError:
                 pass
 
-        for instance_id in list(self.instances.keys()):
-            try:
-                await self._terminate_instance_internal(instance_id, force=True)
-            except Exception as e:
-                logger.error(f"Error terminating instance {instance_id}: {e}")
+        # Save final state — do NOT terminate instances
+        self.tmux_manager._save_state()
+
+        active = [i for i in self.instances.values() if i["state"] not in ("terminated", "error")]
+        if active:
+            logger.info(
+                f"Preserving {len(active)} active instances for reconnection on next startup"
+            )
 
         if self.shared_state_manager:
             self.shared_state_manager.shutdown()

@@ -1048,16 +1048,15 @@ class TestShutdown:
     """Test shutdown functionality."""
 
     @pytest.mark.asyncio
-    async def test_shutdown_terminates_all(self, instance_manager):
-        """Test shutdown terminates all instances."""
-        # Spawn some instances
+    async def test_shutdown_preserves_instances(self, instance_manager):
+        """Test shutdown preserves instances for reconnection (does not terminate)."""
         await instance_manager.spawn_instance(name="test-1", role="general")
         await instance_manager.spawn_instance(name="test-2", role="general")
 
         await instance_manager.shutdown()
 
-        # Should have called terminate for each instance
-        assert instance_manager.tmux_manager.terminate_instance.call_count >= 2
+        # Shutdown should NOT terminate instances — they persist for reconnection
+        assert instance_manager.tmux_manager.terminate_instance.call_count == 0
 
 
 class TestTemplateOperations:

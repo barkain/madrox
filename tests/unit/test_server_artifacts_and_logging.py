@@ -31,7 +31,7 @@ class TestServerArtifactConfiguration:
         """Test default artifacts directory configuration."""
         with patch("orchestrator.server.core.InstanceManager"):
             with patch("orchestrator.server.core.LoggingManager"):
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     server = ClaudeOrchestratorServer(mock_config)
 
                     assert server.artifacts_base_dir == "/tmp/madrox_logs/artifacts"
@@ -42,7 +42,7 @@ class TestServerArtifactConfiguration:
         with patch.dict(os.environ, {"ARTIFACTS_DIR": "/custom/artifacts"}):
             with patch("orchestrator.server.core.InstanceManager"):
                 with patch("orchestrator.server.core.LoggingManager"):
-                    with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                    with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                         server = ClaudeOrchestratorServer(mock_config)
 
                         assert server.artifacts_base_dir == "/custom/artifacts"
@@ -52,7 +52,7 @@ class TestServerArtifactConfiguration:
         with patch.dict(os.environ, {"PRESERVE_ARTIFACTS": "false"}):
             with patch("orchestrator.server.core.InstanceManager"):
                 with patch("orchestrator.server.core.LoggingManager"):
-                    with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                    with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                         server = ClaudeOrchestratorServer(mock_config)
 
                         assert server.preserve_artifacts is False
@@ -62,7 +62,7 @@ class TestServerArtifactConfiguration:
         with patch.dict(os.environ, {"PRESERVE_ARTIFACTS": "TRUE"}):
             with patch("orchestrator.server.core.InstanceManager"):
                 with patch("orchestrator.server.core.LoggingManager"):
-                    with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                    with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                         server = ClaudeOrchestratorServer(mock_config)
 
                         assert server.preserve_artifacts is True
@@ -71,7 +71,7 @@ class TestServerArtifactConfiguration:
         """Test default artifact patterns include common file types."""
         with patch("orchestrator.server.core.InstanceManager"):
             with patch("orchestrator.server.core.LoggingManager"):
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     server = ClaudeOrchestratorServer(mock_config)
 
                     # Check for common patterns
@@ -91,7 +91,7 @@ class TestServerArtifactConfiguration:
         with patch.dict(os.environ, {"ARTIFACT_PATTERNS": custom_patterns}):
             with patch("orchestrator.server.core.InstanceManager"):
                 with patch("orchestrator.server.core.LoggingManager"):
-                    with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                    with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                         server = ClaudeOrchestratorServer(mock_config)
 
                         assert server.artifact_patterns == ["*.txt", "*.log", "*.csv"]
@@ -100,7 +100,7 @@ class TestServerArtifactConfiguration:
         """Test session ID generation with timestamp."""
         with patch("orchestrator.server.core.InstanceManager"):
             with patch("orchestrator.server.core.LoggingManager"):
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     server = ClaudeOrchestratorServer(mock_config)
 
                     # Session ID should start with "session_"
@@ -112,7 +112,7 @@ class TestServerArtifactConfiguration:
         """Test that instance manager workspace is set to session artifacts directory."""
         with patch("orchestrator.server.core.InstanceManager") as mock_im:
             with patch("orchestrator.server.core.LoggingManager"):
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     server = ClaudeOrchestratorServer(mock_config)
 
                     # Check that InstanceManager was initialized with correct config
@@ -131,7 +131,7 @@ class TestServerLoggingConfiguration:
         with patch("orchestrator.server.core.InstanceManager"):
             with patch("orchestrator.server.core.LoggingManager") as mock_logging:
                 mock_logging.return_value.orchestrator_logger = MagicMock()
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     ClaudeOrchestratorServer(mock_config)
 
                     # Check LoggingManager was called
@@ -146,7 +146,7 @@ class TestServerLoggingConfiguration:
             with patch("orchestrator.server.core.InstanceManager"):
                 with patch("orchestrator.server.core.LoggingManager") as mock_logging:
                     mock_logging.return_value.orchestrator_logger = MagicMock()
-                    with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                    with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                         ClaudeOrchestratorServer(mock_config)
 
                         call_kwargs = mock_logging.call_args[1]
@@ -158,7 +158,7 @@ class TestServerLoggingConfiguration:
             with patch("orchestrator.server.core.InstanceManager"):
                 with patch("orchestrator.server.core.LoggingManager") as mock_logging:
                     mock_logging.return_value.orchestrator_logger = MagicMock()
-                    with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                    with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                         ClaudeOrchestratorServer(mock_config)
 
                         call_kwargs = mock_logging.call_args[1]
@@ -168,7 +168,7 @@ class TestServerLoggingConfiguration:
         """Test that server start time is recorded."""
         with patch("orchestrator.server.core.InstanceManager"):
             with patch("orchestrator.server.core.LoggingManager"):
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     server = ClaudeOrchestratorServer(mock_config)
 
                     # Should have start time in ISO format
@@ -184,7 +184,7 @@ class TestServerCORSConfiguration:
         """Test that CORS middleware is added to the app."""
         with patch("orchestrator.server.core.InstanceManager"):
             with patch("orchestrator.server.core.LoggingManager"):
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     server = ClaudeOrchestratorServer(mock_config)
 
                     # Check that middleware was added
@@ -208,7 +208,7 @@ class TestMCPAdapterIntegration:
         """Test that MCP adapter is created and mounted."""
         with patch("orchestrator.server.core.InstanceManager"):
             with patch("orchestrator.server.core.LoggingManager"):
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     server = ClaudeOrchestratorServer(mock_config)
 
                     assert server.mcp_adapter is not None
@@ -218,7 +218,7 @@ class TestMCPAdapterIntegration:
         """Test that MCP router is included in FastAPI app."""
         with patch("orchestrator.server.core.InstanceManager"):
             with patch("orchestrator.server.core.LoggingManager"):
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     server = ClaudeOrchestratorServer(mock_config)
 
                     # Check that router was included
@@ -251,7 +251,7 @@ class TestServerInitializationOrder:
 
         with patch("orchestrator.server.core.LoggingManager", MockLoggingManager):
             with patch("orchestrator.server.core.InstanceManager", MockInstanceManager):
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     ClaudeOrchestratorServer(mock_config)
 
                     # Logging should be initialized before instance manager
@@ -261,7 +261,7 @@ class TestServerInitializationOrder:
         """Test that session ID is generated before instance manager initialization."""
         with patch("orchestrator.server.core.InstanceManager") as mock_im:
             with patch("orchestrator.server.core.LoggingManager"):
-                with patch.object(ClaudeOrchestratorServer, "_cleanup_orphaned_tmux_sessions"):
+                with patch("orchestrator.server.core.StateStore"), patch.object(ClaudeOrchestratorServer, "_reconnect_or_cleanup_sessions"):
                     server = ClaudeOrchestratorServer(mock_config)
 
                     # Instance manager config should have session_id

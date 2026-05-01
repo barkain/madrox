@@ -303,6 +303,61 @@ No configuration needed - sessions are created automatically on orchestrator sta
 
 ---
 
+### Persistent Instances
+
+Instances survive backend restarts by default. This enables long-lived advisory teams that can run across days or weeks.
+
+#### How It Works
+
+1. **State Persistence**: All instance metadata is saved to `{log_dir}/state/instances.json` on every state change (spawn, busy, idle, terminate). Uses atomic writes with file locking.
+
+2. **Stable Session ID**: The `session_id` (which determines workspace paths) is reused across restarts, so file paths remain consistent.
+
+3. **Reconnection**: On backend startup, `_reconnect_or_cleanup_sessions()` runs:
+   - Loads persisted instance records from disk
+   - Lists live `madrox-*` tmux sessions
+   - **Reconnects** instances whose tmux sessions are still alive
+   - **Recovers** instances whose tmux sessions died (e.g., reboot) using `claude --continue` / `codex resume -a never`
+   - **Kills** orphaned tmux sessions not in persisted state
+
+4. **Graceful Shutdown**: Backend shutdown saves state but does NOT terminate tmux sessions. Instances continue running independently.
+
+#### Resuming Previous Instances
+
+Start a new Claude session and pick up where a previous team left off:
+
+```python
+# Discover previous instances
+persisted = list_persisted_instances()
+# Returns: instance_id, name, role, model, state, workspace_exists, can_resume
+
+# Resume a specific instance's conversation context
+result = resume_instance(
+    instance_id="abc123-previous-instance",
+    name="analyst-resumed",    # optional new name
+    model="claude-opus-4-7"    # optional model override
+)
+# Spawns with claude --continue / codex resume in the original workspace
+```
+
+#### What Survives What
+
+| Event | Instance alive? | Context preserved? |
+|-------|----------------|-------------------|
+| Backend restart | Yes (tmux survives) | Yes |
+| Backend crash | Yes (tmux survives) | Yes |
+| tmux session killed | Recovered | Yes (via `--continue` / `resume`) |
+| Machine reboot | Recovered | Yes (via `--continue` / `resume`) |
+| Explicit `terminate_instance` | No | Workspace kept, resumable |
+
+#### Configuration
+
+- **Idle timeout**: Disabled by default (`instance_timeout_minutes=0`). Set to a positive value to auto-terminate idle instances.
+- **State directory**: `{log_dir}/state/` (default: `/tmp/madrox_logs/state/`)
+- **Stale cleanup**: Terminated instances pruned from state file after 24 hours.
+
+---
+
 ### Instance Management
 
 #### Spawning Instances

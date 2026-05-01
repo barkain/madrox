@@ -37,6 +37,60 @@ Madrox provides MCP (Model Context Protocol) tools for orchestrating multi-agent
 
 ### Instance Management
 
+#### list_persisted_instances
+
+List all persisted instances from previous sessions that can be resumed.
+
+**Parameters:** None
+
+**Response:**
+```json
+{
+  "instances": [
+    {
+      "instance_id": "uuid",
+      "name": "my-analyst",
+      "role": "general",
+      "model": "claude-opus-4-7",
+      "state": "idle",
+      "instance_type": "claude",
+      "created_at": "2025-01-07T10:00:00Z",
+      "last_activity": "2025-01-07T12:30:00Z",
+      "workspace_dir": "/tmp/madrox_logs/artifacts/session_.../uuid",
+      "workspace_exists": true,
+      "can_resume": true,
+      "already_active": false
+    }
+  ],
+  "total": 1,
+  "resumable": 1,
+  "active": 0
+}
+```
+
+#### resume_instance
+
+Resume a previous instance's conversation context in a new instance. Spawns a new Claude/Codex CLI in the previous workspace using `--continue` / `resume` to pick up conversation history.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `instance_id` | string | Yes | - | ID of the previous instance to resume (from `list_persisted_instances`) |
+| `name` | string | No | `"{prev_name}-resumed"` | New name for the resumed instance |
+| `model` | string | No | Previous model | Model override |
+
+**Response:**
+```json
+{
+  "instance_id": "uuid",
+  "name": "my-analyst-resumed",
+  "status": "resuming",
+  "resumed_from": "original-uuid",
+  "workspace_dir": "/tmp/madrox_logs/artifacts/session_.../uuid"
+}
+```
+
 #### spawn_claude
 
 Spawn a new Claude instance with specific role and configuration.

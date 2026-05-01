@@ -1,6 +1,8 @@
 """Instance spawning MCP tools and helpers."""
 
 import logging
+import uuid
+from pathlib import Path
 from typing import Any
 
 from ..config import validate_model
@@ -157,4 +159,128 @@ class SpawningMixin:
             "status": "spawned",
             "name": name,
             "instance_type": "codex",
+        }
+
+    def list_persisted_instances(self) -> dict[str, Any]:
+        """List all persisted instances from previous sessions that can be resumed.
+
+        Returns instances whose workspace directories still exist, meaning their
+        conversation context can be resumed with resume_instance.
+
+        Returns:
+            Dictionary with resumable instances and their metadata
+        """
+        state_store = self.tmux_manager.state_store
+        if not state_store:
+            return {"instances": [], "message": "State store not configured"}
+
+        all_persisted = state_store.load_all()
+        resumable = []
+
+        for iid, record in all_persisted.items():
+            workspace = record.get("workspace_dir", "")
+            ws_exists = Path(workspace).exists() if workspace else False
+
+            # Check if already active in current session
+            already_active = iid in self.instances and self.instances[iid].get("state") not in (
+                "terminated",
+                "error",
+            )
+
+            resumable.append(
+                {
+                    "instance_id": iid,
+                    "name": record.get("name"),
+                    "role": record.get("role"),
+                    "model": record.get("model"),
+                    "state": record.get("state"),
+                    "instance_type": record.get("instance_type", "claude"),
+                    "created_at": record.get("created_at"),
+                    "last_activity": record.get("last_activity"),
+                    "workspace_dir": workspace,
+                    "workspace_exists": ws_exists,
+                    "can_resume": ws_exists and not already_active,
+                    "already_active": already_active,
+                }
+            )
+
+        return {
+            "instances": resumable,
+            "total": len(resumable),
+            "resumable": len([r for r in resumable if r["can_resume"]]),
+            "active": len([r for r in resumable if r["already_active"]]),
+        }
+
+    async def resume_instance(
+        self,
+        instance_id: str,
+        name: str | None = None,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        """Resume a previous instance's conversation context in a new instance.
+
+        Spawns a new Claude instance in the previous instance's workspace directory
+        using --continue to pick up its full conversation history.
+
+        Args:
+            instance_id: ID of the previous instance to resume (from list_persisted_instances)
+            name: Optional new name (defaults to previous name + "-resumed")
+            model: Optional model override (defaults to previous instance's model)
+
+        Returns:
+            Dictionary with new instance_id and status
+        """
+        state_store = self.tmux_manager.state_store
+        if not state_store:
+            raise RuntimeError("State store not configured — cannot resume instances")
+
+        all_persisted = state_store.load_all()
+        if instance_id not in all_persisted:
+            raise ValueError(
+                f"Instance {instance_id} not found in persisted state. "
+                f"Use list_persisted_instances to see available instances."
+            )
+
+        record = all_persisted[instance_id]
+        workspace = record.get("workspace_dir", "")
+
+        if not Path(workspace).exists():
+            raise RuntimeError(
+                f"Workspace {workspace} no longer exists — conversation context is lost"
+            )
+
+        # Check if already active
+        if instance_id in self.instances and self.instances[instance_id].get("state") not in (
+            "terminated",
+            "error",
+        ):
+            raise RuntimeError(
+                f"Instance {instance_id} is already active (state={self.instances[instance_id]['state']}). "
+                f"Use send_to_instance to communicate with it directly."
+            )
+
+        resumed_name = name or f"{record.get('name', 'instance')}-resumed"
+        resumed_model = model or record.get("model")
+
+        # Generate new UUID so the resumed instance has its own identity
+        new_id = str(uuid.uuid4())
+        new_record = dict(record)
+        new_record["id"] = new_id
+        new_record["name"] = resumed_name
+        new_record["retry_count"] = record.get("retry_count", 0)
+        new_record["resumed_from"] = instance_id
+        if resumed_model:
+            new_record["model"] = resumed_model
+
+        recovered_id = self.tmux_manager.recover_instance(new_record)
+        self.instances[recovered_id] = self.tmux_manager.instances[recovered_id]
+
+        return {
+            "instance_id": recovered_id,
+            "name": resumed_name,
+            "status": "resuming",
+            "resumed_from": instance_id,
+            "workspace_dir": workspace,
+            "message": "Resuming conversation context from previous instance. "
+            "The instance will be ready shortly with full conversation history.",
         }

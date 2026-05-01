@@ -134,9 +134,13 @@ async def spawn_instance(
 2. Configure MCP servers (dynamic tool loading)
 3. Initialize instance with role-specific system prompt
 4. Register in instance registry with metadata
-5. Monitor health and resource usage
-6. Handle termination and cleanup
+5. Persist state to disk (StateStore)
+6. Monitor health and resource usage
+7. On backend restart: reconnect live sessions, recover dead ones
+8. Handle termination and cleanup (only on explicit terminate)
 ```
+
+**Persistent Instances**: All instances persist across backend restarts by default. State is saved to `{log_dir}/state/instances.json` on every mutation. On startup, the server reconnects to existing tmux sessions or recovers dead ones using `claude --continue` / `codex resume -a never` to preserve conversation context. Shutdown saves state without killing tmux sessions.
 
 #### Instance Registry
 
@@ -176,10 +180,12 @@ Automatic health checks with configurable intervals:
 **Health Check Configuration**:
 ```python
 health_check_interval: int = 60  # seconds
-instance_timeout_minutes: int = 60
+instance_timeout_minutes: int = 0  # disabled by default for persistent instances
 max_tokens_per_instance: int = 100000
 max_total_cost: float = 100.0
 ```
+
+> **Note**: Idle timeout is disabled by default (`instance_timeout_minutes=0`) so persistent instances can run indefinitely. Set to a positive value to auto-terminate idle instances.
 
 ### Communication Layer
 

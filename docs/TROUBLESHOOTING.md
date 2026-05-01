@@ -749,16 +749,18 @@ A: Logs are preserved in `/tmp/madrox_logs/instances/{instance_id}/`. They remai
 
 **Q: How do I resume a workflow across sessions?**
 
-A: Instance state is currently ephemeral (lost on termination). Workflow persistence is on the roadmap. For now, use logs to reconstruct state:
+A: Instances persist across backend restarts by default. To resume a previous instance's conversation in a new session:
 ```python
-# Get full communication history
-logs = await manager.get_instance_logs(
-    instance_id=old_instance_id,
-    log_type="communication",
-    tail=0  # all logs
-)
-# Use logs to recreate context in new instance
+# 1. Discover previous instances
+persisted = list_persisted_instances()
+
+# 2. Resume a specific instance (spawns with claude --continue / codex resume)
+result = resume_instance(instance_id="previous-uuid", name="resumed-analyst")
+
+# 3. Send messages to continue the conversation
+send_to_instance(instance_id="previous-uuid", message="Where were we?")
 ```
+Instances whose tmux sessions are still alive will be auto-reconnected on backend startup without needing `resume_instance`.
 
 **Q: Can I run multiple Madrox servers?**
 
