@@ -1629,6 +1629,38 @@ Use get_instance_tree() to see the full network hierarchy."""
                             except Exception as e:
                                 result = {"error": {"code": -32603, "message": str(e)}}
 
+                    elif tool_name == "list_persisted_instances":
+                        try:
+                            persisted = self.manager.list_persisted_instances()
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": json.dumps(persisted, indent=2),
+                                    }
+                                ]
+                            }
+                        except Exception as e:
+                            result = {"error": {"code": -32603, "message": str(e)}}
+
+                    elif tool_name == "resume_instance":
+                        try:
+                            resume_result = await self.manager.resume_instance(
+                                instance_id=tool_args.get("instance_id", ""),
+                                name=tool_args.get("name"),
+                                model=tool_args.get("model"),
+                            )
+                            result = {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": json.dumps(resume_result, indent=2),
+                                    }
+                                ]
+                            }
+                        except Exception as e:
+                            result = {"error": {"code": -32603, "message": str(e)}}
+
                     else:
                         result = {
                             "error": {"code": -32601, "message": f"Unknown tool: {tool_name}"}
