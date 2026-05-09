@@ -66,7 +66,11 @@ class StateStore:
 
     @staticmethod
     def _strip_transient(instance: dict[str, Any]) -> dict[str, Any]:
-        return {k: v for k, v in instance.items() if not any(k.startswith(p) for p in TRANSIENT_PREFIXES)}
+        return {
+            k: v
+            for k, v in instance.items()
+            if not any(k.startswith(p) for p in TRANSIENT_PREFIXES)
+        }
 
     def save_instance(self, instance: dict[str, Any]) -> None:
         lock = self._acquire_lock()

@@ -6,6 +6,7 @@ Manages Claude CLI instances via tmux sessions for persistent interactive commun
 import asyncio
 import logging
 import re
+import shutil
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -22,6 +23,8 @@ from ..simple_models import MessageEnvelope
 from .helpers import MAX_MESSAGE_HISTORY_PER_INSTANCE, redact_authkey
 
 logger = logging.getLogger(__name__)
+
+_codex_path: str | None = shutil.which("codex")
 
 
 class TmuxInstanceManager:
@@ -341,7 +344,7 @@ class TmuxInstanceManager:
                         # SECURITY FIX (CWE-77): Use shlex.quote() to prevent command injection
                         # Build codex mcp add command with proper shell escaping
                         codex_cmd_parts = [
-                            "codex",
+                            _codex_path or "codex",
                             "mcp",
                             "add",
                             shlex.quote(server_name),
@@ -1435,7 +1438,13 @@ class TmuxInstanceManager:
             pane = window.panes[0]
             output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
 
-            idle_indicators = ['Try "', "⏵⏵", "bypass permissions", "How can I help", "What would you like"]
+            idle_indicators = [
+                'Try "',
+                "⏵⏵",
+                "bypass permissions",
+                "How can I help",
+                "What would you like",
+            ]
             busy_indicators = ["Thinking", "Running", "⏳"]
 
             if any(ind in output for ind in busy_indicators):
@@ -1454,10 +1463,15 @@ class TmuxInstanceManager:
             self.logging_manager.log_audit_event(
                 event_type="instance_reconnected",
                 instance_id=instance_id,
-                details={"instance_name": persisted_record.get("name"), "state": persisted_record.get("state")},
+                details={
+                    "instance_name": persisted_record.get("name"),
+                    "state": persisted_record.get("state"),
+                },
             )
 
-        logger.info(f"Reconnected instance {instance_id} in state '{persisted_record.get('state')}'")
+        logger.info(
+            f"Reconnected instance {instance_id} in state '{persisted_record.get('state')}'"
+        )
         self._save_state()
         return instance_id
 
@@ -1709,7 +1723,7 @@ class TmuxInstanceManager:
             except Exception as e:
                 logger.warning(f"Failed to pre-trust Codex workspace: {e}")
 
-            cmd_parts = ["codex"]
+            cmd_parts = [_codex_path or "codex"]
 
             # Add permission bypass if requested (equivalent to Claude's --dangerously-skip-permissions)
             if instance.get("bypass_isolation"):
@@ -2113,9 +2127,14 @@ class TmuxInstanceManager:
             # Codex resume --last: auto-picks the most recent session in this workspace
             # -a never and --dangerously-bypass-approvals-and-sandbox are mutually exclusive
             if instance.get("bypass_isolation"):
-                cmd_parts = ["codex", "resume", "--last", "--dangerously-bypass-approvals-and-sandbox"]
+                cmd_parts = [
+                    _codex_path or "codex",
+                    "resume",
+                    "--last",
+                    "--dangerously-bypass-approvals-and-sandbox",
+                ]
             else:
-                cmd_parts = ["codex", "resume", "--last", "-a", "never"]
+                cmd_parts = [_codex_path or "codex", "resume", "--last", "-a", "never"]
             if model := instance.get("model"):
                 cmd_parts.extend(["--model", model])
         else:
@@ -2159,7 +2178,9 @@ class TmuxInstanceManager:
                     cli_ready = True
                     break
             else:
-                if any(ind in output for ind in ['Try "', "⏵⏵", "bypass permissions", "How can I help"]):
+                if any(
+                    ind in output for ind in ['Try "', "⏵⏵", "bypass permissions", "How can I help"]
+                ):
                     cli_ready = True
                     break
 
@@ -2172,7 +2193,9 @@ class TmuxInstanceManager:
         await asyncio.sleep(0.15)
 
         # Skip system prompt injection — conversation context is preserved via --continue
-        logger.info(f"Recovery: tmux session initialized for {instance_type} instance {instance_id}")
+        logger.info(
+            f"Recovery: tmux session initialized for {instance_type} instance {instance_id}"
+        )
 
     def _send_multiline_message_to_pane(self, pane, message: str) -> None:
         """Send multiline message to tmux pane without triggering paste detection.
@@ -2190,7 +2213,9 @@ class TmuxInstanceManager:
         # Only check visible screen (not scroll buffer which contains export commands)
         pane_lines = pane.cmd("capture-pane", "-p").stdout
         visible_lines = pane_lines[-10:] if isinstance(pane_lines, list) else pane_lines
-        pane_content = "\n".join(visible_lines) if isinstance(visible_lines, list) else visible_lines
+        pane_content = (
+            "\n".join(visible_lines) if isinstance(visible_lines, list) else visible_lines
+        )
         shell_indicators = ["zsh: ", "bash: "]
         if any(indicator in pane_content for indicator in shell_indicators):
             raise RuntimeError("Claude CLI has exited. Instance at shell prompt. Restart needed.")

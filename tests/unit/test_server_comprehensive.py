@@ -112,8 +112,45 @@ def mock_mcp_adapter():
 
     async def mock_get_tools():
         return [
-            {"name": "spawn_claude", "description": "Spawn Claude instance"},
-            {"name": "send_to_instance", "description": "Send message to instance"},
+            {
+                "name": "spawn_claude",
+                "description": "Spawn Claude instance",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}, "role": {"type": "string"}},
+                    "required": [],
+                },
+            },
+            {
+                "name": "send_to_instance",
+                "description": "Send message to instance",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "instance_id": {"type": "string"},
+                        "message": {"type": "string"},
+                    },
+                    "required": ["instance_id", "message"],
+                },
+            },
+            {
+                "name": "terminate_instance",
+                "description": "Terminate an instance",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"instance_id": {"type": "string"}},
+                    "required": ["instance_id"],
+                },
+            },
+            {
+                "name": "get_instance_status",
+                "description": "Get instance status",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"instance_id": {"type": "string"}},
+                    "required": [],
+                },
+            },
         ]
 
     adapter.get_available_tools = mock_get_tools
@@ -363,8 +400,6 @@ class TestToolsEndpoint:
         tools_names = [tool["name"] for tool in data["tools"]]
         assert "spawn_claude" in tools_names
         assert "send_to_instance" in tools_names
-        assert "get_instance_output" in tools_names
-        assert "coordinate_instances" in tools_names
         assert "terminate_instance" in tools_names
         assert "get_instance_status" in tools_names
 
@@ -374,8 +409,8 @@ class TestToolsEndpoint:
         assert response.status_code == 200
         data = response.json()
         spawn_tool = next(t for t in data["tools"] if t["name"] == "spawn_claude")
-        assert "input_schema" in spawn_tool
-        assert "properties" in spawn_tool["input_schema"]
+        assert "inputSchema" in spawn_tool
+        assert "properties" in spawn_tool["inputSchema"]
 
     def test_execute_spawn_claude_tool(self, client, server):
         """Test executing spawn_claude tool."""

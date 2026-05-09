@@ -81,4 +81,10 @@ fi
 # This process owns stdout for the MCP protocol
 echo "Madrox dashboard available at: http://localhost:$FE_PORT" >&2
 export MADROX_FRONTEND_PORT="$FE_PORT"
-exec uv run --directory "$PLUGIN_ROOT" python run_orchestrator.py
+# Use venv Python directly to skip uv resolution overhead (venv already created by backend)
+VENV_PYTHON="$PLUGIN_ROOT/.venv/bin/python"
+if [ -x "$VENV_PYTHON" ]; then
+    exec "$VENV_PYTHON" "$PLUGIN_ROOT/run_orchestrator.py"
+else
+    exec uv run --directory "$PLUGIN_ROOT" python run_orchestrator.py
+fi
