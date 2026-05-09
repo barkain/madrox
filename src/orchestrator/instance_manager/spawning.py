@@ -122,9 +122,9 @@ class SpawningMixin:
         Args:
             name: Instance name
             model: OpenAI GPT model to use. Options:
-                   - gpt-5-codex (default)
-                   - gpt-5.3-codex
+                   - gpt-5.5 (default)
                    - gpt-5.4
+                   - gpt-5.4-mini
             sandbox_mode: Sandbox policy for shell commands (read-only, workspace-write, danger-full-access)
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session

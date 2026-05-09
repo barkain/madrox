@@ -4,13 +4,16 @@
 # Codex provider (OpenAI GPT models)
 codex:
   # Default model when none is specified
-  default: gpt-5-codex
+  default: gpt-5.5
 
   # List of allowed Codex models
   allowed_models:
-    - gpt-5-codex
-    - gpt-5.3-codex
+    - gpt-5.5
     - gpt-5.4
+    - gpt-5.4-mini
+    - gpt-5.3-codex
+    - gpt-5.3-codex-spark
+    - gpt-5.2
 
 # Claude provider (Anthropic Claude models)
 claude:
