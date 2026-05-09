@@ -60,7 +60,10 @@ def _make_proxy_from_schema(
         annotations[name] = python_type | None
         params.append(
             inspect.Parameter(
-                name, inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None, annotation=python_type | None
+                name,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=None,
+                annotation=python_type | None,
             )
         )
 
@@ -99,7 +102,9 @@ class OrchestrationMCPServer:
                        Auto-detected from MADROX_PARENT_URL env var if not provided.
         """
         default_port = os.getenv("ORCHESTRATOR_PORT", "8001")
-        self.parent_url = parent_url or os.getenv("MADROX_PARENT_URL", f"http://localhost:{default_port}")
+        self.parent_url = parent_url or os.getenv(
+            "MADROX_PARENT_URL", f"http://localhost:{default_port}"
+        )
         self.mcp = FastMCP("claude-orchestrator-stdio-proxy")
 
         # Register local-only tools (not proxied to parent)
