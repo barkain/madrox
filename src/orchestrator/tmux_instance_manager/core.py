@@ -6,6 +6,7 @@ Manages Claude CLI instances via tmux sessions for persistent interactive commun
 import asyncio
 import logging
 import re
+import shutil
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -22,6 +23,8 @@ from ..simple_models import MessageEnvelope
 from .helpers import MAX_MESSAGE_HISTORY_PER_INSTANCE, redact_authkey
 
 logger = logging.getLogger(__name__)
+
+_codex_path: str | None = shutil.which("codex")
 
 
 class TmuxInstanceManager:
@@ -341,7 +344,7 @@ class TmuxInstanceManager:
                         # SECURITY FIX (CWE-77): Use shlex.quote() to prevent command injection
                         # Build codex mcp add command with proper shell escaping
                         codex_cmd_parts = [
-                            "codex",
+                            _codex_path or "codex",
                             "mcp",
                             "add",
                             shlex.quote(server_name),
@@ -1709,7 +1712,7 @@ class TmuxInstanceManager:
             except Exception as e:
                 logger.warning(f"Failed to pre-trust Codex workspace: {e}")
 
-            cmd_parts = ["codex"]
+            cmd_parts = [_codex_path or "codex"]
 
             # Add permission bypass if requested (equivalent to Claude's --dangerously-skip-permissions)
             if instance.get("bypass_isolation"):
@@ -2113,9 +2116,9 @@ class TmuxInstanceManager:
             # Codex resume --last: auto-picks the most recent session in this workspace
             # -a never and --dangerously-bypass-approvals-and-sandbox are mutually exclusive
             if instance.get("bypass_isolation"):
-                cmd_parts = ["codex", "resume", "--last", "--dangerously-bypass-approvals-and-sandbox"]
+                cmd_parts = [_codex_path or "codex", "resume", "--last", "--dangerously-bypass-approvals-and-sandbox"]
             else:
-                cmd_parts = ["codex", "resume", "--last", "-a", "never"]
+                cmd_parts = [_codex_path or "codex", "resume", "--last", "-a", "never"]
             if model := instance.get("model"):
                 cmd_parts.extend(["--model", model])
         else:
