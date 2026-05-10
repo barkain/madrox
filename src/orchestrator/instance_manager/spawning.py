@@ -33,6 +33,8 @@ class SpawningMixin:
         mcp_servers: str | None = None,
         use_worktree: bool = False,
         git_repo: str | None = None,
+        wait_for_response: bool = False,
+        timeout_seconds: int = 180,
     ) -> dict[str, Any]:
         """Spawn a new Claude instance with specific role and configuration.
 
@@ -53,11 +55,17 @@ class SpawningMixin:
                         '{"server_name": {"transport": "http", "url": "http://localhost:8002/mcp"}}'
             use_worktree: Create a git worktree for workspace isolation (default: false)
             git_repo: Path to git repository for worktree creation (required if use_worktree is true)
+            wait_for_response: Wait for the initial_prompt response and return it (default: false).
+                              When true and initial_prompt is provided, the response is captured
+                              and included in the return value instead of fire-and-forget.
+            timeout_seconds: Timeout for waiting for response (default: 180)
 
         Returns:
-            Dictionary with instance_id and status
+            Dictionary with instance_id and status (and response when wait_for_response=True)
         """
         validated_model = validate_model("claude", model)
+
+        spawn_prompt = initial_prompt if not wait_for_response else None
 
         instance_id = await self.spawn_instance(
             name=name,
@@ -67,12 +75,25 @@ class SpawningMixin:
             bypass_isolation=bypass_isolation,
             parent_instance_id=parent_instance_id,
             wait_for_ready=wait_for_ready,
-            initial_prompt=initial_prompt,
+            initial_prompt=spawn_prompt,
             mcp_servers=mcp_servers,
             use_worktree=use_worktree,
             git_repo=git_repo,
         )
-        return {"instance_id": instance_id, "status": "spawned", "name": name}
+
+        result: dict[str, Any] = {"instance_id": instance_id, "status": "spawned", "name": name}
+
+        if wait_for_response and initial_prompt:
+            response = await self.tmux_manager.send_message(
+                instance_id=instance_id,
+                message=initial_prompt,
+                wait_for_response=True,
+                timeout_seconds=timeout_seconds,
+            )
+            result["response"] = response.get("response", "")
+            result["status"] = "completed"
+
+        return result
 
     @mcp.tool
     async def spawn_multiple_instances(
@@ -116,6 +137,8 @@ class SpawningMixin:
         mcp_servers: str | None = None,
         use_worktree: bool = False,
         git_repo: str | None = None,
+        wait_for_response: bool = False,
+        timeout_seconds: int = 180,
     ) -> dict[str, Any]:
         """Spawn a new Codex CLI instance (OpenAI GPT models only).
 
@@ -134,11 +157,17 @@ class SpawningMixin:
                         '{"server_name": {"transport": "http", "url": "http://localhost:8002/mcp"}}'
             use_worktree: Create a git worktree for workspace isolation (default: false)
             git_repo: Path to git repository for worktree creation (required if use_worktree is true)
+            wait_for_response: Wait for the initial_prompt response and return it (default: false).
+                              When true and initial_prompt is provided, the response is captured
+                              and included in the return value instead of fire-and-forget.
+            timeout_seconds: Timeout for waiting for response (default: 180)
 
         Returns:
-            Dictionary with instance_id and status
+            Dictionary with instance_id and status (and response when wait_for_response=True)
         """
         validated_model = validate_model("codex", model)
+
+        spawn_prompt = initial_prompt if not wait_for_response else None
 
         instance_id = await self.spawn_instance(
             name=name,
@@ -146,7 +175,7 @@ class SpawningMixin:
             bypass_isolation=bypass_isolation,
             sandbox_mode=sandbox_mode,
             profile=profile,
-            initial_prompt=initial_prompt,
+            initial_prompt=spawn_prompt,
             instance_type="codex",
             parent_instance_id=parent_instance_id,
             mcp_servers=mcp_servers,
@@ -154,12 +183,25 @@ class SpawningMixin:
             git_repo=git_repo,
         )
         self.instances[instance_id]["instance_type"] = "codex"
-        return {
+
+        result: dict[str, Any] = {
             "instance_id": instance_id,
             "status": "spawned",
             "name": name,
             "instance_type": "codex",
         }
+
+        if wait_for_response and initial_prompt:
+            response = await self.tmux_manager.send_message(
+                instance_id=instance_id,
+                message=initial_prompt,
+                wait_for_response=True,
+                timeout_seconds=timeout_seconds,
+            )
+            result["response"] = response.get("response", "")
+            result["status"] = "completed"
+
+        return result
 
     def list_persisted_instances(self) -> dict[str, Any]:
         """List all persisted instances from previous sessions that can be resumed.

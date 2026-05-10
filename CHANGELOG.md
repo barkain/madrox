@@ -5,6 +5,14 @@ All notable changes to Madrox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.3] - 2026-05-10
+
+### Fixed
+
+- **`spawn_claude` / `spawn_codex` initial_prompt is now synchronous** — Added `wait_for_response` parameter (default: `false`) to both spawn tools. When `true`, the initial prompt response is captured and returned directly instead of fire-and-forget. Previously, `initial_prompt` was injected via raw keystrokes with a 2-second sleep and no output capture, forcing callers to manually retry with `send_to_instance`. Now reuses the existing `send_message()` two-phase response detection (bidirectional queue + pane polling fallback).
+
+---
+
 ## [Unreleased]
 
 ### Fixed
