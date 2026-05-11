@@ -18,6 +18,14 @@ from pathlib import Path
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+# Install uvloop for better async performance if available
+try:
+    import uvloop
+
+    uvloop.install()
+except ImportError:
+    pass
+
 
 def detect_transport_mode() -> str:
     """Detect which transport mode to use.

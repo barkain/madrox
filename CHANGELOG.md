@@ -5,6 +5,15 @@ All notable changes to Madrox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.5] - 2026-05-11
+
+### Fixed
+
+- **Python 3.14 compatibility** — Bumped `uvloop` from `==0.21.0` to `>=0.22.1` (ships cp314 wheels). Made uvloop import graceful so the server starts with the default event loop if uvloop is unavailable.
+- **Plugin startup reliability** — Raised health-check timeout from 15s to 60s (configurable via `MADROX_HEALTHCHECK_TIMEOUT`). On timeout, the last 20 lines of `backend.log` are now printed to stderr for diagnostics.
+
+---
+
 ## [1.7.4] - 2026-05-11
 
 ### Added
