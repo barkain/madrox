@@ -701,8 +701,8 @@ class TestInstanceLifecycle:
         # Execute health check
         await tmux_manager.health_check()
 
-        # Assert - should be terminated
-        assert tmux_manager.instances[instance_id]["state"] == "terminated"
+        # Assert - should be suspended
+        assert tmux_manager.instances[instance_id]["state"] == "suspended"
 
     @pytest.mark.asyncio
     async def test_spawn_instance_max_limit(self, tmux_manager):

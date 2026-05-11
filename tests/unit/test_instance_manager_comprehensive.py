@@ -594,7 +594,7 @@ class TestHealthCheck:
 
     @pytest.mark.asyncio
     async def test_health_check_timeout(self, instance_manager):
-        """Test health check terminates timed-out instances."""
+        """Test health check suspends timed-out instances."""
         old_time = datetime.now(UTC) - timedelta(minutes=120)
         instance_data = {
             "id": "old-inst",
@@ -609,10 +609,13 @@ class TestHealthCheck:
         # Also add to tmux_manager instances
         instance_manager.tmux_manager.instances["old-inst"] = instance_data
 
+        # Mock _suspend_instance_internal since health_check now suspends instead of terminating
+        instance_manager._suspend_instance_internal = AsyncMock()
+
         await instance_manager.health_check()
 
-        # Should have called terminate on the timed-out instance
-        instance_manager.tmux_manager.terminate_instance.assert_called()
+        # Should have called suspend on the timed-out instance
+        instance_manager._suspend_instance_internal.assert_called()
 
     @pytest.mark.asyncio
     async def test_health_check_token_limit(self, instance_manager):

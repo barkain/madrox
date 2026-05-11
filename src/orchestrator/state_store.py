@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 TRANSIENT_PREFIXES = ("_",)
 PRUNE_AFTER_HOURS = 24
+PRUNE_SUSPENDED_AFTER_HOURS = 168  # 7 days
 
 
 class StateStore:
@@ -115,22 +116,28 @@ class StateStore:
         return data
 
     def prune_terminated(self, max_age_hours: float = PRUNE_AFTER_HOURS) -> int:
-        """Remove terminated/error instances older than max_age_hours. Returns count removed."""
+        """Remove terminated/error/suspended instances older than their max age. Returns count removed."""
         lock = self._acquire_lock()
         try:
             all_instances = self.load_all()
             now = datetime.now().timestamp()
             to_remove = []
             for iid, inst in all_instances.items():
-                if inst.get("state") not in ("terminated", "error"):
+                state = inst.get("state")
+                if state in ("terminated", "error"):
+                    terminated_at = inst.get("terminated_at") or inst.get("created_at")
+                    age_limit = max_age_hours
+                elif state == "suspended":
+                    terminated_at = inst.get("suspended_at") or inst.get("created_at")
+                    age_limit = PRUNE_SUSPENDED_AFTER_HOURS
+                else:
                     continue
-                terminated_at = inst.get("terminated_at") or inst.get("created_at")
                 if not terminated_at:
                     to_remove.append(iid)
                     continue
                 try:
                     ts = datetime.fromisoformat(terminated_at).timestamp()
-                    if now - ts > max_age_hours * 3600:
+                    if now - ts > age_limit * 3600:
                         to_remove.append(iid)
                 except (ValueError, TypeError):
                     to_remove.append(iid)

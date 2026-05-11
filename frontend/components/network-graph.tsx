@@ -566,6 +566,7 @@ function NetworkGraphInner({ instances, messageFlows = [], onNodeClick }: Networ
             pending: "var(--color-status-pending)",
             error: "var(--color-status-error)",
             terminated: "var(--color-status-terminated)",
+            suspended: "rgb(168, 85, 247)",
           }
           return colors[status as keyof typeof colors] || "var(--color-muted)"
         }}

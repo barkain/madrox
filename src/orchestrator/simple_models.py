@@ -81,6 +81,7 @@ class InstanceState(str, Enum):
     BUSY = "busy"
     ERROR = "error"
     TERMINATED = "terminated"
+    SUSPENDED = "suspended"
 
 
 class InstanceRole(str, Enum):
@@ -232,7 +233,7 @@ class OrchestratorConfig:
         default_model: str = "claude-4-sonnet-20250514",
         max_concurrent_instances: int = 10,
         max_tokens_per_instance: int = 100000,
-        instance_timeout_minutes: int = 60,
+        instance_timeout_minutes: int = 30,
         workspace_base_dir: str = "/tmp/claude_orchestrator",
         enable_isolation: bool = True,
         database_url: str = "sqlite:///claude_orchestrator.db",

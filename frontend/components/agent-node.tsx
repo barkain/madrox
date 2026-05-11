@@ -16,6 +16,7 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
     pending: "",
     error: "glow-error",
     terminated: "",
+    suspended: "glow-muted",
   }
 
   const statusDotColors = {
@@ -26,6 +27,7 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
     pending: "bg-amber-500/70",
     error: "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]",
     terminated: "bg-gray-400 dark:bg-gray-600",
+    suspended: "bg-purple-400/60 dark:bg-purple-500/50",
   }
 
   const StatusIcon = () => {
@@ -37,6 +39,8 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
         return <Loader2 className="h-3.5 w-3.5 text-amber-500 animate-spin" />
       case "error":
         return <AlertCircle className="h-3.5 w-3.5 text-red-500 dark:text-red-400" />
+      case "suspended":
+        return <Clock className="h-3.5 w-3.5 text-purple-400 dark:text-purple-500" />
       default:
         return <Activity className="h-3.5 w-3.5 text-muted-foreground" />
     }

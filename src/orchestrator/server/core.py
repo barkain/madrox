@@ -1387,6 +1387,13 @@ class ClaudeOrchestratorServer:
             if state in ("terminated", "error"):
                 continue
 
+            # Keep suspended instances in suspended state (no tmux session needed)
+            if state == "suspended":
+                self.instance_manager.instances[iid] = record
+                self.instance_manager.tmux_manager.instances[iid] = record
+                logger.info(f"Kept instance {iid} ({record.get('name')}) in suspended state")
+                continue
+
             # Handle partially initialized instances
             if state == "initializing":
                 if session_name in live_sessions:

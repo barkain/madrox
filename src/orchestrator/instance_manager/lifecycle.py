@@ -89,6 +89,21 @@ class LifecycleMixin:
 
         raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
 
+    async def _suspend_instance_internal(self, instance_id: str) -> bool:
+        """Internal method to suspend a Claude or Codex instance."""
+        if instance_id not in self.instances:
+            raise ValueError(f"Instance {instance_id} not found")
+
+        instance = self.instances[instance_id]
+
+        if instance.get("instance_type") in ["claude", "codex"]:
+            result = await self.tmux_manager.suspend_instance(instance_id)
+            if result:
+                self.instances[instance_id] = self.tmux_manager.instances[instance_id]
+            return result
+
+        raise ValueError(f"Unsupported instance type: {instance.get('instance_type')}")
+
     @mcp.tool
     async def terminate_instance(
         self,
@@ -111,6 +126,23 @@ class LifecycleMixin:
         return {
             "instance_id": instance_id,
             "status": "terminated" if success else "failed",
+            "success": success,
+        }
+
+    @mcp.tool
+    async def suspend_instance(self, instance_id: str) -> dict[str, Any]:
+        """Suspend a Claude instance (kill process, preserve state for auto-resume).
+
+        Args:
+            instance_id: ID of the instance to suspend
+
+        Returns:
+            Dictionary with suspension status
+        """
+        success = await self._suspend_instance_internal(instance_id)
+        return {
+            "instance_id": instance_id,
+            "status": "suspended" if success else "failed",
             "success": success,
         }
 
