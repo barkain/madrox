@@ -48,15 +48,19 @@ MADROX_TRANSPORT=http uv run --directory "$PLUGIN_ROOT" python run_orchestrator.
   >"$LOG_DIR/backend.log" 2>&1 &
 BE_PID=$!
 
-# Wait for backend to be ready
-echo "Waiting for backend health check..." >&2
-for i in $(seq 1 30); do
+# Wait for backend to be ready (configurable timeout, default 60s)
+HEALTHCHECK_TIMEOUT="${MADROX_HEALTHCHECK_TIMEOUT:-60}"
+HEALTHCHECK_ITERATIONS=$(( HEALTHCHECK_TIMEOUT * 2 ))  # 0.5s per iteration
+echo "Waiting for backend health check (timeout: ${HEALTHCHECK_TIMEOUT}s)..." >&2
+for i in $(seq 1 "$HEALTHCHECK_ITERATIONS"); do
   if curl -sf "http://localhost:$BE_PORT/health" >/dev/null 2>&1; then
     echo "Backend ready on port $BE_PORT." >&2
     break
   fi
-  if [ "$i" -eq 30 ]; then
-    echo "ERROR: Backend failed to start within 15 seconds." >&2
+  if [ "$i" -eq "$HEALTHCHECK_ITERATIONS" ]; then
+    echo "ERROR: Backend failed to start within ${HEALTHCHECK_TIMEOUT} seconds." >&2
+    echo "Last 20 lines of backend log:" >&2
+    tail -20 "$LOG_DIR/backend.log" >&2
     exit 1
   fi
   sleep 0.5
