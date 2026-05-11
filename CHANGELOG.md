@@ -5,6 +5,14 @@ All notable changes to Madrox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.4] - 2026-05-11
+
+### Added
+
+- **Suspend/resume model for idle instance memory management** — Instances now auto-suspend after 30 minutes idle (configurable via `instance_timeout_minutes`). Suspension kills the tmux process (freeing 200-500MB per instance) but preserves the instance record, workspace, and conversation context. When a message is sent to a suspended instance, it auto-resumes transparently using `--continue`. Dashboard shows suspended instances with purple styling.
+
+---
+
 ## [1.7.3] - 2026-05-10
 
 ### Fixed
