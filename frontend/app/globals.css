@@ -192,6 +192,10 @@
                 0 0 30px rgba(var(--warning-rgb), 0.15);
   }
 
+  .glow-muted {
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.15);
+  }
+
   /* Text glow variants */
   .text-glow-primary {
     text-shadow: 0 0 10px rgba(var(--primary-rgb), 0.5),

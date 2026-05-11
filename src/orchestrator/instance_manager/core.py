@@ -201,21 +201,21 @@ class InstanceManager(
         logger.info("Performing health check on all instances")
 
         current_time = datetime.now(UTC)
-        timeout_minutes = self.config.get("instance_timeout_minutes", 0)
+        timeout_minutes = self.config.get("instance_timeout_minutes", 30)
 
         for instance_id, instance in list(self.instances.items()):
-            if instance["state"] == "terminated":
+            if instance["state"] in ("terminated", "suspended"):
                 continue
 
-            # Idle timeout disabled by default (0 = no timeout) for persistent instances.
-            # Only enforce if explicitly configured via instance_timeout_minutes > 0.
+            # Idle timeout: suspend instances that have been inactive.
+            # Set instance_timeout_minutes to 0 to disable.
             if timeout_minutes > 0:
                 last_activity = datetime.fromisoformat(instance["last_activity"])
                 if last_activity.tzinfo is None:
                     last_activity = last_activity.replace(tzinfo=UTC)
                 if current_time - last_activity > timedelta(minutes=timeout_minutes):
-                    logger.warning(f"Instance {instance_id} timed out, terminating")
-                    await self._terminate_instance_internal(instance_id, force=True)
+                    logger.warning(f"Instance {instance_id} timed out, suspending")
+                    await self._suspend_instance_internal(instance_id)
                     continue
 
             max_tokens = instance.get("resource_limits", {}).get("max_total_tokens")

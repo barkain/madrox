@@ -2,7 +2,7 @@ export interface AgentInstance {
   id: string
   name: string
   type: "claude" | "codex"
-  status: "initializing" | "running" | "idle" | "busy" | "pending" | "terminated" | "error"
+  status: "initializing" | "running" | "idle" | "busy" | "pending" | "terminated" | "error" | "suspended"
   role: string
   parentId: string | null
   createdAt: string
@@ -29,6 +29,8 @@ export interface AuditLogEntry {
     | "state_change"
     | "error"
     | "timeout"
+    | "instance_suspended"
+    | "instance_resumed"
   message: string
   metadata?: {
     from_instance?: string

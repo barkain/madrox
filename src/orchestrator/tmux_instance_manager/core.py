@@ -56,6 +56,9 @@ class TmuxInstanceManager:
         self.main_message_inbox: list[dict[str, Any]] = []
         self.main_instance_id: str | None = None
 
+        # Suspend/resume locks (per-instance)
+        self._resume_locks: dict[str, asyncio.Lock] = {}
+
         # Resource tracking
         self.total_tokens_used = 0
 
@@ -523,7 +526,7 @@ class TmuxInstanceManager:
             Instance ID
         """
         # Count only active instances
-        active_count = len([i for i in self.instances.values() if i["state"] != "terminated"])
+        active_count = len([i for i in self.instances.values() if i["state"] not in ("terminated", "suspended")])
         if active_count >= self.config.get("max_concurrent_instances", 10):
             raise RuntimeError("Maximum concurrent instances reached")
 
@@ -800,6 +803,13 @@ class TmuxInstanceManager:
                 }
             # Fallback for HTTP mode without shared state - still reject
             raise RuntimeError(f"Instance {instance_id} is busy (no queue in HTTP mode)")
+
+        # Auto-resume suspended instances
+        if instance["state"] == "suspended":
+            logger.info(f"Auto-resuming suspended instance {instance_id}")
+            resumed = await self._resume_suspended_instance(instance_id)
+            if not resumed:
+                raise RuntimeError(f"Failed to resume suspended instance {instance_id}")
 
         if instance["state"] not in ["running", "idle"]:
             raise RuntimeError(
@@ -1400,6 +1410,123 @@ class TmuxInstanceManager:
                 extra={"instance_id": instance_id, "error": str(e)},
             )
             instance["error_message"] = str(e)
+            return False
+
+    async def suspend_instance(self, instance_id: str) -> bool:
+        """Suspend an instance: kill tmux session but preserve state for later resume."""
+        if instance_id not in self.instances:
+            raise ValueError(f"Instance {instance_id} not found")
+
+        instance = self.instances[instance_id]
+
+        if instance["state"] in ("terminated", "suspended"):
+            logger.warning(f"Instance {instance_id} is already {instance['state']}")
+            return instance["state"] == "suspended"
+
+        try:
+            # Kill tmux session
+            session = self.tmux_sessions.get(instance_id)
+            if session:
+                try:
+                    session.kill_session()
+                except Exception as e:
+                    logger.warning(f"Error killing tmux session for {instance_id}: {e}")
+                self.tmux_sessions.pop(instance_id, None)
+
+            # Update state
+            instance["state"] = "suspended"
+            instance["suspended_at"] = datetime.now(UTC).isoformat()
+            self._save_state()
+
+            # Log audit event
+            if self.logging_manager:
+                self.logging_manager.log_audit_event(
+                    event_type="instance_suspended",
+                    instance_id=instance_id,
+                    details={
+                        "instance_name": instance.get("name"),
+                        "total_requests": instance.get("request_count", 0),
+                    },
+                )
+
+            logger.info(
+                f"Suspended instance {instance_id} ({instance.get('name')})",
+                extra={"instance_id": instance_id},
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"Error suspending instance {instance_id}: {e}",
+                extra={"instance_id": instance_id, "error": str(e)},
+            )
+            instance["error_message"] = str(e)
+            return False
+
+    async def _resume_suspended_instance(self, instance_id: str, timeout: float = 60.0) -> bool:
+        """Resume a suspended instance by recreating its tmux session with --continue."""
+        # Per-instance lock to prevent concurrent resume attempts
+        if instance_id not in self._resume_locks:
+            self._resume_locks[instance_id] = asyncio.Lock()
+
+        async with self._resume_locks[instance_id]:
+            if instance_id not in self.instances:
+                raise ValueError(f"Instance {instance_id} not found")
+
+            instance = self.instances[instance_id]
+
+            # Already running — nothing to do
+            if instance["state"] in ("running", "idle", "busy"):
+                return True
+
+            if instance["state"] != "suspended":
+                logger.warning(f"Cannot resume instance {instance_id}: state is {instance['state']}")
+                return False
+
+            workspace_dir = instance.get("workspace_dir", "")
+            marker = Path(workspace_dir) / ".madrox_instance_id"
+            if not Path(workspace_dir).exists() or not marker.exists():
+                logger.error(f"Workspace {workspace_dir} or metadata missing, cannot resume")
+                return False
+
+            # Prepare for recovery
+            instance["state"] = "initializing"
+            instance["retry_count"] = instance.get("retry_count", 0) + 1
+            self.message_history[instance_id] = []
+
+            # Ensure response queue exists
+            if self.shared_state:
+                self.shared_state.create_response_queue(instance_id)
+            elif instance_id not in self.response_queues:
+                self.response_queues[instance_id] = asyncio.Queue()
+
+            self._save_state()
+
+            # Recover: create tmux session with --continue
+            await self._recover_instance_async(instance_id)
+
+            # Check result
+            if instance["state"] == "idle":
+                instance.pop("suspended_at", None)
+                self._save_state()
+
+                if self.logging_manager:
+                    self.logging_manager.log_audit_event(
+                        event_type="instance_resumed",
+                        instance_id=instance_id,
+                        details={
+                            "instance_name": instance.get("name"),
+                            "retry_count": instance.get("retry_count", 0),
+                        },
+                    )
+
+                logger.info(
+                    f"Resumed suspended instance {instance_id} ({instance.get('name')})",
+                    extra={"instance_id": instance_id},
+                )
+                return True
+
+            logger.error(f"Failed to resume instance {instance_id}: state is {instance['state']}")
             return False
 
     def reconnect_instance(self, persisted_record: dict[str, Any]) -> str:
@@ -2707,10 +2834,10 @@ class TmuxInstanceManager:
         logger.info("Performing health check on all instances")
 
         current_time = datetime.now(UTC)
-        timeout_minutes = self.config.get("instance_timeout_minutes", 60)
+        timeout_minutes = self.config.get("instance_timeout_minutes", 30)
 
         for instance_id, instance in list(self.instances.items()):
-            if instance["state"] == "terminated":
+            if instance["state"] in ("terminated", "suspended"):
                 continue
 
             # Check for timeout
@@ -2719,8 +2846,8 @@ class TmuxInstanceManager:
             if last_activity.tzinfo is None:
                 last_activity = last_activity.replace(tzinfo=UTC)
             if current_time - last_activity > timedelta(minutes=timeout_minutes):
-                logger.warning(f"Instance {instance_id} timed out, terminating")
-                await self.terminate_instance(instance_id, force=True)
+                logger.warning(f"Instance {instance_id} timed out, suspending")
+                await self.suspend_instance(instance_id)
                 continue
 
             # Check resource limits

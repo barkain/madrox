@@ -168,14 +168,15 @@ class TestInstanceState:
         assert InstanceState.BUSY == "busy"
         assert InstanceState.ERROR == "error"
         assert InstanceState.TERMINATED == "terminated"
+        assert InstanceState.SUSPENDED == "suspended"
 
     def test_state_is_string_enum(self):
         """Verify InstanceState inherits from str."""
         assert isinstance(InstanceState.RUNNING, str)
 
     def test_all_members_count(self):
-        """Verify the enum has exactly 6 members."""
-        assert len(InstanceState) == 6
+        """Verify the enum has exactly 7 members."""
+        assert len(InstanceState) == 7
 
 
 class TestInstanceRole:
@@ -587,7 +588,7 @@ class TestOrchestratorConfig:
         assert config.default_model == "claude-4-sonnet-20250514"
         assert config.max_concurrent_instances == 10
         assert config.max_tokens_per_instance == 100000
-        assert config.instance_timeout_minutes == 60
+        assert config.instance_timeout_minutes == 30
         assert config.workspace_base_dir == "/tmp/claude_orchestrator"
         assert config.enable_isolation is True
         assert config.database_url == "sqlite:///claude_orchestrator.db"
@@ -648,7 +649,7 @@ class TestOrchestratorConfig:
         assert config_dict["default_model"] == "claude-4-sonnet-20250514"
         assert config_dict["max_concurrent_instances"] == 10
         assert config_dict["max_tokens_per_instance"] == 100000
-        assert config_dict["instance_timeout_minutes"] == 60
+        assert config_dict["instance_timeout_minutes"] == 30
         assert config_dict["workspace_base_dir"] == "/tmp/claude_orchestrator"
         assert config_dict["enable_isolation"] is True
         assert config_dict["database_url"] == "sqlite:///claude_orchestrator.db"
