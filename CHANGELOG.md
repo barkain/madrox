@@ -5,6 +5,20 @@ All notable changes to Madrox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-05-12
+
+### Fixed
+
+- **Eliminated inter-instance communication latency** — Response detection now races the bidirectional queue against pane polling concurrently (`asyncio.wait` with `FIRST_COMPLETED`). Previously sequential: waited the full `timeout_seconds` (30-180s) on an empty queue before falling back to polling. Typical response time dropped from minutes to seconds.
+- **Fixed `_extract_response` instance_id bug** — Was using the first instance in the dict instead of the target instance, corrupting response extraction for any instance that wasn't the first spawned. Now uses diff-based extraction against the baseline output.
+- **Fixed false-positive prompt detection** — Removed `⏵⏵` and `bypass permissions` from Claude prompt indicators (they're the persistent status bar, always visible). Added stale prompt counting to distinguish old prompts from new ones. Only checks the last non-status-bar line.
+- **Root instances now use `reply_to_caller`** — Instances spawned without `parent_instance_id` were told "Do NOT use reply_to_caller." Now instructed to use it for `[MSG:]` messages, routing replies to the coordinator queue.
+- **Correlation-aware queue consumption** — Queue replies now verify `correlation_id` matches the current `message_id`. Stale replies from previous messages are discarded. Queue is drained before each new send.
+- **Queue preference on simultaneous completion** — When both queue and pane polling complete in the same event-loop turn, the queue result (cleaner text) is preferred.
+- **Restored `response_time` and `estimated_tokens`** in the return dict for backward compatibility.
+
+---
+
 ## [1.7.5] - 2026-05-11
 
 ### Fixed

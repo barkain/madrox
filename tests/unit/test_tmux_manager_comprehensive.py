@@ -419,7 +419,7 @@ class TestMessageCommunication:
 
     @pytest.mark.asyncio
     async def test_receive_response_success(self, tmux_manager):
-        """Test receiving response from instance."""
+        """Test receiving response from instance via bidirectional queue."""
         instance_id = "recv-123"
 
         tmux_manager.instances[instance_id] = {
@@ -434,13 +434,19 @@ class TestMessageCommunication:
         tmux_manager.response_queues = {}
         tmux_manager.response_queues[instance_id] = asyncio.Queue()
 
-        # Queue a response
-        await tmux_manager.response_queues[instance_id].put(
-            {
-                "reply_message": "Response text",
-                "correlation_id": "msg-123",
-            }
-        )
+        # Queue the reply after a short delay (simulates reply_to_caller
+        # being called after the instance processes the message — the queue
+        # drain at send_message start removes pre-existing stale items).
+        async def delayed_reply():
+            await asyncio.sleep(0.5)
+            await tmux_manager.response_queues[instance_id].put(
+                {
+                    "reply_message": "Response text",
+                    "correlation_id": None,
+                }
+            )
+
+        asyncio.create_task(delayed_reply())
 
         # Execute
         result = await tmux_manager.send_message(
