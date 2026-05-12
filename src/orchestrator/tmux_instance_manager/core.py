@@ -784,19 +784,23 @@ class TmuxInstanceManager:
                 self.response_queues[instance_id].get(), timeout=timeout
             )
 
-    _PROMPT_INDICATORS_CLAUDE = [
-        'Try "',
-        "⏵⏵",
-        "bypass permissions",
-        "What would you like",
-        "How can I help",
-    ]
-    _PROMPT_INDICATORS_CODEX = ["codex>", "›"]
+    # Claude: the bare "❯" on its own line is the idle input prompt.
+    # Do NOT use "⏵⏵" or "bypass permissions" — those are the persistent
+    # status bar visible at ALL times, even during thinking.
+    _PROMPT_INDICATORS_CLAUDE = ['Try "', "What would you like", "How can I help"]
+    _PROMPT_INDICATORS_CODEX = ["codex>"]
 
     async def _wait_for_pane_response(
         self, pane, initial_output: str, timeout: int, instance_type: str = "claude"
     ) -> str:
-        """Poll tmux pane for response completion. Returns full scrollback output."""
+        """Poll tmux pane for response completion. Returns full scrollback output.
+
+        Two-phase detection:
+        1. Wait for output to start growing (response started)
+        2. After output stabilises, keep polling for the CLI prompt which
+           only appears after all tool calls (including reply_to_caller)
+           complete. Fall back to stability-only after 15s without a prompt.
+        """
         prompt_indicators = (
             self._PROMPT_INDICATORS_CODEX
             if instance_type == "codex"
@@ -807,6 +811,7 @@ class TmuxInstanceManager:
         stable_count = 0
         poll_count = 0
         response_started = False
+        stability_reached_at: float | None = None
 
         while time.time() - start_time < timeout:
             await asyncio.sleep(0.3)
@@ -815,28 +820,60 @@ class TmuxInstanceManager:
             current_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
             current_size = len(current_output)
 
+            # Check ONLY the last non-status-bar line for the idle prompt.
+            # Must be the absolute last line to avoid matching old prompts
+            # still visible higher in the pane.
+            content_lines = [
+                l for l in current_output.split("\n")
+                if l.strip()
+                and "⏵⏵" not in l
+                and "esc to interrupt" not in l
+                and not l.strip().startswith("─")
+            ]
+            last_line = content_lines[-1].strip() if content_lines else ""
+            prompt_visible = any(ind in last_line for ind in prompt_indicators)
+            if not prompt_visible and instance_type == "claude":
+                prompt_visible = last_line == "❯"
+            if not prompt_visible and instance_type == "codex":
+                prompt_visible = last_line == "›"
+
             if current_size > last_size:
                 response_started = True
                 stable_count = 0
+                stability_reached_at = None
                 last_size = current_size
-
-                # Check for prompt immediately after output change — if the CLI
-                # shows its ready prompt, the response is complete.
-                visible_tail = current_output[-300:] if len(current_output) > 300 else current_output
-                if any(ind in visible_tail for ind in prompt_indicators):
-                    logger.debug(
-                        f"Response complete: prompt detected after "
-                        f"{time.time() - start_time:.1f}s (poll #{poll_count})"
-                    )
-                    break
                 continue
 
             if response_started:
                 stable_count += 1
-                if stable_count >= 3:
-                    logger.debug(
-                        f"Response complete: stable for {stable_count * 0.3:.1f}s after "
-                        f"{time.time() - start_time:.1f}s total (poll #{poll_count})"
+                if stable_count >= 3 and stability_reached_at is None:
+                    stability_reached_at = time.time()
+                    logger.info(
+                        f"Pane poll: output stable after {time.time() - start_time:.1f}s "
+                        f"(poll #{poll_count}), last_line: {repr(last_line[:80])}"
+                    )
+
+                # Only check for prompt AFTER stability — avoids matching
+                # old prompts that are visible while output is still changing.
+                if stability_reached_at and prompt_visible:
+                    # Verify the prompt is NEW — count bare "❯" lines in initial
+                    # vs current output. If the count increased, it's a real new prompt.
+                    if instance_type == "claude" and last_line == "❯":
+                        initial_prompts = initial_output.count("\n❯\n") + initial_output.count("\n❯ \n")
+                        current_prompts = current_output.count("\n❯\n") + current_output.count("\n❯ \n")
+                        if current_prompts <= initial_prompts:
+                            continue  # Stale prompt — keep waiting
+                    logger.info(
+                        f"Pane poll: prompt detected after "
+                        f"{time.time() - start_time:.1f}s (poll #{poll_count}), "
+                        f"last_line: {repr(last_line[:80])}"
+                    )
+                    break
+
+                if stability_reached_at and (time.time() - stability_reached_at > 15):
+                    logger.info(
+                        f"Pane poll: no prompt after 15s stability, "
+                        f"returning pane (poll #{poll_count})"
                     )
                     break
 
@@ -1003,6 +1040,19 @@ class TmuxInstanceManager:
             # Child instances may or may not call reply_to_caller — running
             # both in parallel means we never block on an empty queue.
 
+            # Drain stale queue items from previous messages
+            if not self.shared_state and instance_id in self.response_queues:
+                q = self.response_queues[instance_id]
+                drained = 0
+                while not q.empty():
+                    try:
+                        q.get_nowait()
+                        drained += 1
+                    except asyncio.QueueEmpty:
+                        break
+                if drained:
+                    logger.info(f"Drained {drained} stale queue item(s) for {instance_id}")
+
             await asyncio.sleep(0.3)
             initial_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
 
@@ -1025,7 +1075,7 @@ class TmuxInstanceManager:
             # appears). Give the queue a brief window to also complete.
             if poll_task in done and queue_task in pending:
                 try:
-                    await asyncio.wait_for(asyncio.shield(queue_task), timeout=0.5)
+                    await asyncio.wait_for(asyncio.shield(queue_task), timeout=5.0)
                     done = {queue_task}
                     pending = {poll_task}
                     logger.debug("Queue response arrived shortly after pane polling — preferring queue")
@@ -2599,56 +2649,80 @@ class TmuxInstanceManager:
     def _extract_response(
         self, full_output: str, initial_output: str, instance_id: str | None = None
     ) -> str:
-        """Extract the actual Claude response from tmux output.
+        """Extract the new response from tmux pane output using baseline diff.
 
-        Strips the interactive UI chrome (borders, status bars, etc.) to get the content.
+        Computes the diff between full_output and initial_output, then strips
+        terminal chrome to get the actual response text.
 
         Args:
-            full_output: Full output from pane
-            initial_output: Initial output before message was sent
+            full_output: Full scrollback after response
+            initial_output: Baseline captured before message was sent
             instance_id: Target instance ID for message history lookup
 
         Returns:
             Cleaned response text
         """
-        lines = full_output.split("\n")
+        # Diff-based: only process lines added after the baseline
+        initial_lines = initial_output.split("\n")
+        full_lines = full_output.split("\n")
 
+        # Find where new content starts — match the tail of initial output
+        # in the full output to handle scrollback growth
+        new_lines = full_lines
+        if len(initial_lines) >= 3:
+            anchor = initial_lines[-3:]
+            for i in range(len(full_lines) - 2):
+                if full_lines[i : i + 3] == anchor:
+                    new_lines = full_lines[i + 3 :]
+                    break
+
+        # Strip terminal chrome from new content only
         content_lines = []
-        for line in lines:
-            if line.strip().startswith("╭") or line.strip().startswith("╰"):
+        for line in new_lines:
+            stripped = line.strip()
+            if not stripped:
                 continue
-            if line.strip().startswith("│") and line.strip().endswith("│"):
-                content = line.strip()[1:-1].strip()
+            # Claude UI chrome
+            if stripped.startswith("╭") or stripped.startswith("╰") or stripped.startswith("─"):
+                continue
+            if stripped.startswith("│") and stripped.endswith("│"):
+                content = stripped[1:-1].strip()
                 if content:
                     content_lines.append(content)
                 continue
+            # Status bars
             if "%" in line and ("tokens" in line.lower() or "usage" in line.lower()):
                 continue
-            if not line.strip():
+            # CLI decorations
+            if stripped.startswith("⏵⏵") or stripped.startswith("✻") or stripped.startswith("✳"):
+                continue
+            if stripped.startswith("✢") or stripped.startswith("·"):
+                continue
+            # Prompt lines
+            if stripped == "❯" or stripped == "›":
+                continue
+            # Codex spinner lines
+            if stripped.startswith("Working (") or stripped.startswith("Improve documentation"):
+                continue
+            # Tip lines
+            if stripped.startswith("⎿  Tip:"):
+                continue
+            # Tool call lines (collapsed)
+            if "Called madrox" in stripped or "ctrl+o to expand" in stripped:
+                continue
+            # MSG echo (the sent message)
+            if stripped.startswith("[MSG:"):
+                continue
+            # Status line at bottom
+            if "bypass permissions" in stripped or "esc to interrupt" in stripped:
+                continue
+            if "Context" in stripped and "left" in stripped:
                 continue
 
-            content_lines.append(line)
+            content_lines.append(line.rstrip())
 
         response = "\n".join(content_lines)
-
-        # Remove echoed user message using the correct instance's history
-        history_key = instance_id
-        if not history_key or history_key not in self.message_history:
-            keys = list(self.instances.keys())
-            history_key = keys[0] if keys else None
-
-        if history_key and self.message_history.get(history_key):
-            last_messages = [
-                msg["content"]
-                for msg in self.message_history[history_key]
-                if msg["role"] == "user"
-            ]
-            if last_messages:
-                last_msg = last_messages[-1]
-                response = response.replace(last_msg, "").strip()
-
         response = re.sub(r"\n{3,}", "\n\n", response)
-
         return response.strip()
 
     def _get_role_prompt(self, role: str) -> str:
