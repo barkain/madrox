@@ -766,6 +766,89 @@ class TmuxInstanceManager:
                 extra={"instance_id": instance_id, "error": str(e)},
             )
 
+    async def _wait_for_queue_response(self, instance_id: str, timeout: int) -> dict:
+        """Wait for a bidirectional reply via response queue."""
+        if self.shared_state:
+            # Chunk into 1s waits so the task is cancellable
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                remaining = max(1, int(deadline - time.time()))
+                chunk = min(remaining, 1)
+                try:
+                    return await self._get_from_shared_queue(instance_id, timeout=chunk)
+                except TimeoutError:
+                    continue
+            raise TimeoutError(f"No queue response from {instance_id} within {timeout}s")
+        else:
+            return await asyncio.wait_for(
+                self.response_queues[instance_id].get(), timeout=timeout
+            )
+
+    _PROMPT_INDICATORS_CLAUDE = [
+        'Try "',
+        "⏵⏵",
+        "bypass permissions",
+        "What would you like",
+        "How can I help",
+    ]
+    _PROMPT_INDICATORS_CODEX = ["codex>", "›"]
+
+    async def _wait_for_pane_response(
+        self, pane, initial_output: str, timeout: int, instance_type: str = "claude"
+    ) -> str:
+        """Poll tmux pane for response completion. Returns full scrollback output."""
+        prompt_indicators = (
+            self._PROMPT_INDICATORS_CODEX
+            if instance_type == "codex"
+            else self._PROMPT_INDICATORS_CLAUDE
+        )
+        start_time = time.time()
+        last_size = len(initial_output)
+        stable_count = 0
+        poll_count = 0
+        response_started = False
+
+        while time.time() - start_time < timeout:
+            await asyncio.sleep(0.3)
+            poll_count += 1
+
+            current_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+            current_size = len(current_output)
+
+            if current_size > last_size:
+                response_started = True
+                stable_count = 0
+                last_size = current_size
+
+                # Check for prompt immediately after output change — if the CLI
+                # shows its ready prompt, the response is complete.
+                visible_tail = current_output[-300:] if len(current_output) > 300 else current_output
+                if any(ind in visible_tail for ind in prompt_indicators):
+                    logger.debug(
+                        f"Response complete: prompt detected after "
+                        f"{time.time() - start_time:.1f}s (poll #{poll_count})"
+                    )
+                    break
+                continue
+
+            if response_started:
+                stable_count += 1
+                if stable_count >= 3:
+                    logger.debug(
+                        f"Response complete: stable for {stable_count * 0.3:.1f}s after "
+                        f"{time.time() - start_time:.1f}s total (poll #{poll_count})"
+                    )
+                    break
+
+        if not response_started:
+            logger.warning(
+                f"No response activity detected after {poll_count} polls, "
+                f"{time.time() - start_time:.1f}s"
+            )
+
+        logger.debug(f"Polling completed after {poll_count} polls, {time.time() - start_time:.1f}s")
+        return "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
+
     async def send_message(
         self,
         instance_id: str,
@@ -916,25 +999,42 @@ class TmuxInstanceManager:
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
 
-            # BIDIRECTIONAL MESSAGING: Check response queue first
-            # Instance may use reply_to_caller tool for explicit response
-            try:
-                if self.shared_state:
-                    # Use shared queue with process-safe wrapper
-                    queue_response = await self._get_from_shared_queue(
-                        instance_id, timeout=timeout_seconds
-                    )
-                else:
-                    # Use local asyncio queue (HTTP transport)
-                    queue_response = await asyncio.wait_for(
-                        self.response_queues[instance_id].get(), timeout=timeout_seconds
-                    )
+            # Race bidirectional queue against pane polling concurrently.
+            # Child instances may or may not call reply_to_caller — running
+            # both in parallel means we never block on an empty queue.
 
-                # Got explicit reply via bidirectional protocol
+            await asyncio.sleep(0.3)
+            initial_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+
+            instance_type = instance.get("instance_type", "claude")
+            queue_task = asyncio.create_task(
+                self._wait_for_queue_response(instance_id, timeout_seconds)
+            )
+            poll_task = asyncio.create_task(
+                self._wait_for_pane_response(
+                    pane, initial_output, timeout_seconds, instance_type
+                )
+            )
+
+            done, pending = await asyncio.wait(
+                {queue_task, poll_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, TimeoutError, Exception):
+                    pass
+
+            winner = done.pop()
+            protocol = "unknown"
+
+            if winner is queue_task and winner.exception() is None:
+                queue_response = winner.result()
                 response_text = queue_response["reply_message"]
+                protocol = "bidirectional"
                 logger.info(f"Received bidirectional reply from instance {instance_id}")
 
-                # Update envelope status
                 if self.shared_state:
                     self.shared_state.update_message_status(
                         message_id,
@@ -945,117 +1045,26 @@ class TmuxInstanceManager:
                 else:
                     envelope.mark_replied(response_text)
 
-                # Update stats and return
-                response_timestamp = datetime.now(UTC)
-                response_time = (response_timestamp - send_timestamp).total_seconds()
-
-                # Fallback to word-count estimation
-                estimated_tokens = len(message.split()) + len(response_text.split())
-
-                instance["total_tokens_used"] += estimated_tokens
-                instance["request_count"] += 1
-
-                self.total_tokens_used += estimated_tokens
-
-                # Add to message history
-                self.message_history[instance_id].append(
-                    {
-                        "role": "assistant",
-                        "content": response_text,
-                        "timestamp": response_timestamp.isoformat(),
-                    }
+            elif winner is poll_task and winner.exception() is None:
+                full_output = winner.result()
+                response_text = self._extract_response(
+                    full_output, initial_output, instance_id
                 )
-                # SECURITY FIX (CWE-770): Limit history size to prevent unbounded growth
-                self._limit_message_history(instance_id)
-
-                # Log the response
-                if self.logging_manager:
-                    instance_logger = self.logging_manager.get_instance_logger(
-                        instance_id, instance.get("name")
-                    )
-                    instance_logger.info(
-                        f"Received bidirectional response ({len(response_text)} chars, {response_time:.2f}s)",
-                        extra={
-                            "event_type": "bidirectional_reply_received",
-                            "message_id": message_id,
-                            "direction": "inbound",
-                            "content": response_text,
-                            "correlation_id": queue_response.get("correlation_id"),
-                        },
-                    )
-
-                instance["state"] = "idle"
-
-                return {
-                    "instance_id": instance_id,
-                    "response": response_text,
-                    "message_id": message_id,
-                    "response_time": response_time,
-                    "estimated_tokens": estimated_tokens,
-                    "protocol": "bidirectional",
-                    "timestamp": response_timestamp.isoformat(),
-                }
-
-            except TimeoutError:
-                # No explicit reply via bidirectional protocol, fall back to pane polling
-                logger.debug("No bidirectional reply received, falling back to pane polling")
+                protocol = "pane_polling"
+                logger.info(f"Detected response via pane polling for instance {instance_id}")
                 envelope.mark_timeout()
 
-            # Capture baseline AFTER sending (brief delay for message to appear)
-            await asyncio.sleep(0.3)
-            initial_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
-
-            # Activity-based response detection with stability monitoring
-            start_time = time.time()
-            last_size = len(initial_output)
-            stable_count = 0
-            poll_count = 0
-            response_started = False
-
-            while time.time() - start_time < timeout_seconds:
-                await asyncio.sleep(0.3)  # Faster consistent polling
-                poll_count += 1
-
-                # Capture current visible pane only (not full scrollback - faster)
-                current_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
-                current_size = len(current_output)
-
-                # NOTE: Claude CLI in interactive mode uses rich terminal UI, not JSON
-                # Tool event capture via JSON parsing is not possible in interactive tmux sessions
-                # Users should use get_tmux_pane_content() for detailed terminal output inspection
-
-                # Check if response has started (output growing)
-                if current_size > last_size:
-                    response_started = True
-                    stable_count = 0  # Reset stability counter
-                    last_size = current_size
-                    continue
-
-                # If response started and output is now stable
-                if response_started:
-                    stable_count += 1
-
-                    # Declare complete after output stable for 1 second (3-4 polls at 0.3s)
-                    if stable_count >= 3:
-                        logger.debug(
-                            f"Response complete: stable for {stable_count * 0.3:.1f}s after {time.time() - start_time:.1f}s total (poll #{poll_count})"
-                        )
-                        break
-
-            if not response_started:
+            else:
+                exc = winner.exception()
                 logger.warning(
-                    f"No response activity detected after {poll_count} polls, {time.time() - start_time:.1f}s"
+                    f"Both response detection paths failed for {instance_id}: {exc}"
                 )
-
-            logger.debug(
-                f"Polling completed after {poll_count} polls, {time.time() - start_time:.1f}s"
-            )
-
-            # Now capture full scrollback for response extraction
-            full_output = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
-
-            # Extract the actual response from the output
-            response_text = self._extract_response(full_output, initial_output)
+                envelope.mark_timeout()
+                full_output = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
+                response_text = self._extract_response(
+                    full_output, initial_output, instance_id
+                )
+                protocol = "fallback"
 
             # Add response to history
             response_timestamp = datetime.now(UTC)
@@ -1097,8 +1106,10 @@ class TmuxInstanceManager:
                     },
                 )
 
-                # Log tmux output for debugging
-                self.logging_manager.log_tmux_output(instance_id, full_output)
+                # Log tmux output for debugging (only available from polling path)
+                if protocol != "bidirectional":
+                    pane_output = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
+                    self.logging_manager.log_tmux_output(instance_id, pane_output)
 
                 # Log audit event
                 self.logging_manager.log_audit_event(
@@ -1128,7 +1139,7 @@ class TmuxInstanceManager:
                 "response": response_text,
                 "timestamp": response_timestamp.isoformat(),
                 "tokens_used": estimated_tokens,
-                "protocol": "polling_fallback",  # Legacy polling method
+                "protocol": protocol,
             }
 
         except Exception as e:
@@ -2051,12 +2062,19 @@ class TmuxInstanceManager:
                 )
                 instance_id_info += spawn_info
             else:
-                # Root instance (no parent) - different instructions
                 root_info = (
-                    f"\nYou are a ROOT INSTANCE (no parent). When you complete your work:\n"
-                    f"- Write results to files in your workspace: {workspace_path}\n"
-                    f"- External clients will check your output using get_instance_output or get_tmux_pane_content\n"
-                    f"- Do NOT use reply_to_caller (you have no parent to reply to)\n"
+                    f"\nYou are a ROOT INSTANCE (spawned by the coordinator).\n"
+                    f"Your workspace: {workspace_path}\n\n"
+                    f"RESPONDING TO MESSAGES:\n"
+                    f"When you receive messages formatted as:\n"
+                    f"  [MSG:correlation-id] message content here\n\n"
+                    f"You MUST use the reply_to_caller tool to respond:\n"
+                    f"  reply_to_caller(\n"
+                    f"    instance_id='{instance['id']}',\n"
+                    f"    reply_message='your response here',\n"
+                    f"    correlation_id='correlation-id-from-message'\n"
+                    f"  )\n"
+                    f"This delivers your response instantly to the coordinator.\n"
                 )
                 instance_id_info += root_info
 
@@ -2138,12 +2156,19 @@ class TmuxInstanceManager:
                     )
                     instance_id_info += spawn_info
                 else:
-                    # Root instance (no parent) - different instructions
                     root_info = (
-                        f"\nYou are a ROOT INSTANCE (no parent). When you complete your work:\n"
-                        f"- Write results to files in your workspace: {workspace_path}\n"
-                        f"- External clients will check your output using get_instance_output or get_tmux_pane_content\n"
-                        f"- Do NOT use reply_to_caller (you have no parent to reply to)\n"
+                        f"\nYou are a ROOT INSTANCE (spawned by the coordinator).\n"
+                        f"Your workspace: {workspace_path}\n\n"
+                        f"RESPONDING TO MESSAGES:\n"
+                        f"When you receive messages formatted as:\n"
+                        f"  [MSG:correlation-id] message content here\n\n"
+                        f"You MUST use the reply_to_caller tool to respond:\n"
+                        f"  reply_to_caller(\n"
+                        f"    instance_id='{instance['id']}',\n"
+                        f"    reply_message='your response here',\n"
+                        f"    correlation_id='correlation-id-from-message'\n"
+                        f"  )\n"
+                        f"This delivers your response instantly to the coordinator.\n"
                     )
                     instance_id_info += root_info
 
@@ -2558,7 +2583,9 @@ class TmuxInstanceManager:
     # Interactive sessions use rich terminal UI which cannot be parsed as structured JSON.
     # For detailed output inspection, use get_tmux_pane_content() to capture raw terminal output.
 
-    def _extract_response(self, full_output: str, initial_output: str) -> str:
+    def _extract_response(
+        self, full_output: str, initial_output: str, instance_id: str | None = None
+    ) -> str:
         """Extract the actual Claude response from tmux output.
 
         Strips the interactive UI chrome (borders, status bars, etc.) to get the content.
@@ -2566,51 +2593,47 @@ class TmuxInstanceManager:
         Args:
             full_output: Full output from pane
             initial_output: Initial output before message was sent
+            instance_id: Target instance ID for message history lookup
 
         Returns:
             Cleaned response text
         """
-        # Split into lines
         lines = full_output.split("\n")
 
-        # Filter out UI chrome
         content_lines = []
         for line in lines:
-            # Skip UI borders and decorations
             if line.strip().startswith("╭") or line.strip().startswith("╰"):
                 continue
             if line.strip().startswith("│") and line.strip().endswith("│"):
-                # Extract content between borders
                 content = line.strip()[1:-1].strip()
                 if content:
                     content_lines.append(content)
                 continue
-            # Skip status bars (token usage, etc.)
             if "%" in line and ("tokens" in line.lower() or "usage" in line.lower()):
                 continue
-            # Skip empty lines at start/end
             if not line.strip():
                 continue
 
             content_lines.append(line)
 
-        # Join and clean up
         response = "\n".join(content_lines)
 
-        # Remove our sent message from the response (it echoes back)
-        # Find the last user message in history
-        if self.message_history.get(list(self.instances.keys())[0]):
+        # Remove echoed user message using the correct instance's history
+        history_key = instance_id
+        if not history_key or history_key not in self.message_history:
+            keys = list(self.instances.keys())
+            history_key = keys[0] if keys else None
+
+        if history_key and self.message_history.get(history_key):
             last_messages = [
                 msg["content"]
-                for msg in self.message_history[list(self.instances.keys())[0]]
+                for msg in self.message_history[history_key]
                 if msg["role"] == "user"
             ]
             if last_messages:
                 last_msg = last_messages[-1]
-                # Remove the echoed message
                 response = response.replace(last_msg, "").strip()
 
-        # Clean up extra whitespace
         response = re.sub(r"\n{3,}", "\n\n", response)
 
         return response.strip()
