@@ -1089,24 +1089,40 @@ class TmuxInstanceManager:
                 except (asyncio.CancelledError, TimeoutError, Exception):
                     pass
 
-            winner = done.pop()
+            # Prefer queue when both complete (cleaner response text)
+            if queue_task in done and queue_task.exception() is None:
+                winner = queue_task
+            else:
+                winner = done.pop()
             protocol = "unknown"
 
             if winner is queue_task and winner.exception() is None:
                 queue_response = winner.result()
-                response_text = queue_response["reply_message"]
-                protocol = "bidirectional"
-                logger.info(f"Received bidirectional reply from instance {instance_id}")
-
-                if self.shared_state:
-                    self.shared_state.update_message_status(
-                        message_id,
-                        status="replied",
-                        reply_content=response_text,
-                        replied_at=datetime.now().isoformat(),
+                # Verify correlation — ignore stale replies from previous messages
+                if queue_response.get("correlation_id") and queue_response["correlation_id"] != message_id:
+                    logger.info(
+                        f"Ignoring stale queue reply (correlation {queue_response['correlation_id'][:8]}… "
+                        f"!= {message_id[:8]}…) — falling back to pane"
                     )
+                    full_output = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
+                    response_text = self._extract_response(
+                        full_output, initial_output, instance_id
+                    )
+                    protocol = "fallback"
                 else:
-                    envelope.mark_replied(response_text)
+                    response_text = queue_response["reply_message"]
+                    protocol = "bidirectional"
+                    logger.info(f"Received bidirectional reply from instance {instance_id}")
+
+                    if self.shared_state:
+                        self.shared_state.update_message_status(
+                            message_id,
+                            status="replied",
+                            reply_content=response_text,
+                            replied_at=datetime.now().isoformat(),
+                        )
+                    else:
+                        envelope.mark_replied(response_text)
 
             elif winner is poll_task and winner.exception() is None:
                 full_output = winner.result()
@@ -1202,6 +1218,8 @@ class TmuxInstanceManager:
                 "response": response_text,
                 "timestamp": response_timestamp.isoformat(),
                 "tokens_used": estimated_tokens,
+                "response_time": response_time,
+                "estimated_tokens": estimated_tokens,
                 "protocol": protocol,
             }
 
