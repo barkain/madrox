@@ -1019,6 +1019,19 @@ class TmuxInstanceManager:
             done, pending = await asyncio.wait(
                 {queue_task, poll_task}, return_when=asyncio.FIRST_COMPLETED
             )
+
+            # When pane polling wins, the queue likely already has the clean
+            # reply_to_caller response (it's delivered before the CLI prompt
+            # appears). Give the queue a brief window to also complete.
+            if poll_task in done and queue_task in pending:
+                try:
+                    await asyncio.wait_for(asyncio.shield(queue_task), timeout=0.5)
+                    done = {queue_task}
+                    pending = {poll_task}
+                    logger.debug("Queue response arrived shortly after pane polling — preferring queue")
+                except (TimeoutError, Exception):
+                    pass
+
             for task in pending:
                 task.cancel()
                 try:
