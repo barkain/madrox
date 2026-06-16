@@ -80,7 +80,7 @@ def _make_proxy_from_schema(
     proxy_fn.__qualname__ = tool_name
     proxy_fn.__doc__ = description
     proxy_fn.__module__ = __name__
-    proxy_fn.__signature__ = inspect.Signature(params)
+    proxy_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
     proxy_fn.__annotations__ = annotations
 
     return proxy_fn
