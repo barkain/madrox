@@ -1361,3 +1361,61 @@ class TestCriticalFunctions:
         # Assert
         assert "healthy" in health
         assert health["instance_id"] == instance_id
+
+
+# ============================================================================
+# Backend Error Detection Tests (issue #28)
+# ============================================================================
+
+
+class TestDetectBackendError:
+    """Test _detect_backend_error — surfacing silent CLI/backend failures."""
+
+    def test_codex_model_404(self, tmux_manager):
+        """A Codex 404 for an unknown model is detected."""
+        pane = (
+            "■ unexpected status 404 Not Found: The model 'gpt-5.5' does not exist,\n"
+            "  url: https://bedrock-mantle.us-east-1.api.aws/openai/v1/responses\n"
+        )
+        error = tmux_manager._detect_backend_error(pane)
+        assert error is not None
+        assert "404" in error
+        assert "does not exist" in error
+        # Continuation line with the URL is appended for context
+        assert "bedrock-mantle" in error
+        # Leading glyph is stripped
+        assert not error.startswith("■")
+
+    def test_codex_jsonrpc_engine_not_found(self, tmux_manager):
+        """A JSON-RPC engine error is detected."""
+        pane = (
+            "■ JSON-RPC error -32602: Job registration failed: Engine bad request:\n"
+            "  Task submission failed with status 404 Not Found: Engine not found\n"
+        )
+        error = tmux_manager._detect_backend_error(pane)
+        assert error is not None
+        assert "JSON-RPC error" in error
+
+    def test_model_metadata_warning(self, tmux_manager):
+        """A model-metadata-not-found warning is detected."""
+        pane = "⚠ Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata"
+        error = tmux_manager._detect_backend_error(pane)
+        assert error is not None
+        assert "Model metadata" in error
+        assert not error.startswith("⚠")
+
+    def test_rate_limit(self, tmux_manager):
+        """A rate-limit message is detected."""
+        pane = "■ 429 Too Many Requests: rate limit exceeded"
+        error = tmux_manager._detect_backend_error(pane)
+        assert error is not None
+
+    def test_clean_output_no_error(self, tmux_manager):
+        """Normal response output produces no error."""
+        pane = "codex>\nHere is the answer you asked for.\nPROBE_OK\n›\n"
+        assert tmux_manager._detect_backend_error(pane) is None
+
+    def test_empty_output(self, tmux_manager):
+        """Empty output yields no detected error (handled separately)."""
+        assert tmux_manager._detect_backend_error("") is None
+        assert tmux_manager._detect_backend_error(None) is None

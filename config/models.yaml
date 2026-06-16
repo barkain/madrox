@@ -1,13 +1,21 @@
 # Madrox Model Configuration
-# Configure allowed models for Claude and Codex providers
+# Configures the DEFAULT model for each provider.
+#
+# NOTE: Model names are no longer validated against an allowlist. Any model
+# string passed to spawn_claude / spawn_codex is forwarded to the underlying
+# CLI/backend as-is. The `known_models` lists below are purely informational
+# (e.g. for documentation and dashboards) and are NOT enforced.
+#
+# Codex models in particular route through an AWS Bedrock proxy whose available
+# model ids change independently of Madrox — see docs/TROUBLESHOOTING.md.
 
-# Codex provider (OpenAI GPT models)
+# Codex provider (OpenAI GPT models, via the Codex CLI / Bedrock proxy)
 codex:
   # Default model when none is specified
   default: gpt-5.5
 
-  # List of allowed Codex models
-  allowed_models:
+  # Informational list of commonly available Codex models (NOT enforced)
+  known_models:
     - gpt-5.5
     - gpt-5.4
     - gpt-5.4-mini
@@ -21,8 +29,8 @@ claude:
   # claude-sonnet-4-5 is recommended for daily use - smartest model with best performance
   default: claude-sonnet-4-5
 
-  # List of allowed Claude models
-  allowed_models:
+  # Informational list of commonly available Claude models (NOT enforced)
+  known_models:
     - claude-sonnet-4-5   # Recommended: Smartest model for daily use
     - claude-opus-4-6     # Latest Opus: Most capable model
     - claude-opus-4-1     # Legacy: Reaches usage limits faster, use sparingly

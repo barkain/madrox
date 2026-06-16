@@ -5,6 +5,18 @@ All notable changes to Madrox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-06-16
+
+### Fixed
+
+- **Codex backend failures are no longer silent** (#28) — When a Codex instance hits a backend error (e.g. the Bedrock proxy 404ing an unknown model, a JSON-RPC error, or a stream failure), the spawn / `send_to_instance` result now reports `status: "failed"` with the terminal error surfaced in `error` / `error_message`, and `get_instance_status` exposes the same message. Previously these failures returned `status: "completed"` with an empty `response` and `error_message: null`, only diagnosable by scraping the tmux pane. Empty output with no detectable error is also flagged as a failure.
+
+### Changed
+
+- **Removed the static model allowlist** (#28) — `spawn_claude` / `spawn_codex` no longer validate model names against a hard-coded list. Any model string is forwarded to the underlying CLI/backend as-is; only the provider default (from `config/models.yaml`) is used when no model is given. The allowlist produced false rejections and gave false confidence for Codex models, whose valid ids are served by an AWS Bedrock proxy that changes independently of Madrox. Documented the Codex Bedrock routing and the new error behavior in `docs/TROUBLESHOOTING.md`.
+
+---
+
 ## [1.8.0] - 2026-05-12
 
 ### Fixed

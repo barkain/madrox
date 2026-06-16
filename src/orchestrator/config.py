@@ -1,7 +1,6 @@
 """Model configuration for Madrox orchestrator."""
 
 import logging
-import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -41,42 +40,37 @@ def _load_model_config() -> dict:
 
 
 def validate_model(provider: str, model: str | None) -> str:
-    """Validate and return a model for the given provider.
+    """Resolve a model name for the given provider.
+
+    Model names are intentionally NOT validated against a static allowlist.
+    The backends that actually serve these models (e.g. the Codex Bedrock
+    proxy) change their available model ids independently of Madrox, so a
+    hard-coded allowlist only produces false rejections — or worse, silently
+    accepts names the backend then 404s on. Any non-empty model string is
+    passed through as-is; when no model is given, the provider's configured
+    default from ``config/models.yaml`` is used.
 
     Args:
         provider: Provider name ("codex" or "claude")
-        model: Model name to validate (None to use default)
+        model: Model name to use (None/empty to use the provider default)
 
     Returns:
-        Validated model name
+        The model name to use
 
     Raises:
-        ValueError: If model is invalid for the provider
-        FileNotFoundError: If config file doesn't exist
+        ValueError: If no model is given and the provider has no default
+        FileNotFoundError: If the config file doesn't exist
     """
+    # Pass an explicitly requested model straight through — no allowlist check.
+    if model is not None and model.strip():
+        return model
+
+    # Fall back to the provider's configured default.
     model_config = _load_model_config()
+    provider_config = model_config.get(provider) if model_config else None
+    default = provider_config.get("default") if provider_config else None
 
-    if provider not in model_config:
-        raise ValueError(f"Unknown provider: {provider}")
+    if not default:
+        raise ValueError(f"No default model configured for provider: {provider}")
 
-    provider_config = model_config[provider]
-
-    # Use default if no model specified
-    if model is None:
-        return provider_config["default"]
-
-    # Normalize trailing version suffixes (e.g. claude-opus-4-6-0 -> claude-opus-4-6)
-    # The Claude CLI rejects date/patch suffixes that Madrox callers may pass.
-    normalized = re.sub(r"-0$", "", model)
-    if normalized != model and normalized in provider_config["allowed_models"]:
-        logger.info(f"Normalized model '{model}' -> '{normalized}'")
-        model = normalized
-
-    # Validate model is in allowed list
-    if model not in provider_config["allowed_models"]:
-        allowed = ", ".join(provider_config["allowed_models"])
-        raise ValueError(
-            f"Invalid model '{model}' for {provider} provider. Allowed models: {allowed}"
-        )
-
-    return model
+    return default

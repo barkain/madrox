@@ -403,6 +403,45 @@ codex mcp list
 # Should show 'madrox' in the list
 ```
 
+#### Codex Model Not Found / Empty Response (Bedrock proxy)
+
+**Symptoms:**
+- `spawn_codex` returns `status: "failed"` with an `error_message` such as
+  `unexpected status 404 Not Found: The model '...' does not exist` or
+  `JSON-RPC error -32602: ... Engine not found`
+- A Codex instance produces an empty `response` and `error_message` describing
+  a backend failure
+
+**Cause:**
+
+Codex instances do not talk to OpenAI directly — they route through an AWS
+Bedrock proxy (e.g. `https://bedrock-mantle.us-east-1.api.aws/openai/v1/responses`).
+The set of model ids that proxy actually serves changes independently of
+Madrox, so a model name that looks valid may still 404 at the backend.
+
+Madrox does **not** validate model names against a static allowlist (it would
+only produce false confidence). Any model string you pass to `spawn_codex` is
+forwarded to the Codex CLI as-is. When the backend rejects it, Madrox now
+surfaces the terminal error:
+
+- the spawn / `send_to_instance` result reports `status: "failed"` with the
+  backend error in `error` / `error_message` (instead of a silent `completed`
+  with an empty response), and
+- `get_instance_status` exposes the same message in `error_message`.
+
+**Solutions:**
+
+```bash
+# 1. Find a model id the backend actually serves and pass it explicitly:
+#    spawn_codex(name="probe", model="<valid-backend-model-id>", ...)
+
+# 2. Inspect the raw terminal for the exact backend error:
+#    get_tmux_pane_content(instance_id, lines=-1)
+
+# 3. Update the default in config/models.yaml if the backend's default
+#    model id has changed.
+```
+
 #### MCP Server Registration
 
 **Symptoms:**
