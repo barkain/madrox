@@ -1148,13 +1148,15 @@ class TmuxInstanceManager:
 
             # Detect silent backend failures (e.g. Codex Bedrock model 404s).
             # A clean bidirectional reply means the instance actually responded,
-            # so only scan the pane for the pane-derived protocols.
+            # so only scan the pane for the pane-derived protocols. Scan only the
+            # NEW output (delta against initial_output) so stale error lines from
+            # previous messages still in scrollback are not re-detected.
             backend_error: str | None = None
             if protocol != "bidirectional":
                 scan_output = full_output
                 if scan_output is None:
                     scan_output = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
-                backend_error = self._detect_backend_error(scan_output)
+                backend_error = self._detect_backend_error(scan_output, initial_output)
                 # Empty output with no detected error is still a failure to
                 # surface — the instance produced nothing.
                 if not backend_error and not response_text.strip():
@@ -1163,8 +1165,10 @@ class TmuxInstanceManager:
                         "Inspect the terminal with get_tmux_pane_content for details."
                     )
 
+            # Set on failure, clear on success — otherwise a transient error
+            # would stick to the instance (and to persisted state) forever.
+            instance["error_message"] = backend_error
             if backend_error:
-                instance["error_message"] = backend_error
                 logger.warning(
                     f"Backend error detected for instance {instance_id}: {backend_error}"
                 )
@@ -1240,7 +1244,10 @@ class TmuxInstanceManager:
                 "instance_id": instance_id,
                 "message_id": message_id,
                 "response": response_text,
-                "status": "failed" if backend_error else "completed",
+                # NOTE: deliberately no "status" key here — the MCP adapter
+                # branches on `"status" in response` to format job/timeout
+                # replies, so adding it would misroute normal waited replies.
+                # Callers detect failure via a non-null "error".
                 "error": backend_error,
                 "timestamp": response_timestamp.isoformat(),
                 "tokens_used": estimated_tokens,
@@ -2771,29 +2778,40 @@ class TmuxInstanceManager:
         response = re.sub(r"\n{3,}", "\n\n", response)
         return response.strip()
 
-    # Substrings/patterns that indicate the underlying CLI hit a backend error
-    # (e.g. the Codex Bedrock proxy 404ing an unknown model, a JSON-RPC failure,
-    # or a stream error) rather than producing a real response. These show up in
-    # the tmux pane but are otherwise invisible at the MCP layer.
-    _BACKEND_ERROR_PATTERNS = [
-        r"unexpected status\s+[45]\d{2}",
-        r"\b[45]\d{2}\s+(?:not found|bad request|unauthorized|forbidden|"
-        r"internal server error|bad gateway|service unavailable|too many requests)",
-        r"does not exist",
-        r"model metadata for .* not found",
-        r"json-rpc error",
-        r"engine not found",
-        r"engine bad request",
-        r"task submission failed",
-        r"job registration failed",
-        r"stream error",
-        r"stream disconnected before completion",
-        r"\brate limit(?:ed)?\b",
-        r"\bquota exceeded\b",
-    ]
+    # Codex marks error/warning lines in the pane with a leading glyph; model
+    # response prose never does. We use that to gate the weaker, prose-like
+    # patterns so a legitimate reply that merely mentions "rate limit" or
+    # "does not exist" is not misread as a backend failure.
+    _ERROR_GLYPHS = "■▲●⚠✖✗"
 
-    def _detect_backend_error(self, output: str) -> str | None:
-        """Scan tmux pane output for a backend/CLI error message.
+    # STRONG signatures: unambiguous backend/transport failures. Matched anywhere
+    # on a new line — these phrasings do not occur in normal model output.
+    _BACKEND_ERROR_STRONG = re.compile(
+        r"unexpected status\s+[45]\d{2}"
+        r"|\b[45]\d{2}\s+(?:not found|bad request|unauthorized|forbidden|"
+        r"internal server error|bad gateway|service unavailable|too many requests)"
+        r"|json-rpc error"
+        r"|engine not found"
+        r"|engine bad request"
+        r"|task submission failed"
+        r"|job registration failed"
+        r"|model metadata for .* not found",
+        re.IGNORECASE,
+    )
+
+    # WEAK signatures: prose-like phrases that also appear in legitimate replies.
+    # Only treated as errors when the line is glyph-marked as a CLI error.
+    _BACKEND_ERROR_WEAK = re.compile(
+        r"does not exist"
+        r"|stream error"
+        r"|stream disconnected before completion"
+        r"|\brate limit(?:ed)?\b"
+        r"|\bquota exceeded\b",
+        re.IGNORECASE,
+    )
+
+    def _detect_backend_error(self, output: str, initial_output: str | None = None) -> str | None:
+        """Scan NEW tmux pane output for a backend/CLI error message.
 
         The interactive Codex/Claude CLIs surface backend failures (model 404s,
         JSON-RPC errors, stream errors, …) as lines in the terminal but produce
@@ -2801,8 +2819,16 @@ class TmuxInstanceManager:
         silent "completed" with an empty response. This returns a concise error
         string when such a failure is found, else None.
 
+        Only output produced *after* ``initial_output`` is considered, so error
+        lines left in scrollback by previous messages are not re-detected.
+        Strong backend signatures match anywhere on a new line; weaker prose-like
+        phrases only count when the line is glyph-marked as a CLI error, to avoid
+        false positives on legitimate model responses.
+
         Args:
-            output: Raw tmux pane content to scan.
+            output: Raw tmux pane content to scan (full scrollback capture).
+            initial_output: Baseline captured before the message was sent; only
+                lines after this baseline are scanned. None scans everything.
 
         Returns:
             The detected error message (with any continuation/context line
@@ -2812,22 +2838,35 @@ class TmuxInstanceManager:
             return None
 
         raw_lines = output.split("\n")
+
+        # Restrict to lines added after the baseline, mirroring _extract_response.
+        if initial_output:
+            initial_lines = initial_output.split("\n")
+            if len(initial_lines) >= 3:
+                anchor = initial_lines[-3:]
+                for i in range(len(raw_lines) - 2):
+                    if raw_lines[i : i + 3] == anchor:
+                        raw_lines = raw_lines[i + 3 :]
+                        break
+
         for idx, raw_line in enumerate(raw_lines):
             line = raw_line.strip()
             if not line:
                 continue
-            for pattern in self._BACKEND_ERROR_PATTERNS:
-                if re.search(pattern, line, re.IGNORECASE):
-                    # Strip leading CLI status glyphs (Codex uses ■/▲/●, ⚠ etc.)
-                    cleaned = re.sub(r"^[■▲●⚠✖✗•·\s]+", "", line).strip()
-                    # Append an immediately following indented continuation line
-                    # (e.g. the "url: https://…" that Codex prints under a 404)
-                    # so the error message keeps its context.
-                    if idx + 1 < len(raw_lines):
-                        cont = raw_lines[idx + 1]
-                        if cont.startswith((" ", "\t")) and cont.strip():
-                            cleaned = f"{cleaned} {cont.strip()}"
-                    return cleaned
+            glyph_marked = line[0] in self._ERROR_GLYPHS
+            if self._BACKEND_ERROR_STRONG.search(line) or (
+                glyph_marked and self._BACKEND_ERROR_WEAK.search(line)
+            ):
+                # Strip leading CLI status glyphs (Codex uses ■/▲/●, ⚠ etc.)
+                cleaned = re.sub(rf"^[{self._ERROR_GLYPHS}•·\s]+", "", line).strip()
+                # Append an immediately following indented continuation line
+                # (e.g. the "url: https://…" that Codex prints under a 404)
+                # so the error message keeps its context.
+                if idx + 1 < len(raw_lines):
+                    cont = raw_lines[idx + 1]
+                    if cont.startswith((" ", "\t")) and cont.strip():
+                        cleaned = f"{cleaned} {cont.strip()}"
+                return cleaned
         return None
 
     def _get_role_prompt(self, role: str) -> str:
