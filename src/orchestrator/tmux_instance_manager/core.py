@@ -526,7 +526,9 @@ class TmuxInstanceManager:
             Instance ID
         """
         # Count only active instances
-        active_count = len([i for i in self.instances.values() if i["state"] not in ("terminated", "suspended")])
+        active_count = len(
+            [i for i in self.instances.values() if i["state"] not in ("terminated", "suspended")]
+        )
         if active_count >= self.config.get("max_concurrent_instances", 10):
             raise RuntimeError("Maximum concurrent instances reached")
 
@@ -780,9 +782,7 @@ class TmuxInstanceManager:
                     continue
             raise TimeoutError(f"No queue response from {instance_id} within {timeout}s")
         else:
-            return await asyncio.wait_for(
-                self.response_queues[instance_id].get(), timeout=timeout
-            )
+            return await asyncio.wait_for(self.response_queues[instance_id].get(), timeout=timeout)
 
     # Claude: the bare "❯" on its own line is the idle input prompt.
     # Do NOT use "⏵⏵" or "bypass permissions" — those are the persistent
@@ -824,11 +824,12 @@ class TmuxInstanceManager:
             # Must be the absolute last line to avoid matching old prompts
             # still visible higher in the pane.
             content_lines = [
-                l for l in current_output.split("\n")
-                if l.strip()
-                and "⏵⏵" not in l
-                and "esc to interrupt" not in l
-                and not l.strip().startswith("─")
+                pane_line
+                for pane_line in current_output.split("\n")
+                if pane_line.strip()
+                and "⏵⏵" not in pane_line
+                and "esc to interrupt" not in pane_line
+                and not pane_line.strip().startswith("─")
             ]
             last_line = content_lines[-1].strip() if content_lines else ""
             prompt_visible = any(ind in last_line for ind in prompt_indicators)
@@ -859,8 +860,12 @@ class TmuxInstanceManager:
                     # Verify the prompt is NEW — count bare "❯" lines in initial
                     # vs current output. If the count increased, it's a real new prompt.
                     if instance_type == "claude" and last_line == "❯":
-                        initial_prompts = initial_output.count("\n❯\n") + initial_output.count("\n❯ \n")
-                        current_prompts = current_output.count("\n❯\n") + current_output.count("\n❯ \n")
+                        initial_prompts = initial_output.count("\n❯\n") + initial_output.count(
+                            "\n❯ \n"
+                        )
+                        current_prompts = current_output.count("\n❯\n") + current_output.count(
+                            "\n❯ \n"
+                        )
                         if current_prompts <= initial_prompts:
                             continue  # Stale prompt — keep waiting
                     logger.info(
@@ -1061,9 +1066,7 @@ class TmuxInstanceManager:
                 self._wait_for_queue_response(instance_id, timeout_seconds)
             )
             poll_task = asyncio.create_task(
-                self._wait_for_pane_response(
-                    pane, initial_output, timeout_seconds, instance_type
-                )
+                self._wait_for_pane_response(pane, initial_output, timeout_seconds, instance_type)
             )
 
             done, pending = await asyncio.wait(
@@ -1078,7 +1081,9 @@ class TmuxInstanceManager:
                     await asyncio.wait_for(asyncio.shield(queue_task), timeout=5.0)
                     done = {queue_task}
                     pending = {poll_task}
-                    logger.debug("Queue response arrived shortly after pane polling — preferring queue")
+                    logger.debug(
+                        "Queue response arrived shortly after pane polling — preferring queue"
+                    )
                 except (TimeoutError, Exception):
                     pass
 
@@ -1095,19 +1100,21 @@ class TmuxInstanceManager:
             else:
                 winner = done.pop()
             protocol = "unknown"
+            full_output: str | None = None
 
             if winner is queue_task and winner.exception() is None:
                 queue_response = winner.result()
                 # Verify correlation — ignore stale replies from previous messages
-                if queue_response.get("correlation_id") and queue_response["correlation_id"] != message_id:
+                if (
+                    queue_response.get("correlation_id")
+                    and queue_response["correlation_id"] != message_id
+                ):
                     logger.info(
                         f"Ignoring stale queue reply (correlation {queue_response['correlation_id'][:8]}… "
                         f"!= {message_id[:8]}…) — falling back to pane"
                     )
                     full_output = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
-                    response_text = self._extract_response(
-                        full_output, initial_output, instance_id
-                    )
+                    response_text = self._extract_response(full_output, initial_output, instance_id)
                     protocol = "fallback"
                 else:
                     response_text = queue_response["reply_message"]
@@ -1126,24 +1133,45 @@ class TmuxInstanceManager:
 
             elif winner is poll_task and winner.exception() is None:
                 full_output = winner.result()
-                response_text = self._extract_response(
-                    full_output, initial_output, instance_id
-                )
+                response_text = self._extract_response(full_output, initial_output, instance_id)
                 protocol = "pane_polling"
                 logger.info(f"Detected response via pane polling for instance {instance_id}")
                 envelope.mark_timeout()
 
             else:
                 exc = winner.exception()
-                logger.warning(
-                    f"Both response detection paths failed for {instance_id}: {exc}"
-                )
+                logger.warning(f"Both response detection paths failed for {instance_id}: {exc}")
                 envelope.mark_timeout()
                 full_output = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
-                response_text = self._extract_response(
-                    full_output, initial_output, instance_id
-                )
+                response_text = self._extract_response(full_output, initial_output, instance_id)
                 protocol = "fallback"
+
+            # Detect silent backend failures (e.g. Codex Bedrock model 404s).
+            # A clean bidirectional reply means the instance actually responded,
+            # so only scan the pane for the pane-derived protocols. Scan only the
+            # NEW output (delta against initial_output) so stale error lines from
+            # previous messages still in scrollback are not re-detected.
+            backend_error: str | None = None
+            if protocol != "bidirectional":
+                scan_output = full_output
+                if scan_output is None:
+                    scan_output = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
+                backend_error = self._detect_backend_error(scan_output, initial_output)
+                # Empty output with no detected error is still a failure to
+                # surface — the instance produced nothing.
+                if not backend_error and not response_text.strip():
+                    backend_error = (
+                        "Instance produced no output (possible backend failure). "
+                        "Inspect the terminal with get_tmux_pane_content for details."
+                    )
+
+            # Set on failure, clear on success — otherwise a transient error
+            # would stick to the instance (and to persisted state) forever.
+            instance["error_message"] = backend_error
+            if backend_error:
+                logger.warning(
+                    f"Backend error detected for instance {instance_id}: {backend_error}"
+                )
 
             # Add response to history
             response_timestamp = datetime.now(UTC)
@@ -1216,6 +1244,11 @@ class TmuxInstanceManager:
                 "instance_id": instance_id,
                 "message_id": message_id,
                 "response": response_text,
+                # NOTE: deliberately no "status" key here — the MCP adapter
+                # branches on `"status" in response` to format job/timeout
+                # replies, so adding it would misroute normal waited replies.
+                # Callers detect failure via a non-null "error".
+                "error": backend_error,
                 "timestamp": response_timestamp.isoformat(),
                 "tokens_used": estimated_tokens,
                 "response_time": response_time,
@@ -1572,7 +1605,9 @@ class TmuxInstanceManager:
                 return True
 
             if instance["state"] != "suspended":
-                logger.warning(f"Cannot resume instance {instance_id}: state is {instance['state']}")
+                logger.warning(
+                    f"Cannot resume instance {instance_id}: state is {instance['state']}"
+                )
                 return False
 
             workspace_dir = instance.get("workspace_dir", "")
@@ -2742,6 +2777,97 @@ class TmuxInstanceManager:
         response = "\n".join(content_lines)
         response = re.sub(r"\n{3,}", "\n\n", response)
         return response.strip()
+
+    # Codex marks error/warning lines in the pane with a leading glyph; model
+    # response prose never does. We use that to gate the weaker, prose-like
+    # patterns so a legitimate reply that merely mentions "rate limit" or
+    # "does not exist" is not misread as a backend failure.
+    _ERROR_GLYPHS = "■▲●⚠✖✗"
+
+    # STRONG signatures: unambiguous backend/transport failures. Matched anywhere
+    # on a new line — these phrasings do not occur in normal model output.
+    _BACKEND_ERROR_STRONG = re.compile(
+        r"unexpected status\s+[45]\d{2}"
+        r"|\b[45]\d{2}\s+(?:not found|bad request|unauthorized|forbidden|"
+        r"internal server error|bad gateway|service unavailable|too many requests)"
+        r"|json-rpc error"
+        r"|engine not found"
+        r"|engine bad request"
+        r"|task submission failed"
+        r"|job registration failed"
+        r"|model metadata for .* not found",
+        re.IGNORECASE,
+    )
+
+    # WEAK signatures: prose-like phrases that also appear in legitimate replies.
+    # Only treated as errors when the line is glyph-marked as a CLI error.
+    _BACKEND_ERROR_WEAK = re.compile(
+        r"does not exist"
+        r"|stream error"
+        r"|stream disconnected before completion"
+        r"|\brate limit(?:ed)?\b"
+        r"|\bquota exceeded\b",
+        re.IGNORECASE,
+    )
+
+    def _detect_backend_error(self, output: str, initial_output: str | None = None) -> str | None:
+        """Scan NEW tmux pane output for a backend/CLI error message.
+
+        The interactive Codex/Claude CLIs surface backend failures (model 404s,
+        JSON-RPC errors, stream errors, …) as lines in the terminal but produce
+        no response text. Without scanning for them the MCP layer reports a
+        silent "completed" with an empty response. This returns a concise error
+        string when such a failure is found, else None.
+
+        Only output produced *after* ``initial_output`` is considered, so error
+        lines left in scrollback by previous messages are not re-detected.
+        Strong backend signatures match anywhere on a new line; weaker prose-like
+        phrases only count when the line is glyph-marked as a CLI error, to avoid
+        false positives on legitimate model responses.
+
+        Args:
+            output: Raw tmux pane content to scan (full scrollback capture).
+            initial_output: Baseline captured before the message was sent; only
+                lines after this baseline are scanned. None scans everything.
+
+        Returns:
+            The detected error message (with any continuation/context line
+            appended), or None if no backend error is present.
+        """
+        if not output:
+            return None
+
+        raw_lines = output.split("\n")
+
+        # Restrict to lines added after the baseline, mirroring _extract_response.
+        if initial_output:
+            initial_lines = initial_output.split("\n")
+            if len(initial_lines) >= 3:
+                anchor = initial_lines[-3:]
+                for i in range(len(raw_lines) - 2):
+                    if raw_lines[i : i + 3] == anchor:
+                        raw_lines = raw_lines[i + 3 :]
+                        break
+
+        for idx, raw_line in enumerate(raw_lines):
+            line = raw_line.strip()
+            if not line:
+                continue
+            glyph_marked = line[0] in self._ERROR_GLYPHS
+            if self._BACKEND_ERROR_STRONG.search(line) or (
+                glyph_marked and self._BACKEND_ERROR_WEAK.search(line)
+            ):
+                # Strip leading CLI status glyphs (Codex uses ■/▲/●, ⚠ etc.)
+                cleaned = re.sub(rf"^[{self._ERROR_GLYPHS}•·\s]+", "", line).strip()
+                # Append an immediately following indented continuation line
+                # (e.g. the "url: https://…" that Codex prints under a 404)
+                # so the error message keeps its context.
+                if idx + 1 < len(raw_lines):
+                    cont = raw_lines[idx + 1]
+                    if cont.startswith((" ", "\t")) and cont.strip():
+                        cleaned = f"{cleaned} {cont.strip()}"
+                return cleaned
+        return None
 
     def _get_role_prompt(self, role: str) -> str:
         """Get system prompt for a role by loading from resources/prompts directory.

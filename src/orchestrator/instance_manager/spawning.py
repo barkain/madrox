@@ -19,6 +19,22 @@ class SpawningMixin:
     tmux_manager: Any
     spawn_instance: Any
 
+    @staticmethod
+    def _apply_response_status(result: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
+        """Fold a send_message reply into a spawn result.
+
+        Surfaces a backend failure (non-null ``error``) as status "failed" with
+        the message in ``error_message``; otherwise marks the spawn "completed".
+        """
+        result["response"] = response.get("response", "")
+        error = response.get("error")
+        if error:
+            result["status"] = "failed"
+            result["error_message"] = error
+        else:
+            result["status"] = "completed"
+        return result
+
     @mcp.tool
     async def spawn_claude(
         self,
@@ -90,8 +106,7 @@ class SpawningMixin:
                 wait_for_response=True,
                 timeout_seconds=timeout_seconds,
             )
-            result["response"] = response.get("response", "")
-            result["status"] = "completed"
+            self._apply_response_status(result, response)
 
         return result
 
@@ -144,10 +159,13 @@ class SpawningMixin:
 
         Args:
             name: Instance name
-            model: OpenAI GPT model to use. Options:
-                   - gpt-5.5 (default)
-                   - gpt-5.4
-                   - gpt-5.4-mini
+            model: OpenAI GPT model to use (default: gpt-5.5). Any model string is
+                   accepted and forwarded to the Codex CLI as-is — Codex routes
+                   through an AWS Bedrock proxy whose valid model ids change
+                   independently of Madrox, so model names are NOT validated
+                   against an allowlist. If the backend does not recognise the
+                   model, the spawn returns status "failed" with the backend
+                   error in error_message (see docs/TROUBLESHOOTING.md).
             sandbox_mode: Sandbox policy for shell commands (read-only, workspace-write, danger-full-access)
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session
@@ -198,8 +216,7 @@ class SpawningMixin:
                 wait_for_response=True,
                 timeout_seconds=timeout_seconds,
             )
-            result["response"] = response.get("response", "")
-            result["status"] = "completed"
+            self._apply_response_status(result, response)
 
         return result
 

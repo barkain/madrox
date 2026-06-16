@@ -1361,3 +1361,94 @@ class TestCriticalFunctions:
         # Assert
         assert "healthy" in health
         assert health["instance_id"] == instance_id
+
+
+# ============================================================================
+# Backend Error Detection Tests (issue #28)
+# ============================================================================
+
+
+class TestDetectBackendError:
+    """Test _detect_backend_error — surfacing silent CLI/backend failures."""
+
+    def test_codex_model_404(self, tmux_manager):
+        """A Codex 404 for an unknown model is detected."""
+        pane = (
+            "■ unexpected status 404 Not Found: The model 'gpt-5.5' does not exist,\n"
+            "  url: https://bedrock-mantle.us-east-1.api.aws/openai/v1/responses\n"
+        )
+        error = tmux_manager._detect_backend_error(pane)
+        assert error is not None
+        assert "404" in error
+        assert "does not exist" in error
+        # Continuation line with the URL is appended for context
+        assert "bedrock-mantle" in error
+        # Leading glyph is stripped
+        assert not error.startswith("■")
+
+    def test_codex_jsonrpc_engine_not_found(self, tmux_manager):
+        """A JSON-RPC engine error is detected."""
+        pane = (
+            "■ JSON-RPC error -32602: Job registration failed: Engine bad request:\n"
+            "  Task submission failed with status 404 Not Found: Engine not found\n"
+        )
+        error = tmux_manager._detect_backend_error(pane)
+        assert error is not None
+        assert "JSON-RPC error" in error
+
+    def test_model_metadata_warning(self, tmux_manager):
+        """A model-metadata-not-found warning is detected."""
+        pane = "⚠ Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata"
+        error = tmux_manager._detect_backend_error(pane)
+        assert error is not None
+        assert "Model metadata" in error
+        assert not error.startswith("⚠")
+
+    def test_rate_limit_glyph_marked(self, tmux_manager):
+        """A glyph-marked rate-limit error line is detected (weak pattern, gated)."""
+        pane = "■ 429 Too Many Requests: rate limit exceeded"
+        error = tmux_manager._detect_backend_error(pane)
+        assert error is not None
+
+    def test_clean_output_no_error(self, tmux_manager):
+        """Normal response output produces no error."""
+        pane = "codex>\nHere is the answer you asked for.\nPROBE_OK\n›\n"
+        assert tmux_manager._detect_backend_error(pane) is None
+
+    def test_legit_response_prose_not_flagged(self, tmux_manager):
+        """A legitimate reply that merely mentions weak phrases is NOT a failure."""
+        # No leading error glyph -> weak patterns must not fire.
+        pane = (
+            "codex>\n"
+            "No, that path does not exist on disk.\n"
+            "If you hit a rate limit, back off and retry.\n"
+            "›\n"
+        )
+        assert tmux_manager._detect_backend_error(pane) is None
+
+    def test_strong_signature_unanchored(self, tmux_manager):
+        """A strong backend signature is detected even without a glyph."""
+        pane = "  unexpected status 503 Service Unavailable\n"
+        assert tmux_manager._detect_backend_error(pane) is not None
+
+    def test_scoped_to_new_output(self, tmux_manager):
+        """An error left in scrollback by a prior message is not re-detected."""
+        # Captures come from "\n".join(...) — no trailing newline, as in prod.
+        initial = "\n".join(
+            [
+                "codex>",
+                "■ unexpected status 404 Not Found: model does not exist",
+                "  url: https://bedrock-mantle.example/v1",
+                "›",
+            ]
+        )
+        # New output after the baseline is a clean successful reply.
+        full = initial + "\n" + "\n".join(["PROBE_OK", "The task completed fine.", "›"])
+        assert tmux_manager._detect_backend_error(full, initial) is None
+        # Without the baseline, the stale error is (re-)detected.
+        assert tmux_manager._detect_backend_error(full) is not None
+
+    def test_empty_output(self, tmux_manager):
+        """Empty output yields no detected error (handled separately)."""
+        assert tmux_manager._detect_backend_error("") is None
+        assert tmux_manager._detect_backend_error(None) is None

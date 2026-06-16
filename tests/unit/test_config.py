@@ -152,19 +152,24 @@ class TestLoadModelConfig:
 
 
 class TestValidateModel:
-    """Test validate_model function."""
+    """Test validate_model function.
+
+    Model names are NOT validated against an allowlist (see issue #28): any
+    non-empty model string is passed through as-is, and only the provider
+    default is sourced from config when no model is given.
+    """
 
     @pytest.fixture
     def mock_config(self):
         """Mock configuration for testing."""
         return {
             "codex": {
-                "default": "gpt-5-codex",
-                "allowed_models": ["gpt-5-codex"],
+                "default": "gpt-5.5",
+                "known_models": ["gpt-5.5"],
             },
             "claude": {
                 "default": "claude-sonnet-4-5",
-                "allowed_models": [
+                "known_models": [
                     "claude-sonnet-4-5",
                     "claude-opus-4-1",
                     "claude-haiku-4-5",
@@ -173,94 +178,56 @@ class TestValidateModel:
         }
 
     def test_validate_model_claude_default(self, mock_config):
-        """Test validating Claude provider with None model (should return default)."""
+        """Test resolving Claude provider with None model (should return default)."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
             result = validate_model("claude", None)
             assert result == "claude-sonnet-4-5"
 
     def test_validate_model_codex_default(self, mock_config):
-        """Test validating Codex provider with None model (should return default)."""
+        """Test resolving Codex provider with None model (should return default)."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
             result = validate_model("codex", None)
-            assert result == "gpt-5-codex"
+            assert result == "gpt-5.5"
 
-    def test_validate_model_claude_valid_sonnet(self, mock_config):
-        """Test validating a valid Claude Sonnet model."""
+    def test_validate_model_passthrough_known(self, mock_config):
+        """A known model is passed through unchanged."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            result = validate_model("claude", "claude-sonnet-4-5")
-            assert result == "claude-sonnet-4-5"
+            assert validate_model("claude", "claude-opus-4-1") == "claude-opus-4-1"
+            assert validate_model("codex", "gpt-5.5") == "gpt-5.5"
 
-    def test_validate_model_claude_valid_opus(self, mock_config):
-        """Test validating a valid Claude Opus model."""
+    def test_validate_model_passthrough_unknown(self, mock_config):
+        """An unknown model is passed through as-is (no allowlist rejection)."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            result = validate_model("claude", "claude-opus-4-1")
-            assert result == "claude-opus-4-1"
+            # Previously these raised ValueError — now they pass through.
+            assert validate_model("claude", "some-future-model") == "some-future-model"
+            assert validate_model("codex", "openai.gpt-5.3-codex") == "openai.gpt-5.3-codex"
+            assert validate_model("claude", "CLAUDE-SONNET-4-5") == "CLAUDE-SONNET-4-5"
+            assert validate_model("claude", "claude@sonnet#4.5") == "claude@sonnet#4.5"
 
-    def test_validate_model_claude_valid_haiku(self, mock_config):
-        """Test validating a valid Claude Haiku model."""
+    def test_validate_model_unknown_provider_passthrough(self, mock_config):
+        """An explicit model is returned even for an unknown provider."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            result = validate_model("claude", "claude-haiku-4-5")
-            assert result == "claude-haiku-4-5"
+            assert validate_model("unknown-provider", "some-model") == "some-model"
 
-    def test_validate_model_codex_valid(self, mock_config):
-        """Test validating a valid Codex model."""
+    def test_validate_model_empty_string_uses_default(self, mock_config):
+        """Empty string falls back to the provider default."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            result = validate_model("codex", "gpt-5-codex")
-            assert result == "gpt-5-codex"
+            assert validate_model("claude", "") == "claude-sonnet-4-5"
 
-    def test_validate_model_invalid_provider(self, mock_config):
-        """Test validating with unknown provider."""
+    def test_validate_model_whitespace_uses_default(self, mock_config):
+        """Whitespace-only model falls back to the provider default."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            with pytest.raises(ValueError) as exc_info:
-                validate_model("unknown-provider", "some-model")
+            assert validate_model("claude", "   ") == "claude-sonnet-4-5"
 
-            assert "Unknown provider: unknown-provider" in str(exc_info.value)
-
-    def test_validate_model_invalid_claude_model(self, mock_config):
-        """Test validating an invalid Claude model."""
+    def test_validate_model_no_default_for_provider(self, mock_config):
+        """Requesting a default for an unknown provider raises."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
             with pytest.raises(ValueError) as exc_info:
-                validate_model("claude", "invalid-model")
-
-            error_msg = str(exc_info.value)
-            assert "Invalid model 'invalid-model' for claude provider" in error_msg
-            assert "Allowed models:" in error_msg
-            assert "claude-sonnet-4-5" in error_msg
-
-    def test_validate_model_invalid_codex_model(self, mock_config):
-        """Test validating an invalid Codex model."""
-        with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            with pytest.raises(ValueError) as exc_info:
-                validate_model("codex", "gpt-4-turbo")
-
-            error_msg = str(exc_info.value)
-            assert "Invalid model 'gpt-4-turbo' for codex provider" in error_msg
-            assert "Allowed models:" in error_msg
-            assert "gpt-5-codex" in error_msg
-
-    def test_validate_model_case_sensitive(self, mock_config):
-        """Test that model validation is case-sensitive."""
-        with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            # Uppercase should fail
-            with pytest.raises(ValueError):
-                validate_model("claude", "CLAUDE-SONNET-4-5")
-
-    def test_validate_model_empty_string(self, mock_config):
-        """Test validating with empty string model (should fail)."""
-        with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            with pytest.raises(ValueError) as exc_info:
-                validate_model("claude", "")
-
-            assert "Invalid model '' for claude provider" in str(exc_info.value)
-
-    def test_validate_model_whitespace_model(self, mock_config):
-        """Test validating with whitespace-only model name."""
-        with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            with pytest.raises(ValueError):
-                validate_model("claude", "   ")
+                validate_model("unknown-provider", None)
+            assert "No default model configured" in str(exc_info.value)
 
     def test_validate_model_file_not_found_propagates(self):
-        """Test that FileNotFoundError from config loading propagates."""
+        """FileNotFoundError from config loading propagates when a default is needed."""
         with patch(
             "orchestrator.config._load_model_config",
             side_effect=FileNotFoundError("Config not found"),
@@ -268,8 +235,16 @@ class TestValidateModel:
             with pytest.raises(FileNotFoundError):
                 validate_model("claude", None)
 
+    def test_validate_model_explicit_model_skips_config(self):
+        """An explicit model never touches the config loader."""
+        with patch(
+            "orchestrator.config._load_model_config",
+            side_effect=AssertionError("config should not be loaded for explicit model"),
+        ):
+            assert validate_model("claude", "claude-opus-4-6") == "claude-opus-4-6"
+
     def test_validate_model_yaml_error_propagates(self):
-        """Test that YAML parsing errors propagate."""
+        """YAML parsing errors propagate when resolving a default."""
         with patch(
             "orchestrator.config._load_model_config",
             side_effect=ValueError("Failed to parse YAML"),
@@ -278,79 +253,22 @@ class TestValidateModel:
                 validate_model("claude", None)
             assert "Failed to parse YAML" in str(exc_info.value)
 
-    def test_validate_model_all_claude_models(self, mock_config):
-        """Test validating all allowed Claude models."""
-        with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            allowed_models = mock_config["claude"]["allowed_models"]
-
-            for model in allowed_models:
-                result = validate_model("claude", model)
-                assert result == model
-
-    def test_validate_model_provider_case_sensitive(self, mock_config):
-        """Test that provider name is case-sensitive."""
-        with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            # Uppercase provider should fail
-            with pytest.raises(ValueError) as exc_info:
-                validate_model("CLAUDE", "claude-sonnet-4-5")
-
-            assert "Unknown provider: CLAUDE" in str(exc_info.value)
-
-    def test_validate_model_with_special_characters(self, mock_config):
-        """Test model names with special characters."""
-        with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            with pytest.raises(ValueError):
-                validate_model("claude", "claude@sonnet#4.5")
-
     def test_validate_model_returns_string(self, mock_config):
         """Test that validate_model always returns a string."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            result = validate_model("claude", None)
-            assert isinstance(result, str)
-
-            result = validate_model("claude", "claude-opus-4-1")
-            assert isinstance(result, str)
+            assert isinstance(validate_model("claude", None), str)
+            assert isinstance(validate_model("claude", "claude-opus-4-1"), str)
 
     def test_validate_model_config_missing_default(self):
-        """Test behavior when provider config is missing default key."""
+        """A provider config missing its default raises when a default is needed."""
         broken_config = {
             "claude": {
-                "allowed_models": ["claude-sonnet-4-5"],
+                "known_models": ["claude-sonnet-4-5"],
                 # Missing "default" key
             }
         }
 
         with patch("orchestrator.config._load_model_config", return_value=broken_config):
-            with pytest.raises(KeyError):
+            with pytest.raises(ValueError) as exc_info:
                 validate_model("claude", None)
-
-    def test_validate_model_config_missing_allowed_models(self):
-        """Test behavior when provider config is missing allowed_models key."""
-        broken_config = {
-            "claude": {
-                "default": "claude-sonnet-4-5",
-                # Missing "allowed_models" key
-            }
-        }
-
-        with patch("orchestrator.config._load_model_config", return_value=broken_config):
-            with pytest.raises(KeyError):
-                validate_model("claude", "claude-sonnet-4-5")
-
-    def test_validate_model_empty_allowed_models(self):
-        """Test behavior when allowed_models list is empty."""
-        config_with_empty_list = {
-            "claude": {
-                "default": "claude-sonnet-4-5",
-                "allowed_models": [],
-            }
-        }
-
-        with patch("orchestrator.config._load_model_config", return_value=config_with_empty_list):
-            # Default should still work
-            result = validate_model("claude", None)
-            assert result == "claude-sonnet-4-5"
-
-            # But explicit model should fail since allowed list is empty
-            with pytest.raises(ValueError):
-                validate_model("claude", "claude-sonnet-4-5")
+            assert "No default model configured" in str(exc_info.value)
