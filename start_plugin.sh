@@ -67,18 +67,30 @@ trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 
-# --- Resolve interpreter (prefer venv python; uv bootstraps it on first run) ---
+# --- Bootstrap the venv, then run python directly --------------------------
+# Sync the project environment up front (creates .venv on first run, applies any
+# dependency changes after a plugin update — the work `uv run` used to do on every
+# invocation). We then launch the venv's python *directly* in both the backend and
+# proxy below, so THIS shell is their parent. That keeps signal delivery simple and
+# lets the backend's parent-death watchdog fire if this shell is killed — which it
+# could NOT do behind a `uv run` wrapper (only `uv` would reparent to PID 1).
 VENV_PYTHON="$PLUGIN_ROOT/.venv/bin/python"
+echo "Syncing dependencies (uv sync)..." >&2
+if ! uv sync --directory "$PLUGIN_ROOT" >"$LOG_DIR/uv-sync.log" 2>&1; then
+  echo "WARNING: 'uv sync' failed; see $LOG_DIR/uv-sync.log" >&2
+  tail -20 "$LOG_DIR/uv-sync.log" >&2
+fi
 
 # --- 1. Start HTTP backend ---
 echo "Starting Madrox HTTP backend on port $BE_PORT..." >&2
-# Launch the python backend directly when the venv exists so this shell is its
-# direct parent (no `uv run` indirection). That keeps signal delivery simple and
-# lets the backend's parent-death watchdog notice if this shell is killed.
 if [ -x "$VENV_PYTHON" ]; then
   MADROX_TRANSPORT=http "$VENV_PYTHON" "$PLUGIN_ROOT/run_orchestrator.py" \
     >"$LOG_DIR/backend.log" 2>&1 &
 else
+  # Degraded fallback: venv could not be created. The backend still runs, but
+  # behind `uv run` the parent-death watchdog won't apply to it (reap_orphans on
+  # the next launch still bounds any leak).
+  echo "WARNING: venv python missing — falling back to 'uv run' for backend" >&2
   MADROX_TRANSPORT=http uv run --directory "$PLUGIN_ROOT" python run_orchestrator.py \
     >"$LOG_DIR/backend.log" 2>&1 &
 fi
