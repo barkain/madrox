@@ -46,18 +46,32 @@ shutdown_trees() {
 
 # Reclaim orphans left by previous sessions that died uncleanly.
 #
-# Targets only processes that (a) reference $PLUGIN_ROOT in their command line and
-# (b) have reparented to PID 1 (truly orphaned). Live concurrent sessions keep a
-# live shell parent, so their ppid is never 1 and they are never touched.
+# Targets only processes that (a) reference the reap scope in their command line
+# and (b) have reparented to PID 1 (truly orphaned). Live concurrent sessions keep
+# a live shell parent, so their ppid is never 1 and they are never touched.
+#
+# Scope: for an installed plugin the path is
+#   .../plugins/cache/<marketplace>/madrox/<version>
+# We reap across ALL versions (the parent ".../madrox" dir) so a freshly-updated
+# plugin also reclaims orphans left by the version it replaced. For a dev/source
+# checkout (no plugins/cache marker) the scope stays strictly $PLUGIN_ROOT.
 #
 # Requires PLUGIN_ROOT to be set by the caller.
 reap_orphans() {
   : "${PLUGIN_ROOT:?reap_orphans requires PLUGIN_ROOT}"
+
+  local scope="$PLUGIN_ROOT"
+  case "$PLUGIN_ROOT" in
+    */plugins/cache/*/madrox/*) scope="$(dirname "$PLUGIN_ROOT")" ;;
+  esac
+
   local pid ppid roots=""
   while read -r pid ppid; do
     [ "$ppid" = "1" ] || continue
+    # Match the trailing slash so "$scope" only matches paths *under* the scope
+    # dir (never a sibling like "${scope}-other").
     case "$(ps -o command= -p "$pid" 2>/dev/null)" in
-      *"$PLUGIN_ROOT"*) roots="$roots $pid" ;;
+      *"$scope"/*) roots="$roots $pid" ;;
     esac
   done < <(ps -axo pid=,ppid=)
 

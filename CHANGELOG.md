@@ -5,6 +5,18 @@ All notable changes to Madrox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2] - 2026-06-20
+
+### Fixed
+
+- **Severe subprocess leak — orphaned orchestrator stacks (#30)** — Every plugin session leaked its entire stack (HTTP backend, `multiprocessing.Manager` daemon, `resource_tracker`, frontend) to `launchd`. Over many sessions these accumulated into the hundreds, exhausting RAM and pinning swap. Fixed at the source in `start_plugin.sh`:
+  - The STDIO proxy is no longer started with `exec` (which destroyed the cleanup `trap`); it runs as a child so the shell tears the backend/frontend down on session end.
+  - `cleanup()` now terminates each managed process *tree* (TERM → grace → KILL), reaching the `multiprocessing` children that `uv run` indirection previously hid.
+  - On startup, `reap_orphans` reclaims processes left by previous sessions that died uncleanly (e.g. SIGKILL) — scoped across all installed versions, so an updated plugin also cleans up orphans left by the version it replaced.
+  - The venv is synced up front (`uv sync`) and the backend/proxy launch `.venv/bin/python` directly, so the launcher shell is their parent. A new parent-death watchdog in the backend self-terminates it (running the lifespan teardown that kills the Manager daemon) if it is orphaned to PID 1.
+
+---
+
 ## [1.8.1] - 2026-06-16
 
 ### Fixed

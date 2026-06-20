@@ -149,6 +149,30 @@ def test_reap_orphans_ignores_unrelated_plugin_root(cleanup_marker):
     assert len(_pids_matching(marker)) >= 2, "unrelated processes were wrongly reaped"
 
 
+def test_reap_orphans_reaps_across_plugin_versions(cleanup_marker):
+    """An updated install reaps orphans left by the version it replaced.
+
+    For a plugins/cache install path, reap scope is the version-agnostic
+    ".../madrox" dir, so launching a new version reclaims old-version orphans.
+    """
+    base = f"/tmp/plugins/cache/barkain-plugins/madrox_{uuid.uuid4().hex}"
+    old_version_root = f"{base}/madrox/1.8.1"
+    new_version_root = f"{base}/madrox/1.8.2"
+    cleanup_marker.append(old_version_root)
+
+    # Orphan tree from the OLD version.
+    _spawn_orphan_tree(old_version_root)
+    assert _wait_for(lambda: len(_pids_matching(old_version_root)) >= 2)
+
+    # The NEW version's launch must reap the old version's orphans.
+    result = _run_helper("reap_orphans", plugin_root=new_version_root)
+    assert result.returncode == 0, result.stderr
+
+    assert _wait_for(lambda: _pids_matching(old_version_root) == []), (
+        f"old-version orphans survived: {_pids_matching(old_version_root)}"
+    )
+
+
 def test_kill_tree_kills_descendants(cleanup_marker):
     """kill_tree terminates a process and all of its descendants."""
     marker = _marker()
