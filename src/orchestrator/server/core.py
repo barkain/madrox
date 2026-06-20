@@ -1131,7 +1131,39 @@ class ClaudeOrchestratorServer:
             log_level=self.config.log_level.lower(),
         )
         server = uvicorn.Server(config)
-        await server.serve()
+
+        # Parent-death watchdog (issue #30): if our launching shell dies and we
+        # reparent to PID 1, trigger a graceful uvicorn shutdown so the lifespan
+        # teardown runs (which shuts down the multiprocessing.Manager daemon) and
+        # we don't linger as an orphan leaking subprocesses.
+        watchdog_task = asyncio.create_task(self._parent_death_watchdog(server))
+        try:
+            await server.serve()
+        finally:
+            watchdog_task.cancel()
+
+    async def _parent_death_watchdog(self, server: Any) -> None:
+        """Trigger graceful shutdown if our parent process dies (we reparent to PID 1).
+
+        On Linux/macOS an orphaned process is reparented to init (PID 1). Polling
+        ``os.getppid()`` is a portable substitute for ``PR_SET_PDEATHSIG`` and lets
+        an orphaned backend tear itself down instead of leaking. No-op if we were
+        already started by PID 1 (e.g. under a process supervisor).
+        """
+        if os.getppid() == 1:
+            # Started detached already — nothing meaningful to watch.
+            return
+        try:
+            while True:
+                await asyncio.sleep(2.0)
+                if os.getppid() == 1:
+                    logger.warning(
+                        "Parent process died (reparented to PID 1) — initiating graceful shutdown"
+                    )
+                    server.should_exit = True
+                    return
+        except asyncio.CancelledError:
+            pass
 
     async def _get_audit_logs(
         self, limit: int = 100, since: str | None = None, root_instance_id: str | None = None
