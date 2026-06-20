@@ -86,6 +86,9 @@ python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --tb=short --strict-markers"
 pythonpath = ["src"]
 asyncio_mode = "auto"
+markers = [
+    "integration: end-to-end tests that spin up real processes (slower; deselect with -m 'not integration')",
+]
 
 [tool.ruff]
 line-length = 100
