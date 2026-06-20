@@ -9,12 +9,27 @@
 #
 # STDOUT is reserved for the STDIO MCP protocol — all other output goes to stderr/logs.
 #
+# Process lifecycle (see issue #30 — subprocess leak):
+#   - The STDIO proxy is run as a *child* (not via `exec`) so this shell — and its
+#     cleanup trap — stays alive to tear down the backend/frontend when the session ends.
+#   - cleanup() kills each managed process *tree* (TERM, grace, then KILL) so the
+#     backend's multiprocessing.Manager daemon / resource_tracker children don't orphan.
+#   - reap_orphans() reclaims processes left behind by previous sessions that died
+#     uncleanly (e.g. SIGKILL), so orphans can't accumulate across runs.
+#
 
 set -e
 
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")" && pwd)}"
 LOG_DIR="${LOG_DIR:-/tmp/madrox_logs}/$$"
 mkdir -p "$LOG_DIR"
+
+# Process-lifecycle helpers: kill_tree, tree_alive, shutdown_trees, reap_orphans
+# shellcheck source=scripts/proc_lifecycle.sh
+. "$PLUGIN_ROOT/scripts/proc_lifecycle.sh"
+
+# Reclaim orphans left behind by previous sessions that died uncleanly.
+reap_orphans || true
 
 # --- Find free ports ---
 find_free_port() {
@@ -34,18 +49,39 @@ echo "Session ports: backend=$BE_PORT, frontend=$FE_PORT" >&2
 
 BE_PID=""
 FE_PID=""
+PROXY_PID=""
+CLEANED=""
 
 cleanup() {
-  [ -n "$FE_PID" ] && kill "$FE_PID" 2>/dev/null
-  [ -n "$BE_PID" ] && kill "$BE_PID" 2>/dev/null
-  wait 2>/dev/null
+  # Idempotent — runs at most once (EXIT trap may fire after a signal trap).
+  [ -n "$CLEANED" ] && return
+  CLEANED=1
+
+  # TERM each tree, allow the backend to shut down gracefully (uvicorn lifespan
+  # tears down the multiprocessing.Manager daemon), then KILL any survivors.
+  shutdown_trees "$PROXY_PID" "$FE_PID" "$BE_PID"
+  wait 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# Translate signals into a normal exit so the single EXIT trap does the cleanup.
+trap 'exit 143' TERM
+trap 'exit 130' INT
+
+# --- Resolve interpreter (prefer venv python; uv bootstraps it on first run) ---
+VENV_PYTHON="$PLUGIN_ROOT/.venv/bin/python"
 
 # --- 1. Start HTTP backend ---
 echo "Starting Madrox HTTP backend on port $BE_PORT..." >&2
-MADROX_TRANSPORT=http uv run --directory "$PLUGIN_ROOT" python run_orchestrator.py \
-  >"$LOG_DIR/backend.log" 2>&1 &
+# Launch the python backend directly when the venv exists so this shell is its
+# direct parent (no `uv run` indirection). That keeps signal delivery simple and
+# lets the backend's parent-death watchdog notice if this shell is killed.
+if [ -x "$VENV_PYTHON" ]; then
+  MADROX_TRANSPORT=http "$VENV_PYTHON" "$PLUGIN_ROOT/run_orchestrator.py" \
+    >"$LOG_DIR/backend.log" 2>&1 &
+else
+  MADROX_TRANSPORT=http uv run --directory "$PLUGIN_ROOT" python run_orchestrator.py \
+    >"$LOG_DIR/backend.log" 2>&1 &
+fi
 BE_PID=$!
 
 # Wait for backend to be ready (configurable timeout, default 60s)
@@ -81,14 +117,25 @@ if [ -d "$FRONTEND_DIR" ]; then
   FE_PID=$!
 fi
 
-# --- 3. Run STDIO MCP proxy (foreground) ---
-# This process owns stdout for the MCP protocol
+# --- 3. Run STDIO MCP proxy (child, NOT exec) ---
+# Running it as a child (rather than `exec`-ing) keeps this shell — and the
+# cleanup trap — alive so the backend/frontend are torn down when the proxy
+# exits or this script is signalled.
+#
+# The proxy speaks the MCP protocol over stdin/stdout, so it must inherit OUR
+# stdin (Claude's pipe). In a non-interactive shell, a backgrounded command's
+# stdin would otherwise be redirected from /dev/null; the explicit `0<&0`
+# redirection suppresses that default and forwards our stdin to the proxy.
 echo "Madrox dashboard available at: http://localhost:$FE_PORT" >&2
 export MADROX_FRONTEND_PORT="$FE_PORT"
-# Use venv Python directly to skip uv resolution overhead (venv already created by backend)
-VENV_PYTHON="$PLUGIN_ROOT/.venv/bin/python"
 if [ -x "$VENV_PYTHON" ]; then
-    exec "$VENV_PYTHON" "$PLUGIN_ROOT/run_orchestrator.py"
+  "$VENV_PYTHON" "$PLUGIN_ROOT/run_orchestrator.py" 0<&0 &
 else
-    exec uv run --directory "$PLUGIN_ROOT" python run_orchestrator.py
+  uv run --directory "$PLUGIN_ROOT" python run_orchestrator.py 0<&0 &
 fi
+PROXY_PID=$!
+
+# Wait for the proxy. `wait` is interruptible by traps, so a SIGTERM/SIGINT here
+# runs cleanup immediately; a clean proxy exit (Claude closes stdin) falls
+# through to the EXIT trap.
+wait "$PROXY_PID"
