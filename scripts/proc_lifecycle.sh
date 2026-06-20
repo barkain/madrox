@@ -69,8 +69,10 @@ reap_orphans() {
   while read -r pid ppid; do
     [ "$ppid" = "1" ] || continue
     # Match the trailing slash so "$scope" only matches paths *under* the scope
-    # dir (never a sibling like "${scope}-other").
-    case "$(ps -o command= -p "$pid" 2>/dev/null)" in
+    # dir (never a sibling like "${scope}-other"). `-ww` disables ps's
+    # column-width truncation (Linux truncates to COLUMNS by default), which would
+    # otherwise drop the long venv path from the command line and miss matches.
+    case "$(ps -ww -o command= -p "$pid" 2>/dev/null)" in
       *"$scope"/*) roots="$roots $pid" ;;
     esac
   done < <(ps -axo pid=,ppid=)

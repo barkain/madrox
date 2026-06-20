@@ -44,7 +44,11 @@ def _ppid(pid: int) -> int | None:
 
 def _pids_matching(marker: str) -> list[int]:
     """Return PIDs whose command line contains the marker (excluding the grep)."""
-    out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+    # `-ww` disables ps column-width truncation (Linux truncates to COLUMNS by
+    # default), which would otherwise drop the marker from the end of long lines.
+    out = subprocess.run(
+        ["ps", "-ww", "-axo", "pid=,command="], capture_output=True, text=True
+    ).stdout
     pids = []
     for line in out.splitlines():
         line = line.strip()
