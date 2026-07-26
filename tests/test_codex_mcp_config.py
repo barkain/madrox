@@ -4,10 +4,13 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from orchestrator.tmux_instance_manager import TmuxInstanceManager
 
 
-def test_codex_mcp_configuration():
+@pytest.mark.asyncio
+async def test_codex_mcp_configuration():
     """Test that Codex instances configure MCP servers using `codex mcp add` commands."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
@@ -33,7 +36,7 @@ def test_codex_mcp_configuration():
     mock_pane.send_keys = capture_command
 
     # Run the configuration
-    manager._configure_mcp_servers(mock_pane, instance)
+    await manager._configure_mcp_servers(mock_pane, instance)
 
     # Verify `codex mcp add` commands were sent (playwright + madrox)
     assert len(sent_commands) == 2, (
@@ -54,7 +57,8 @@ def test_codex_mcp_configuration():
     assert "_mcp_config_path" not in instance
 
 
-def test_codex_mcp_with_env_vars():
+@pytest.mark.asyncio
+async def test_codex_mcp_with_env_vars():
     """Test Codex MCP configuration with environment variables."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
@@ -79,7 +83,7 @@ def test_codex_mcp_with_env_vars():
     sent_commands = []
     mock_pane.send_keys = lambda cmd, enter=False: sent_commands.append(cmd)
 
-    manager._configure_mcp_servers(mock_pane, instance)
+    await manager._configure_mcp_servers(mock_pane, instance)
 
     # Should have 2 commands: github + madrox (always added)
     assert len(sent_commands) == 2, (
@@ -94,7 +98,8 @@ def test_codex_mcp_with_env_vars():
     assert "codex mcp add madrox" in sent_commands[1]
 
 
-def test_codex_madrox_stdio_support():
+@pytest.mark.asyncio
+async def test_codex_madrox_stdio_support():
     """Test that Codex instances get Madrox via stdio transport (not HTTP)."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
@@ -114,7 +119,7 @@ def test_codex_madrox_stdio_support():
     mock_pane.send_keys = lambda cmd, enter=False: sent_commands.append(cmd)
 
     # Run configuration - Madrox should be added via stdio
-    manager._configure_mcp_servers(mock_pane, instance)
+    await manager._configure_mcp_servers(mock_pane, instance)
 
     # Should send 1 command for Madrox via stdio transport
     assert len(sent_commands) == 1, (
@@ -124,7 +129,8 @@ def test_codex_madrox_stdio_support():
     assert "MADROX_TRANSPORT=stdio" in sent_commands[0]
 
 
-def test_claude_still_uses_json_config():
+@pytest.mark.asyncio
+async def test_claude_still_uses_json_config():
     """Verify that Claude instances still use JSON config files. Madrox is always included."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
@@ -142,7 +148,7 @@ def test_claude_still_uses_json_config():
 
     mock_pane = MagicMock()
 
-    manager._configure_mcp_servers(mock_pane, instance)
+    await manager._configure_mcp_servers(mock_pane, instance)
 
     # Verify config file WAS created for Claude
     config_file = instance["workspace_dir"] / ".claude_mcp_config.json"

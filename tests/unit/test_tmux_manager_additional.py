@@ -221,6 +221,10 @@ class TestSessionManagement:
 
                 manager.instances[instance_id] = instance
 
+                # Pane reports Codex as ready so the bootstrap is typed into the
+                # CLI rather than the shell.
+                mocks["pane"].cmd = MagicMock(return_value=MagicMock(stdout=["OpenAI Codex", "›"]))
+
                 # Execute
                 await manager._initialize_tmux_session(instance_id)
 
@@ -293,7 +297,7 @@ class TestMessageSending:
                 pane.cmd = MagicMock(return_value=MagicMock(stdout=["Test output"]))
 
                 # Execute
-                manager._send_multiline_message_to_pane(pane, message)
+                await manager._send_multiline_message_to_pane(pane, message)
 
                 # Assert - send_keys should be called multiple times
                 # At least: 3 lines + 2 C-j + 1 Enter = 6 calls
@@ -450,7 +454,10 @@ class TestUtilityFunctions:
 class TestMCPConfiguration:
     """Test MCP server configuration."""
 
-    def test_configure_mcp_servers_http(self, mock_config: dict[str, Any], tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_configure_mcp_servers_http(
+        self, mock_config: dict[str, Any], tmp_path: Path
+    ) -> None:
         """Test configuring HTTP MCP server."""
         mocks = create_mock_libtmux()
 
@@ -479,12 +486,13 @@ class TestMCPConfiguration:
                 pane = mocks["pane"]
 
                 # Execute
-                manager._configure_mcp_servers(pane, instance)
+                await manager._configure_mcp_servers(pane, instance)
 
                 # Assert
                 assert "_mcp_config_path" in instance
 
-    def test_configure_mcp_servers_auto_madrox(
+    @pytest.mark.asyncio
+    async def test_configure_mcp_servers_auto_madrox(
         self, mock_config: dict[str, Any], tmp_path: Path
     ) -> None:
         """Test auto-addition of madrox MCP server."""
@@ -510,12 +518,13 @@ class TestMCPConfiguration:
                 pane = mocks["pane"]
 
                 # Execute
-                manager._configure_mcp_servers(pane, instance)
+                await manager._configure_mcp_servers(pane, instance)
 
                 # Assert
                 assert "madrox" in instance["mcp_servers"]
 
-    def test_configure_mcp_servers_invalid_json(
+    @pytest.mark.asyncio
+    async def test_configure_mcp_servers_invalid_json(
         self, mock_config: dict[str, Any], tmp_path: Path
     ) -> None:
         """Test handling invalid JSON string for mcp_servers."""
@@ -541,7 +550,7 @@ class TestMCPConfiguration:
                 pane = mocks["pane"]
 
                 # Execute - should handle gracefully (logs error but doesn't convert)
-                manager._configure_mcp_servers(pane, instance)
+                await manager._configure_mcp_servers(pane, instance)
 
                 # Assert - the invalid string remains (error logged)
                 # But if it's not a dict, it gets set to {} in the code

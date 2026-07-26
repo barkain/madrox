@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from ..compat import UTC
+from ..harnesses import is_supported_harness
 from ._mcp import mcp
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ class MessagingMixin:
 
         instance = self.instances[instance_id]
 
-        if instance.get("instance_type") in ["claude", "codex"]:
+        if is_supported_harness(instance.get("instance_type")):
             result = await self.tmux_manager.send_message(
                 instance_id=instance_id,
                 message=message,

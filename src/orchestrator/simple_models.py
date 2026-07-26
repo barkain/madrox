@@ -107,7 +107,7 @@ class SpawnInstanceRequest:
         name: str,
         role: InstanceRole = InstanceRole.GENERAL,
         system_prompt: str | None = None,
-        model: str = "claude-4-sonnet-20250514",
+        model: str | None = None,  # None = harness default (config/models.yaml)
         max_tokens: int = 4096,
         temperature: float = 0.0,
         workspace_dir: str | None = None,
@@ -230,7 +230,7 @@ class OrchestratorConfig:
         server_host: str = "localhost",
         server_port: int = 8001,
         anthropic_api_key: str = "",
-        default_model: str = "claude-4-sonnet-20250514",
+        default_model: str | None = None,  # None = harness default (config/models.yaml)
         max_concurrent_instances: int = 10,
         max_tokens_per_instance: int = 100000,
         instance_timeout_minutes: int = 30,

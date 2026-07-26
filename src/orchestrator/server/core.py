@@ -844,7 +844,7 @@ class ClaudeOrchestratorServer:
         auto_generate_name: bool = False,
         role: str = "general",
         system_prompt: str | None = None,
-        model: str = "claude-4-sonnet-20250514",
+        model: str | None = None,  # None = harness default (config/models.yaml)
         max_tokens: int = 4096,
         temperature: float = 0.0,
         workspace_dir: str | None = None,

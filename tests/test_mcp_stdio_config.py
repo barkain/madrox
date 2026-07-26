@@ -4,10 +4,13 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from orchestrator.tmux_instance_manager import TmuxInstanceManager
 
 
-def test_mcp_stdio_config_format():
+@pytest.mark.asyncio
+async def test_mcp_stdio_config_format():
     """Test that stdio MCP configs are generated in the correct format for Claude Code."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
@@ -29,7 +32,7 @@ def test_mcp_stdio_config_format():
     pane = MockPane()
 
     # Run the configuration
-    manager._configure_mcp_servers(pane, instance)
+    await manager._configure_mcp_servers(pane, instance)
 
     # Read the generated config
     config_path = instance["workspace_dir"] / ".claude_mcp_config.json"
@@ -52,7 +55,8 @@ def test_mcp_stdio_config_format():
     assert playwright_config["args"] == ["@playwright/mcp@latest"]
 
 
-def test_mcp_http_config_format():
+@pytest.mark.asyncio
+async def test_mcp_http_config_format():
     """Test that http MCP configs include the type field and Madrox is always added."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
@@ -71,7 +75,7 @@ def test_mcp_http_config_format():
 
     pane = MockPane()
 
-    manager._configure_mcp_servers(pane, instance)
+    await manager._configure_mcp_servers(pane, instance)
 
     config_path = instance["workspace_dir"] / ".claude_mcp_config.json"
     with open(config_path) as f:
@@ -86,7 +90,8 @@ def test_mcp_http_config_format():
     assert "url" in madrox_config
 
 
-def test_mcp_transport_auto_detection():
+@pytest.mark.asyncio
+async def test_mcp_transport_auto_detection():
     """Test that transport is auto-detected from presence of 'command' field."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
@@ -108,7 +113,7 @@ def test_mcp_transport_auto_detection():
 
     pane = MockPane()
 
-    manager._configure_mcp_servers(pane, instance)
+    await manager._configure_mcp_servers(pane, instance)
 
     config_path = instance["workspace_dir"] / ".claude_mcp_config.json"
     with open(config_path) as f:
@@ -120,7 +125,8 @@ def test_mcp_transport_auto_detection():
     assert "command" in playwright_config
 
 
-def test_mcp_mixed_transports():
+@pytest.mark.asyncio
+async def test_mcp_mixed_transports():
     """Test config with both stdio and http MCP servers. Madrox (http) is always added."""
     config = {"workspace_base_dir": tempfile.mkdtemp(), "max_concurrent_instances": 10}
 
@@ -144,7 +150,7 @@ def test_mcp_mixed_transports():
 
     pane = MockPane()
 
-    manager._configure_mcp_servers(pane, instance)
+    await manager._configure_mcp_servers(pane, instance)
 
     config_path = instance["workspace_dir"] / ".claude_mcp_config.json"
     with open(config_path) as f:

@@ -49,11 +49,13 @@ export const AgentNode = memo(({ data }: AgentNodeProps) => {
   const instanceTypeGradient = {
     claude: "bg-gradient-to-r from-blue-500 to-indigo-500 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent",
     codex: "bg-gradient-to-r from-purple-500 to-pink-500 dark:from-purple-400 dark:to-pink-400 bg-clip-text text-transparent",
+    grok: "bg-gradient-to-r from-orange-500 to-amber-500 dark:from-orange-400 dark:to-amber-400 bg-clip-text text-transparent",
   }
 
   const borderGradient = {
     claude: "from-blue-500/50 via-indigo-500/50 to-blue-500/50",
     codex: "from-purple-500/50 via-pink-500/50 to-purple-500/50",
+    grok: "from-orange-500/50 via-amber-500/50 to-orange-500/50",
   }
 
   const calculateUptime = () => {

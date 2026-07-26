@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from orchestrator.config import _load_model_config, validate_model
+from orchestrator.config import _load_model_config, get_harness_config, resolve_model
 
 
 class TestLoadModelConfig:
@@ -151,124 +151,115 @@ class TestLoadModelConfig:
                 assert config is None or config == {}
 
 
-class TestValidateModel:
-    """Test validate_model function.
+class TestResolveModel:
+    """Test resolve_model — the single model-resolution entry point.
 
     Model names are NOT validated against an allowlist (see issue #28): any
-    non-empty model string is passed through as-is, and only the provider
+    non-empty model string is passed through as-is, and only the harness
     default is sourced from config when no model is given.
     """
+
+    @pytest.fixture(autouse=True)
+    def _no_env_overrides(self, monkeypatch):
+        for var in (
+            "MADROX_MODELS_CONFIG",
+            "MADROX_MODEL_CLAUDE",
+            "MADROX_MODEL_CODEX",
+            "MADROX_MODEL_GROK",
+        ):
+            monkeypatch.delenv(var, raising=False)
 
     @pytest.fixture
     def mock_config(self):
         """Mock configuration for testing."""
         return {
-            "codex": {
-                "default": "gpt-5.5",
-                "known_models": ["gpt-5.5"],
-            },
+            "codex": {"default": "gpt-5.6-sol", "known_models": ["gpt-5.6-sol"]},
             "claude": {
-                "default": "claude-sonnet-4-5",
-                "known_models": [
-                    "claude-sonnet-4-5",
-                    "claude-opus-4-1",
-                    "claude-haiku-4-5",
-                ],
+                "default": "claude-opus-5",
+                "known_models": ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
             },
+            "grok": {"default": "grok-build-0.1", "known_models": ["grok-build-0.1"]},
         }
 
-    def test_validate_model_claude_default(self, mock_config):
-        """Test resolving Claude provider with None model (should return default)."""
+    def test_defaults_per_harness(self, mock_config):
+        """No model given -> that harness's configured default."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            result = validate_model("claude", None)
-            assert result == "claude-sonnet-4-5"
+            assert resolve_model("claude", None) == "claude-opus-5"
+            assert resolve_model("codex", None) == "gpt-5.6-sol"
+            assert resolve_model("grok", None) == "grok-build-0.1"
 
-    def test_validate_model_codex_default(self, mock_config):
-        """Test resolving Codex provider with None model (should return default)."""
+    def test_explicit_model_passes_through(self, mock_config):
+        """Known or unknown, an explicit model is forwarded verbatim."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            result = validate_model("codex", None)
-            assert result == "gpt-5.5"
+            assert resolve_model("claude", "claude-sonnet-5") == "claude-sonnet-5"
+            assert resolve_model("claude", "some-future-model") == "some-future-model"
+            assert resolve_model("codex", "openai.gpt-5.3-codex") == "openai.gpt-5.3-codex"
+            assert resolve_model("claude", "CLAUDE-SONNET-5") == "CLAUDE-SONNET-5"
 
-    def test_validate_model_passthrough_known(self, mock_config):
-        """A known model is passed through unchanged."""
+    def test_explicit_model_is_stripped(self, mock_config):
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            assert validate_model("claude", "claude-opus-4-1") == "claude-opus-4-1"
-            assert validate_model("codex", "gpt-5.5") == "gpt-5.5"
+            assert resolve_model("claude", "  claude-opus-5  ") == "claude-opus-5"
 
-    def test_validate_model_passthrough_unknown(self, mock_config):
-        """An unknown model is passed through as-is (no allowlist rejection)."""
+    def test_blank_model_uses_default(self, mock_config):
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            # Previously these raised ValueError — now they pass through.
-            assert validate_model("claude", "some-future-model") == "some-future-model"
-            assert validate_model("codex", "openai.gpt-5.3-codex") == "openai.gpt-5.3-codex"
-            assert validate_model("claude", "CLAUDE-SONNET-4-5") == "CLAUDE-SONNET-4-5"
-            assert validate_model("claude", "claude@sonnet#4.5") == "claude@sonnet#4.5"
+            assert resolve_model("claude", "") == "claude-opus-5"
+            assert resolve_model("claude", "   ") == "claude-opus-5"
 
-    def test_validate_model_unknown_provider_passthrough(self, mock_config):
-        """An explicit model is returned even for an unknown provider."""
+    def test_env_override_beats_config(self, mock_config, monkeypatch):
+        monkeypatch.setenv("MADROX_MODEL_CLAUDE", "claude-from-env")
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            assert validate_model("unknown-provider", "some-model") == "some-model"
+            assert resolve_model("claude", None) == "claude-from-env"
+            # An explicit request still wins over the env default.
+            assert resolve_model("claude", "claude-explicit") == "claude-explicit"
 
-    def test_validate_model_empty_string_uses_default(self, mock_config):
-        """Empty string falls back to the provider default."""
+    def test_unknown_harness_has_no_default(self, mock_config):
+        """Unknown harness -> None, letting the CLI choose (never an exception)."""
         with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            assert validate_model("claude", "") == "claude-sonnet-4-5"
+            assert resolve_model("gemini", None) is None
+            assert resolve_model("gemini", "some-model") == "some-model"
 
-    def test_validate_model_whitespace_uses_default(self, mock_config):
-        """Whitespace-only model falls back to the provider default."""
-        with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            assert validate_model("claude", "   ") == "claude-sonnet-4-5"
+    def test_missing_default_key(self):
+        broken_config = {"claude": {"known_models": ["claude-opus-5"]}}
+        with patch("orchestrator.config._load_model_config", return_value=broken_config):
+            assert resolve_model("claude", None) is None
 
-    def test_validate_model_no_default_for_provider(self, mock_config):
-        """Requesting a default for an unknown provider raises."""
-        with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            with pytest.raises(ValueError) as exc_info:
-                validate_model("unknown-provider", None)
-            assert "No default model configured" in str(exc_info.value)
-
-    def test_validate_model_file_not_found_propagates(self):
-        """FileNotFoundError from config loading propagates when a default is needed."""
+    def test_config_errors_degrade_to_cli_default(self):
+        """A missing or broken config must not break spawning."""
         with patch(
             "orchestrator.config._load_model_config",
             side_effect=FileNotFoundError("Config not found"),
         ):
-            with pytest.raises(FileNotFoundError):
-                validate_model("claude", None)
+            assert resolve_model("claude", None) is None
+            assert resolve_model("claude", "claude-opus-5") == "claude-opus-5"
 
-    def test_validate_model_explicit_model_skips_config(self):
+        with patch(
+            "orchestrator.config._load_model_config",
+            side_effect=ValueError("Failed to parse YAML"),
+        ):
+            assert resolve_model("claude", None) is None
+
+    def test_explicit_model_skips_config_load(self):
         """An explicit model never touches the config loader."""
         with patch(
             "orchestrator.config._load_model_config",
             side_effect=AssertionError("config should not be loaded for explicit model"),
         ):
-            assert validate_model("claude", "claude-opus-4-6") == "claude-opus-4-6"
+            assert resolve_model("claude", "claude-opus-5") == "claude-opus-5"
 
-    def test_validate_model_yaml_error_propagates(self):
-        """YAML parsing errors propagate when resolving a default."""
-        with patch(
-            "orchestrator.config._load_model_config",
-            side_effect=ValueError("Failed to parse YAML"),
-        ):
-            with pytest.raises(ValueError) as exc_info:
-                validate_model("claude", None)
-            assert "Failed to parse YAML" in str(exc_info.value)
 
-    def test_validate_model_returns_string(self, mock_config):
-        """Test that validate_model always returns a string."""
-        with patch("orchestrator.config._load_model_config", return_value=mock_config):
-            assert isinstance(validate_model("claude", None), str)
-            assert isinstance(validate_model("claude", "claude-opus-4-1"), str)
+class TestGetHarnessConfig:
+    """Test get_harness_config — used for per-harness command/extra_args."""
 
-    def test_validate_model_config_missing_default(self):
-        """A provider config missing its default raises when a default is needed."""
-        broken_config = {
-            "claude": {
-                "known_models": ["claude-sonnet-4-5"],
-                # Missing "default" key
-            }
-        }
+    def test_returns_section(self):
+        config = {"grok": {"default": "grok-build-0.1", "command": "/opt/grok"}}
+        with patch("orchestrator.config._load_model_config", return_value=config):
+            assert get_harness_config("grok")["command"] == "/opt/grok"
 
-        with patch("orchestrator.config._load_model_config", return_value=broken_config):
-            with pytest.raises(ValueError) as exc_info:
-                validate_model("claude", None)
-            assert "No default model configured" in str(exc_info.value)
+    def test_missing_or_malformed_section_is_empty(self):
+        with patch("orchestrator.config._load_model_config", return_value={"grok": "nonsense"}):
+            assert get_harness_config("grok") == {}
+            assert get_harness_config("absent") == {}
+
+    def test_unreadable_config_is_empty(self):
+        with patch("orchestrator.config._load_model_config", side_effect=FileNotFoundError("gone")):
+            assert get_harness_config("claude") == {}

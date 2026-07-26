@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from ..compat import UTC
+from ..harnesses import is_supported_harness
 from ._mcp import mcp
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ class LifecycleMixin:
 
         instance = self.instances[instance_id]
 
-        if instance.get("instance_type") in ["claude", "codex"]:
+        if is_supported_harness(instance.get("instance_type")):
             result = await self.tmux_manager.interrupt_instance(instance_id)
             self.instances[instance_id] = self.tmux_manager.instances[instance_id]
             return result
@@ -81,7 +82,7 @@ class LifecycleMixin:
 
         instance = self.instances[instance_id]
 
-        if instance.get("instance_type") in ["claude", "codex"]:
+        if is_supported_harness(instance.get("instance_type")):
             result = await self.tmux_manager.terminate_instance(instance_id, force)
             if result:
                 self.instances[instance_id] = self.tmux_manager.instances[instance_id]
@@ -96,7 +97,7 @@ class LifecycleMixin:
 
         instance = self.instances[instance_id]
 
-        if instance.get("instance_type") in ["claude", "codex"]:
+        if is_supported_harness(instance.get("instance_type")):
             result = await self.tmux_manager.suspend_instance(instance_id)
             if result:
                 self.instances[instance_id] = self.tmux_manager.instances[instance_id]

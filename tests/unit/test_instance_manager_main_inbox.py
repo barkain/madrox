@@ -26,8 +26,8 @@ def mock_config():
 @pytest.fixture
 async def instance_manager(mock_config):
     """Create InstanceManager with mocked dependencies."""
-    with patch("orchestrator.instance_manager.spawning.validate_model") as mock_validate:
-        mock_validate.side_effect = lambda provider, model: model or "claude-sonnet-4-5"
+    with patch("orchestrator.instance_manager.spawning.resolve_model") as mock_validate:
+        mock_validate.side_effect = lambda harness, model: model or "claude-opus-5"
         with patch("orchestrator.instance_manager.core.LoggingManager"):
             with patch("orchestrator.shared_state_manager.SharedStateManager"):
                 with patch(

@@ -219,7 +219,7 @@ class TestSpawnInstanceRequest:
         assert request.name == "test-instance"
         assert request.role == InstanceRole.GENERAL
         assert request.system_prompt is None
-        assert request.model == "claude-4-sonnet-20250514"
+        assert request.model is None  # None = harness default from config/models.yaml
         assert request.max_tokens == 4096
         assert request.temperature == 0.0
         assert request.workspace_dir is None
@@ -585,7 +585,7 @@ class TestOrchestratorConfig:
         assert config.server_host == "localhost"
         assert config.server_port == 8001
         assert config.anthropic_api_key == ""
-        assert config.default_model == "claude-4-sonnet-20250514"
+        assert config.default_model is None  # None = harness default from config/models.yaml
         assert config.max_concurrent_instances == 10
         assert config.max_tokens_per_instance == 100000
         assert config.instance_timeout_minutes == 30
@@ -646,7 +646,7 @@ class TestOrchestratorConfig:
         assert config_dict["server_host"] == "localhost"
         assert config_dict["server_port"] == 8001
         assert config_dict["anthropic_api_key"] == ""
-        assert config_dict["default_model"] == "claude-4-sonnet-20250514"
+        assert config_dict["default_model"] is None  # None = harness default
         assert config_dict["max_concurrent_instances"] == 10
         assert config_dict["max_tokens_per_instance"] == 100000
         assert config_dict["instance_timeout_minutes"] == 30

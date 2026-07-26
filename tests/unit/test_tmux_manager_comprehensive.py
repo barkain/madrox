@@ -737,6 +737,11 @@ class TestInstanceLifecycle:
     @pytest.mark.asyncio
     async def test_spawn_codex_instance(self, tmux_manager):
         """Test spawning Codex instance type."""
+        # Pane reports Codex as ready so the bootstrap reaches the CLI
+        tmux_manager._mock_pane.cmd = MagicMock(
+            return_value=MagicMock(stdout=["OpenAI Codex", "›"])
+        )
+
         # Execute
         instance_id = await tmux_manager.spawn_instance(
             name="codex-test",
@@ -747,6 +752,20 @@ class TestInstanceLifecycle:
         # Assert
         assert tmux_manager.instances[instance_id]["instance_type"] == "codex"
         assert tmux_manager.instances[instance_id]["sandbox_mode"] == "workspace-write"
+
+    @pytest.mark.asyncio
+    async def test_spawn_codex_instance_fails_when_cli_never_ready(self, tmux_manager):
+        """A CLI that never starts must fail the spawn, not look healthy.
+
+        The bootstrap is typed into the pane; if the CLI is not up it lands in
+        the shell, so the instance is useless and must be reported as failed.
+        """
+        # Default mock pane output never shows a Codex ready marker.
+        with pytest.raises(RuntimeError, match="failed to start"):
+            await tmux_manager.spawn_instance(name="codex-dead", instance_type="codex")
+
+        states = [inst["state"] for inst in tmux_manager.instances.values()]
+        assert states == ["error"]
 
     @pytest.mark.asyncio
     async def test_spawn_instance_with_initial_prompt(self, tmux_manager):
@@ -788,7 +807,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert - config file path should be set
         assert "_mcp_config_path" in instance
@@ -811,7 +830,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert
         assert "_mcp_config_path" in instance
@@ -827,12 +846,14 @@ class TestMCPServerConfiguration:
         }
 
         # Execute - should handle gracefully (logs error but doesn't crash)
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
-        # Assert - method completes without raising exception
-        # Note: Implementation doesn't update instance["mcp_servers"] when invalid
-        # It only updates the local mcp_servers variable
-        assert instance["mcp_servers"] == "invalid-json-string"  # Unchanged
+        # Assert - the unusable string is replaced by a normalized mapping that
+        # still carries the auto-injected madrox server, so the instance stays
+        # connected to the orchestrator.
+        assert instance["mcp_servers"] == {
+            "madrox": {"transport": "http", "url": "http://localhost:8001/mcp"}
+        }
 
     @pytest.mark.asyncio
     async def test_configure_mcp_servers_auto_madrox(self, tmux_manager):
@@ -845,7 +866,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert
         assert "madrox" in instance["mcp_servers"]
@@ -889,7 +910,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert - Codex uses direct commands, no _mcp_config_path
         assert "_mcp_config_path" not in instance
@@ -912,7 +933,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert
         assert "_mcp_config_path" in instance
@@ -933,7 +954,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute - should handle gracefully
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert - should still create config file
         assert "_mcp_config_path" in instance
@@ -1254,7 +1275,7 @@ class TestCriticalFunctions:
         message = "Line 1\nLine 2\nLine 3"
 
         # Execute
-        tmux_manager._send_multiline_message_to_pane(pane, message)
+        await tmux_manager._send_multiline_message_to_pane(pane, message)
 
         # Assert - send_keys should be called multiple times
         assert pane.send_keys.call_count > 3  # At least once per line + Enter

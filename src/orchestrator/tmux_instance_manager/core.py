@@ -4,9 +4,12 @@ Manages Claude CLI instances via tmux sessions for persistent interactive commun
 """
 
 import asyncio
+import base64
+import json
 import logging
 import re
-import shutil
+import shlex
+import sys
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -16,15 +19,24 @@ from typing import Any
 import libtmux
 
 from ..compat import UTC
+from ..config import resolve_model
+from ..harnesses import Harness, get_harness
 from ..llm_summarizer import LLMSummarizer
 from ..monitoring_service import MonitoringService
 from ..name_generator import get_instance_name
 from ..simple_models import MessageEnvelope
+from ..toml_config import update_toml_config
 from .helpers import MAX_MESSAGE_HISTORY_PER_INSTANCE, redact_authkey
 
 logger = logging.getLogger(__name__)
 
-_codex_path: str | None = shutil.which("codex")
+#: Valid MCP server name / environment variable name (CWE-77 hardening).
+_MCP_SERVER_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+_ENV_VAR_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+#: Commands run in the pane before the CLI starts are pipelined; this pause
+#: only keeps the pane readable while they scroll past.
+_PANE_COMMAND_PACING_SECONDS = 0.05
 
 
 class TmuxInstanceManager:
@@ -220,225 +232,236 @@ class TmuxInstanceManager:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             await loop.run_in_executor(executor, put_with_lock)
 
-    def _configure_mcp_servers(self, pane, instance: dict[str, Any]):
-        """Configure MCP servers in the tmux session before spawning Claude/Codex CLI.
+    @staticmethod
+    def _normalize_mcp_servers(instance: dict[str, Any]) -> dict[str, Any]:
+        """Coerce the instance's ``mcp_servers`` field into a dict.
 
-        For Claude: Creates a JSON config file and uses --mcp-config flag
-        For Codex: Runs `codex mcp add` commands in the tmux pane
+        The MCP protocol delivers it as a JSON string; the Python API passes a
+        dict. Anything unusable degrades to an empty mapping.
+        """
+        mcp_servers = instance.get("mcp_servers", {})
+
+        if isinstance(mcp_servers, str):
+            try:
+                mcp_servers = json.loads(mcp_servers)
+            except json.JSONDecodeError:
+                logger.error(f"Invalid mcp_servers JSON string: {mcp_servers}")
+                mcp_servers = {}
+
+        if not isinstance(mcp_servers, dict):
+            logger.error(f"mcp_servers is not a dict: {type(mcp_servers)}, value: {mcp_servers}")
+            mcp_servers = {}
+
+        instance["mcp_servers"] = mcp_servers
+        return mcp_servers
+
+    def _add_madrox_mcp_server(
+        self, mcp_servers: dict[str, Any], harness: type[Harness], instance_id: str
+    ) -> None:
+        """Wire the instance back to this orchestrator over the harness's transport."""
+        if "madrox" in mcp_servers:
+            return
+
+        if harness.auto_mcp_transport == "stdio":
+            # A STDIO subprocess proxies every tool call to the parent HTTP server.
+            orchestrator_script = str(
+                Path(__file__).parent.parent.parent.parent / "run_orchestrator.py"
+            )
+            parent_url = f"http://localhost:{self.server_port}"
+            mcp_servers["madrox"] = {
+                "transport": "stdio",
+                "command": sys.executable,
+                "args": [orchestrator_script],
+                "env": {"MADROX_TRANSPORT": "stdio", "MADROX_PARENT_URL": parent_url},
+            }
+            logger.debug(
+                f"Configured STDIO madrox proxy for {instance_id}: "
+                f"{sys.executable} {orchestrator_script} -> {parent_url}"
+            )
+        else:
+            # HTTP transport keeps every spawn visible to the parent server.
+            mcp_servers["madrox"] = {
+                "transport": "http",
+                "url": f"http://localhost:{self.server_port}/mcp",
+            }
+            logger.debug(
+                f"Configured HTTP madrox for {instance_id}: http://localhost:{self.server_port}/mcp"
+            )
+
+    @staticmethod
+    def _mcp_transport(server_config: dict[str, Any]) -> str:
+        """Transport for a server entry — stdio when a command is present, else http."""
+        return server_config.get("transport", "stdio" if "command" in server_config else "http")
+
+    @staticmethod
+    def _validate_mcp_identifiers(server_name: str, env_vars: dict[str, str]) -> None:
+        """Reject names that would break out of the shell command (CWE-77)."""
+        if not _MCP_SERVER_NAME_RE.match(server_name):
+            raise ValueError(
+                f"Invalid MCP server name '{server_name}'. "
+                f"Server names must contain only letters, numbers, underscores, and hyphens."
+            )
+
+        for key in env_vars:
+            if not _ENV_VAR_NAME_RE.match(key):
+                raise ValueError(
+                    f"Invalid environment variable name '{key}'. "
+                    f"Variable names must start with a letter or underscore and "
+                    f"contain only letters, numbers, and underscores."
+                )
+
+    async def _configure_mcp_servers(self, pane, instance: dict[str, Any]) -> None:
+        """Configure MCP servers in the tmux session before the CLI starts.
+
+        Harnesses that read a JSON config file (Claude) get one written to their
+        workspace; the rest have their servers registered with ``<cli> mcp add``
+        commands typed into the pane, falling back to the harness's TOML config
+        for transports the CLI cannot register.
 
         Args:
             pane: libtmux pane object
             instance: Instance metadata dict
         """
-        import json
-        import time
+        harness = get_harness(instance.get("instance_type"))
+        mcp_servers = self._normalize_mcp_servers(instance)
+        self._add_madrox_mcp_server(mcp_servers, harness, instance["id"])
 
-        workspace_dir = Path(instance["workspace_dir"])
-        mcp_servers = instance.get("mcp_servers", {})
-        instance_type = instance.get("instance_type", "claude")
+        if harness.mcp_config_filename:
+            self._write_mcp_config_file(instance, harness, mcp_servers)
+            return
 
-        # Handle case where mcp_servers might be a JSON string (from MCP protocol)
-        if isinstance(mcp_servers, str):
-            try:
-                import json
+        await self._register_mcp_servers_via_cli(pane, instance, harness, mcp_servers)
 
-                mcp_servers = json.loads(mcp_servers)
-                # Update instance dict with parsed value
-                instance["mcp_servers"] = mcp_servers
-            except json.JSONDecodeError:
-                logger.error(f"Invalid mcp_servers JSON string: {mcp_servers}")
-                mcp_servers = {}
-
-        # Ensure mcp_servers is a dict
-        if not isinstance(mcp_servers, dict):
-            logger.error(f"mcp_servers is not a dict: {type(mcp_servers)}, value: {mcp_servers}")
-            mcp_servers = {}
-
-        # Auto-add Madrox if not explicitly configured
-        if "madrox" not in mcp_servers:
-            # Codex only supports STDIO transport, Claude supports both
-            if instance_type == "codex":
-                # Use STDIO transport with proxy to parent HTTP server
-                import sys
-
-                project_root = Path(__file__).parent.parent.parent.parent
-                orchestrator_script = str(project_root / "run_orchestrator.py")
-
-                # STDIO subprocess proxies all tool calls to parent HTTP server
-                parent_url = f"http://localhost:{self.server_port}"
-                env_vars = {
-                    "MADROX_TRANSPORT": "stdio",
-                    "MADROX_PARENT_URL": parent_url,
-                }
-
-                mcp_servers["madrox"] = {
-                    "transport": "stdio",
-                    "command": sys.executable,  # Use same Python interpreter
-                    "args": [orchestrator_script],
-                    "env": env_vars,
-                }
-                logger.debug(
-                    f"Configured Codex STDIO proxy: {sys.executable} {orchestrator_script} → {parent_url}"
-                )
-            else:
-                # Claude supports HTTP transport - use it for cross-process visibility
-                # HTTP transport ensures all spawn requests go through parent HTTP server
-                # This provides centralized instance tracking without Manager IPC complexity
-                mcp_servers["madrox"] = {
-                    "transport": "http",
-                    "url": f"http://localhost:{self.server_port}/mcp",
-                }
-                logger.debug(
-                    f"Configured Claude instance with HTTP madrox: http://localhost:{self.server_port}/mcp"
-                )
-
-        # Handle Codex instances differently - use `codex mcp add` commands
-        if instance_type == "codex":
-            if not mcp_servers:
-                logger.debug(f"No MCP servers to configure for Codex instance {instance['id']}")
-                return
-
-            logger.info(
-                f"Configuring {len(mcp_servers)} MCP servers for Codex instance {instance['id']}"
+    async def _register_mcp_servers_via_cli(
+        self,
+        pane,
+        instance: dict[str, Any],
+        harness: type[Harness],
+        mcp_servers: dict[str, Any],
+    ) -> None:
+        """Register MCP servers by typing ``<cli> mcp add`` commands into the pane."""
+        if not mcp_servers:
+            logger.debug(
+                f"No MCP servers to configure for {harness.name} instance {instance['id']}"
             )
+            return
 
-            for server_name, server_config in mcp_servers.items():
-                try:
-                    has_command = "command" in server_config
-                    transport = server_config.get("transport", "stdio" if has_command else "http")
+        logger.info(
+            f"Configuring {len(mcp_servers)} MCP servers for {harness.name} instance {instance['id']}"
+        )
 
-                    if transport == "stdio":
-                        import re
-                        import shlex
+        # Servers the CLI cannot register itself are batched into one TOML write.
+        pending_http: dict[str, dict[str, Any]] = {}
 
-                        command = server_config.get("command")
-                        if not command:
-                            logger.warning(
-                                f"Skipping MCP server '{server_name}' - no command provided"
-                            )
-                            continue
-
-                        # SECURITY FIX (CWE-77): Validate server_name to prevent command injection
-                        # Only allow alphanumeric, underscore, and hyphen characters
-                        if not re.match(r"^[a-zA-Z0-9_-]+$", server_name):
-                            logger.error(
-                                f"Invalid MCP server name '{server_name}' - must match [a-zA-Z0-9_-]+"
-                            )
-                            raise ValueError(
-                                f"Invalid MCP server name '{server_name}'. "
-                                f"Server names must contain only letters, numbers, underscores, and hyphens."
-                            )
-
-                        # SECURITY FIX (CWE-77): Validate command path
-                        # Ensure command is an absolute path or a known safe command
-                        if not (
-                            Path(command).is_absolute()
-                            or command in ["python", "python3", "node", "npx"]
-                        ):
-                            logger.warning(
-                                f"Command '{command}' is not an absolute path or known safe command. "
-                                f"This may be a security risk."
-                            )
-
-                        args = server_config.get("args", [])
-                        if not isinstance(args, list):
-                            args = [args] if args else []
-
-                        # SECURITY FIX (CWE-77): Use shlex.quote() to prevent command injection
-                        # Build codex mcp add command with proper shell escaping
-                        codex_cmd_parts = [
-                            _codex_path or "codex",
-                            "mcp",
-                            "add",
-                            shlex.quote(server_name),
-                            shlex.quote(command),
-                        ]
-
-                        # Quote all arguments to prevent injection
-                        for arg in args:
-                            codex_cmd_parts.append(shlex.quote(str(arg)))
-
-                        # Add environment variables if specified
-                        env_vars = server_config.get("env", {})
-                        for key, value in env_vars.items():
-                            # Validate env var names (must be valid shell identifiers)
-                            if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", key):
-                                logger.error(
-                                    f"Invalid environment variable name '{key}' - must match [a-zA-Z_][a-zA-Z0-9_]*"
-                                )
-                                raise ValueError(
-                                    f"Invalid environment variable name '{key}'. "
-                                    f"Variable names must start with a letter or underscore and contain only letters, numbers, and underscores."
-                                )
-                            codex_cmd_parts.extend(["--env", shlex.quote(f"{key}={value}")])
-
-                        codex_cmd = " ".join(codex_cmd_parts)
-                        logger.info(f"Adding Codex MCP server: {codex_cmd}")
-
-                        pane.send_keys(codex_cmd, enter=True)
-                        time.sleep(0.2)  # Optimized: 200ms sufficient for command completion
-
-                    elif transport == "http":
-                        url = server_config.get("url")
-                        if not url:
-                            logger.warning(
-                                f"Skipping MCP server '{server_name}' - no URL provided for http transport"
-                            )
-                            continue
-
-                        # Codex HTTP MCP servers must be configured in ~/.codex/config.toml
-                        codex_config_path = Path.home() / ".codex" / "config.toml"
-
-                        # Create .codex directory if it doesn't exist
-                        codex_config_path.parent.mkdir(parents=True, exist_ok=True)
-
-                        # Read existing config or create new one
-                        if codex_config_path.exists():
-                            import toml
-
-                            config = toml.load(codex_config_path)
-                        else:
-                            config = {}
-
-                        # Add MCP server config
-                        if "mcp_servers" not in config:
-                            config["mcp_servers"] = {}
-
-                        config["mcp_servers"][server_name] = {"url": url}
-
-                        # Add bearer token if provided
-                        if bearer_token := server_config.get("bearer_token"):
-                            config["mcp_servers"][server_name]["bearer_token"] = bearer_token
-
-                        # Write config back
-                        import toml
-
-                        with codex_config_path.open("w") as f:
-                            toml.dump(config, f)
-
-                        logger.info(f"Added HTTP MCP server '{server_name}' to Codex config: {url}")
-                        time.sleep(0.05)  # Optimized: 50ms sufficient for filesystem sync
-
-                except Exception as e:
-                    logger.error(
-                        f"Error configuring Codex MCP server '{server_name}': {e}", exc_info=True
-                    )
-                    raise
-
-            logger.info(f"Configured MCP servers for Codex instance {instance['id']}")
-            return  # Codex doesn't use _mcp_config_path
-
-        # Handle Claude instances - create JSON config file
-        mcp_config_path = workspace_dir / ".claude_mcp_config.json"
-        mcp_config: dict[str, Any] = {"mcpServers": {}}
-
-        # Build config from mcp_servers parameter
         for server_name, server_config in mcp_servers.items():
-            # Auto-detect transport type:
-            # - If "command" is present, default to "stdio"
-            # - Otherwise default to "http"
-            has_command = "command" in server_config
-            transport = server_config.get("transport", "stdio" if has_command else "http")
+            try:
+                transport = self._mcp_transport(server_config)
+
+                if transport == "stdio":
+                    command = server_config.get("command")
+                    if not command:
+                        logger.warning(f"Skipping MCP server '{server_name}' - no command provided")
+                        continue
+
+                    env_vars = server_config.get("env", {}) or {}
+                    self._validate_mcp_identifiers(server_name, env_vars)
+
+                    if not (
+                        Path(command).is_absolute()
+                        or command in ("python", "python3", "node", "npx")
+                    ):
+                        logger.warning(
+                            f"Command '{command}' is not an absolute path or known safe command. "
+                            f"This may be a security risk."
+                        )
+
+                    args = server_config.get("args", [])
+                    if not isinstance(args, list):
+                        args = [args] if args else []
+
+                    cmd_parts = harness.mcp_add_stdio_command(
+                        server_name, str(command), args, env_vars
+                    )
+
+                elif transport == "http":
+                    url = server_config.get("url")
+                    if not url:
+                        logger.warning(
+                            f"Skipping MCP server '{server_name}' - no URL provided for http transport"
+                        )
+                        continue
+
+                    self._validate_mcp_identifiers(server_name, {})
+                    cmd_parts = harness.mcp_add_http_command(server_name, str(url))
+                    if cmd_parts is None:
+                        pending_http[server_name] = server_config
+                        continue
+
+                else:
+                    logger.warning(
+                        f"Skipping MCP server '{server_name}' - unsupported transport '{transport}'"
+                    )
+                    continue
+
+                if cmd_parts is None:
+                    logger.warning(
+                        f"Harness '{harness.name}' cannot register '{transport}' MCP server "
+                        f"'{server_name}' - skipping"
+                    )
+                    continue
+
+                cli_command = " ".join(cmd_parts)
+                logger.info(f"Adding {harness.name} MCP server: {cli_command}")
+                pane.send_keys(cli_command, enter=True)
+                await asyncio.sleep(_PANE_COMMAND_PACING_SECONDS)
+
+            except Exception as e:
+                logger.error(
+                    f"Error configuring {harness.name} MCP server '{server_name}': {e}",
+                    exc_info=True,
+                )
+                raise
+
+        if pending_http:
+            self._write_mcp_servers_to_toml(harness, pending_http)
+
+        logger.info(f"Configured MCP servers for {harness.name} instance {instance['id']}")
+
+    @staticmethod
+    def _write_mcp_servers_to_toml(harness: type[Harness], servers: dict[str, Any]) -> None:
+        """Write HTTP MCP servers into the harness's TOML config in one pass."""
+        config_path = harness.mcp_http_config_path()
+        if config_path is None:
+            logger.warning(
+                f"Harness '{harness.name}' has no config file for HTTP MCP servers: "
+                f"{', '.join(servers)}"
+            )
+            return
+
+        def _apply(config: dict[str, Any]) -> bool:
+            entries = config.setdefault("mcp_servers", {})
+            for server_name, server_config in servers.items():
+                entry = {"url": server_config["url"]}
+                if bearer_token := server_config.get("bearer_token"):
+                    entry["bearer_token"] = bearer_token
+                entries[server_name] = entry
+            return True
+
+        update_toml_config(config_path, _apply)
+        logger.info(
+            f"Added {len(servers)} HTTP MCP server(s) to {harness.name} config {config_path}"
+        )
+
+    @staticmethod
+    def _write_mcp_config_file(
+        instance: dict[str, Any], harness: type[Harness], mcp_servers: dict[str, Any]
+    ) -> None:
+        """Write a JSON MCP config file and record its path for the launch command."""
+        mcp_config_path = Path(instance["workspace_dir"]) / str(harness.mcp_config_filename)
+        servers: dict[str, Any] = {}
+
+        for server_name, server_config in mcp_servers.items():
+            transport = TmuxInstanceManager._mcp_transport(server_config)
 
             if transport == "http":
                 url = server_config.get("url")
@@ -447,11 +470,8 @@ class TmuxInstanceManager:
                         f"Skipping MCP server '{server_name}' - no URL provided for http transport"
                     )
                     continue
-
-                mcp_config["mcpServers"][server_name] = {
-                    "type": "http",  # Claude Code uses "type" not "transport"
-                    "url": url,
-                }
+                # Claude Code uses "type", not "transport".
+                servers[server_name] = {"type": "http", "url": url}
 
             elif transport == "stdio":
                 command = server_config.get("command")
@@ -462,35 +482,26 @@ class TmuxInstanceManager:
                     continue
 
                 args = server_config.get("args", [])
-                env_vars = server_config.get("env", {})
-
-                # Claude Code expects stdio servers WITHOUT a "type" field
-                # It infers stdio from the presence of "command"
-                server_entry = {
+                # Claude Code infers stdio from the presence of "command" — no "type" key.
+                entry: dict[str, Any] = {
                     "command": command,
                     "args": args if isinstance(args, list) else [args],
                 }
-
-                # Add environment variables if present
-                if env_vars:
-                    server_entry["env"] = env_vars
+                if env_vars := server_config.get("env", {}):
+                    entry["env"] = env_vars
                     logger.debug(f"Adding {len(env_vars)} env vars to MCP server '{server_name}'")
 
-                mcp_config["mcpServers"][server_name] = server_entry
+                servers[server_name] = entry
 
             else:
                 logger.warning(
                     f"Skipping MCP server '{server_name}' - unsupported transport '{transport}'"
                 )
-                continue
 
-        # Write config file
-        mcp_config_path.write_text(json.dumps(mcp_config, indent=2))
-        logger.info(
-            f"Created MCP config for instance {instance['id']}: {len(mcp_config['mcpServers'])} servers"
-        )
+        mcp_config_path.write_text(json.dumps({"mcpServers": servers}, indent=2))
+        logger.info(f"Created MCP config for instance {instance['id']}: {len(servers)} servers")
 
-        # Store the config path so we can use --mcp-config flag when starting Claude
+        # Recorded here, consumed by the harness when building the launch command.
         instance["_mcp_config_path"] = str(mcp_config_path)
 
     async def spawn_instance(
@@ -507,24 +518,37 @@ class TmuxInstanceManager:
         wait_for_ready: bool = True,
         **kwargs,
     ) -> str:
-        """Spawn a new Claude or Codex instance in a tmux session.
+        """Spawn a new harness instance (Claude, Codex, Grok, ...) in a tmux session.
 
         Args:
             name: Human-readable name for the instance
             role: Predefined role (general, frontend_developer, etc.)
             system_prompt: Custom system prompt
-            model: Claude/Codex model to use (None = use CLI default)
-            bypass_isolation: Allow full filesystem access
-            instance_type: Type of instance - "claude" or "codex"
+            model: Model to run. None resolves to the harness default from
+                config/models.yaml (or the CLI's own default if unconfigured).
+                Any model id is accepted — no allowlist.
+            bypass_isolation: Allow full filesystem access (harness "yolo" mode)
+            instance_type: Harness to run - "claude", "codex" or "grok"
             sandbox_mode: For Codex - sandbox policy (read-only, workspace-write, danger-full-access)
             profile: For Codex - configuration profile from config.toml
-            initial_prompt: For Codex - initial prompt to send after initialization
+            initial_prompt: Initial prompt to send once the CLI is ready
             wait_for_ready: Wait for instance to fully initialize (default: True). If False, returns immediately.
             **kwargs: Additional configuration options
 
         Returns:
             Instance ID
+
+        Raises:
+            ValueError: If instance_type is not a supported harness
         """
+        # Fail fast on an unknown harness, before any workspace is created.
+        harness = get_harness(instance_type)
+        instance_type = harness.name
+
+        # Resolve the model once, here, so every spawn path (MCP tool, HTTP
+        # adapter, direct call) gets the same harness default.
+        model = resolve_model(instance_type, model)
+
         # Count only active instances
         active_count = len(
             [i for i in self.instances.values() if i["state"] not in ("terminated", "suspended")]
@@ -784,11 +808,24 @@ class TmuxInstanceManager:
         else:
             return await asyncio.wait_for(self.response_queues[instance_id].get(), timeout=timeout)
 
-    # Claude: the bare "❯" on its own line is the idle input prompt.
-    # Do NOT use "⏵⏵" or "bypass permissions" — those are the persistent
-    # status bar visible at ALL times, even during thinking.
-    _PROMPT_INDICATORS_CLAUDE = ['Try "', "What would you like", "How can I help"]
-    _PROMPT_INDICATORS_CODEX = ["codex>"]
+    @staticmethod
+    def _last_content_line(output: str) -> str:
+        """Last line of pane output that is neither status bar nor separator.
+
+        Claude's "⏵⏵ bypass permissions" bar and the box-drawing rules around
+        the input field are visible at all times, so they can never be used to
+        tell idle from thinking.
+        """
+        for pane_line in reversed(output.split("\n")):
+            stripped = pane_line.strip()
+            if (
+                stripped
+                and "⏵⏵" not in pane_line
+                and "esc to interrupt" not in pane_line
+                and not stripped.startswith("─")
+            ):
+                return stripped
+        return ""
 
     async def _wait_for_pane_response(
         self, pane, initial_output: str, timeout: int, instance_type: str = "claude"
@@ -801,17 +838,14 @@ class TmuxInstanceManager:
            only appears after all tool calls (including reply_to_caller)
            complete. Fall back to stability-only after 15s without a prompt.
         """
-        prompt_indicators = (
-            self._PROMPT_INDICATORS_CODEX
-            if instance_type == "codex"
-            else self._PROMPT_INDICATORS_CLAUDE
-        )
+        harness = get_harness(instance_type)
         start_time = time.time()
         last_size = len(initial_output)
         stable_count = 0
         poll_count = 0
         response_started = False
         stability_reached_at: float | None = None
+        last_line = ""
 
         while time.time() - start_time < timeout:
             await asyncio.sleep(0.3)
@@ -819,24 +853,6 @@ class TmuxInstanceManager:
 
             current_output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
             current_size = len(current_output)
-
-            # Check ONLY the last non-status-bar line for the idle prompt.
-            # Must be the absolute last line to avoid matching old prompts
-            # still visible higher in the pane.
-            content_lines = [
-                pane_line
-                for pane_line in current_output.split("\n")
-                if pane_line.strip()
-                and "⏵⏵" not in pane_line
-                and "esc to interrupt" not in pane_line
-                and not pane_line.strip().startswith("─")
-            ]
-            last_line = content_lines[-1].strip() if content_lines else ""
-            prompt_visible = any(ind in last_line for ind in prompt_indicators)
-            if not prompt_visible and instance_type == "claude":
-                prompt_visible = last_line == "❯"
-            if not prompt_visible and instance_type == "codex":
-                prompt_visible = last_line == "›"
 
             if current_size > last_size:
                 response_started = True
@@ -847,6 +863,9 @@ class TmuxInstanceManager:
 
             if response_started:
                 stable_count += 1
+                # The idle prompt is only meaningful once output has settled, so
+                # scan for it here rather than on every poll.
+                last_line = self._last_content_line(current_output)
                 if stable_count >= 3 and stability_reached_at is None:
                     stability_reached_at = time.time()
                     logger.info(
@@ -856,7 +875,7 @@ class TmuxInstanceManager:
 
                 # Only check for prompt AFTER stability — avoids matching
                 # old prompts that are visible while output is still changing.
-                if stability_reached_at and prompt_visible:
+                if stability_reached_at and harness.is_idle_line(last_line):
                     # Verify the prompt is NEW — count bare "❯" lines in initial
                     # vs current output. If the count increased, it's a real new prompt.
                     if instance_type == "claude" and last_line == "❯":
@@ -1019,7 +1038,7 @@ class TmuxInstanceManager:
             pane = window.panes[0]
 
             # Use new multiline-safe method
-            self._send_multiline_message_to_pane(pane, formatted_message)
+            await self._send_multiline_message_to_pane(pane, formatted_message)
             envelope.mark_delivered()
 
             logger.debug(f"Sent message {message_id} to instance {instance_id}")
@@ -1307,7 +1326,7 @@ class TmuxInstanceManager:
 
             for msg in queued:
                 formatted = f"[MSG:{msg['message_id']}] {msg['message']}"
-                self._send_multiline_message_to_pane(pane, formatted)
+                await self._send_multiline_message_to_pane(pane, formatted)
                 logger.info(
                     f"Delivered queued message {msg['message_id']} to {instance_id} "
                     f"(queued at {msg['queued_at']})"
@@ -1680,11 +1699,14 @@ class TmuxInstanceManager:
         else:
             self.response_queues[instance_id] = asyncio.Queue()
 
+        harness = get_harness(persisted_record.get("instance_type"))
+
         # Restore MCP config path if file exists on disk
         workspace_dir = persisted_record.get("workspace_dir", "")
-        mcp_config_path = Path(workspace_dir) / ".claude_mcp_config.json"
-        if mcp_config_path.exists():
-            persisted_record["_mcp_config_path"] = str(mcp_config_path)
+        if harness.mcp_config_filename:
+            mcp_config_path = Path(workspace_dir) / harness.mcp_config_filename
+            if mcp_config_path.exists():
+                persisted_record["_mcp_config_path"] = str(mcp_config_path)
 
         # Detect current CLI state from pane content
         try:
@@ -1692,18 +1714,11 @@ class TmuxInstanceManager:
             pane = window.panes[0]
             output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
 
-            idle_indicators = [
-                'Try "',
-                "⏵⏵",
-                "bypass permissions",
-                "How can I help",
-                "What would you like",
-            ]
             busy_indicators = ["Thinking", "Running", "⏳"]
 
             if any(ind in output for ind in busy_indicators):
                 persisted_record["state"] = "busy"
-            elif any(ind in output for ind in idle_indicators):
+            elif harness.is_ready_output(output):
                 persisted_record["state"] = "idle"
             # else: keep persisted state
         except Exception as e:
@@ -1846,16 +1861,39 @@ class TmuxInstanceManager:
             logger.warning(f"Failed to get output for instance {instance_id}: {e}")
             return {"output": ""}
 
-    async def _initialize_tmux_session(self, instance_id: str):
-        """Initialize a tmux session for the instance."""
-        instance = self.instances[instance_id]
-        workspace_dir = instance["workspace_dir"]
-        instance_type = instance.get("instance_type", "claude")
-        session_name = f"madrox-{instance_id}"
+    # ------------------------------------------------------------------
+    # Tmux session startup
+    # ------------------------------------------------------------------
+    def _build_session_env(self) -> dict[str, str]:
+        """Manager IPC credentials the child process needs to reach this daemon."""
+        if not self.shared_state:
+            return {}
 
-        logger.debug(f"Creating tmux session: {session_name}")
+        session_env: dict[str, str] = {}
+        manager_address = self.shared_state.manager_address
 
-        # Kill existing session if any
+        if isinstance(manager_address, tuple):
+            manager_host, manager_port = manager_address
+            session_env["MADROX_MANAGER_HOST"] = str(manager_host)
+            session_env["MADROX_MANAGER_PORT"] = str(manager_port)
+            location = f"TCP {manager_host}:{manager_port}"
+        else:
+            session_env["MADROX_MANAGER_SOCKET"] = str(manager_address)
+            location = f"Unix socket {manager_address}"
+
+        session_env["MADROX_MANAGER_AUTHKEY"] = base64.b64encode(
+            self.shared_state.manager_authkey
+        ).decode("ascii")
+
+        # SECURITY FIX (CWE-532): never log the authkey itself.
+        logger.debug(
+            f"Manager IPC credentials for tmux session ({location}), "
+            f"authkey={redact_authkey(self.shared_state.manager_authkey)}"
+        )
+        return session_env
+
+    def _kill_existing_session(self, session_name: str) -> None:
+        """Remove a stale tmux session with the same name, if any."""
         try:
             existing = self.tmux_server.find_where({"session_name": session_name})
             if existing:
@@ -1864,619 +1902,330 @@ class TmuxInstanceManager:
         except Exception as e:
             logger.debug(f"No existing session to clean up: {e}")
 
-        # Prepare environment variables for the tmux session
-        # CRITICAL: Pass Manager IPC credentials to the session itself, not just MCP subprocess
-        # This allows the child process's SharedStateManager to connect to parent's Manager daemon
-        session_env = {}
-        if self.shared_state:
-            import base64
+    @staticmethod
+    def _export_session_env(session, pane, session_env: dict[str, str]) -> None:
+        """Make the IPC credentials visible to the shell and its children.
 
-            manager_address = self.shared_state.manager_address
+        tmux session variables are not exported into the shell automatically, so
+        they are both set on the session and exported in the pane.
+        """
+        if not session_env:
+            return
 
-            if isinstance(manager_address, tuple):
-                # TCP address: (host, port)
-                manager_host, manager_port = manager_address
-                session_env["MADROX_MANAGER_HOST"] = str(manager_host)
-                session_env["MADROX_MANAGER_PORT"] = str(manager_port)
-                # SECURITY FIX (CWE-532): Redact authkey in logs
-                logger.debug(
-                    f"Setting Manager IPC credentials in tmux session env (TCP): {manager_host}:{manager_port}, "
-                    f"authkey={redact_authkey(self.shared_state.manager_authkey)}"
-                )
-            else:
-                # Unix socket path
-                session_env["MADROX_MANAGER_SOCKET"] = str(manager_address)
-                # SECURITY FIX (CWE-532): Redact authkey in logs
-                logger.debug(
-                    f"Setting Manager IPC credentials in tmux session env (Unix socket): {manager_address}, "
-                    f"authkey={redact_authkey(self.shared_state.manager_authkey)}"
-                )
+        for key, value in session_env.items():
+            try:
+                session.set_environment(key, value)
+            except Exception as e:
+                logger.warning(f"Failed to set environment variable {key}: {e}")
 
-            # Encode authkey as base64
-            session_env["MADROX_MANAGER_AUTHKEY"] = base64.b64encode(
-                self.shared_state.manager_authkey
-            ).decode("ascii")
+        for key, value in session_env.items():
+            pane.send_keys(f"export {key}={shlex.quote(value)}", enter=True)
 
-        # Create new session with environment variables
+        logger.debug(f"Exported {len(session_env)} environment variables to shell")
+
+    async def _wait_for_cli_ready(
+        self, pane, harness: type[Harness], max_wait: float = 10.0
+    ) -> bool:
+        """Poll the pane until the CLI is accepting input.
+
+        Also answers the workspace-trust dialog, which otherwise blocks startup
+        (and, for Codex, exits the CLI when it times out).
+
+        Returns:
+            True when a ready marker was seen before ``max_wait`` elapsed.
+        """
+        start = time.time()
+
+        while time.time() - start < max_wait:
+            await asyncio.sleep(0.15)
+            output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+
+            if harness.is_trust_prompt(output):
+                pane.send_keys("1", enter=True)
+                logger.debug("Auto-accepted workspace trust prompt")
+                await asyncio.sleep(0.5)
+                continue
+
+            if harness.is_ready_output(output):
+                logger.debug(f"{harness.label} CLI ready in {time.time() - start:.1f}s")
+                return True
+
+        logger.warning(
+            f"{harness.label} CLI not detected as ready after {time.time() - start:.1f}s"
+        )
+        return False
+
+    async def _initialize_tmux_session(self, instance_id: str) -> None:
+        """Start a fresh CLI session for the instance."""
+        await self._start_cli_session(instance_id, resume=False)
+
+    async def _initialize_tmux_session_for_recovery(self, instance_id: str) -> None:
+        """Recreate a session that resumes the instance's previous conversation."""
+        await self._start_cli_session(instance_id, resume=True)
+
+    async def _start_cli_session(self, instance_id: str, *, resume: bool) -> None:
+        """Create the tmux session and launch the harness CLI inside it.
+
+        Args:
+            instance_id: Instance to start
+            resume: Continue the instance's previous conversation instead of
+                starting a new one (used by recovery and auto-resume)
+        """
+        instance = self.instances[instance_id]
+        harness = get_harness(instance.get("instance_type"))
+        session_name = f"madrox-{instance_id}"
+        prefix = "Recovery: " if resume else ""
+
+        logger.debug(f"{prefix}Creating tmux session: {session_name}")
+        self._kill_existing_session(session_name)
+
+        session_env = self._build_session_env()
         try:
             session = self.tmux_server.new_session(
                 session_name=session_name,
-                window_name=instance_type,
-                start_directory=workspace_dir,
+                window_name=harness.name,
+                start_directory=instance["workspace_dir"],
                 x=160,
                 y=50,
-                environment=session_env if session_env else None,
+                environment=session_env or None,
             )
         except Exception as e:
             logger.error(f"Failed to create tmux session: {e}")
             raise
 
-        # Store session reference
         self.tmux_sessions[instance_id] = session
+        pane = session.windows[0].panes[0]
 
-        # Get the pane
-        window = session.windows[0]
-        pane = window.panes[0]
+        self._export_session_env(session, pane, session_env)
 
-        # Set environment variables in the tmux session so child processes inherit them
-        # CRITICAL: Use setenv -t session to make variables available to shell and subprocesses
-        if session_env:
-            for key, value in session_env.items():
-                try:
-                    session.set_environment(key, value)
-                    logger.debug(f"Set environment variable in session: {key}")
-                except Exception as e:
-                    logger.warning(f"Failed to set environment variable {key}: {e}")
+        # MCP servers must be registered before the CLI starts; for Claude this
+        # also records the config path consumed by the launch command.
+        await self._configure_mcp_servers(pane, instance)
 
-        # Export environment variables in the shell before running CLI
-        # CRITICAL: Tmux session env vars are not automatically exported to shell
-        # We must explicitly export them so Python subprocess can read via os.getenv()
-        if session_env:
-            for key, value in session_env.items():
-                # Escape single quotes in value for shell safety
-                escaped_value = value.replace("'", "'\\''")
-                pane.send_keys(f"export {key}='{escaped_value}'", enter=True)
-            logger.debug(f"Exported {len(session_env)} environment variables to shell")
+        # Harness-specific pre-launch setup (e.g. pre-trusting the workspace).
+        harness.prepare_workspace(instance["workspace_dir"])
 
-        # Configure MCP servers before spawning CLI
-        self._configure_mcp_servers(pane, instance)
-
-        # Build CLI command based on instance type
-        if instance_type == "codex":
-            # Pre-trust the workspace directory in ~/.codex/config.toml
-            # This prevents the interactive trust prompt that defaults to "No, quit"
-            # and would cause Codex to exit immediately, leaking bootstrap text into zsh
-            workspace_path = instance["workspace_dir"]
-            try:
-                import toml
-
-                codex_config_path = Path.home() / ".codex" / "config.toml"
-                codex_config_path.parent.mkdir(parents=True, exist_ok=True)
-                if codex_config_path.exists():
-                    codex_config = toml.load(codex_config_path)
-                else:
-                    codex_config = {}
-                if "projects" not in codex_config:
-                    codex_config["projects"] = {}
-                project_key = str(workspace_path)
-                # On macOS, /tmp -> /private/tmp; Codex resolves the real path
-                # so we must trust BOTH the original and resolved paths
-                resolved_key = str(Path(workspace_path).resolve())
-                keys_to_trust = {project_key, resolved_key}
-                needs_write = False
-                for key in keys_to_trust:
-                    if key not in codex_config["projects"]:
-                        codex_config["projects"][key] = {"trust_level": "trusted"}
-                        needs_write = True
-                if needs_write:
-                    with codex_config_path.open("w") as f:
-                        toml.dump(codex_config, f)
-                    logger.info(f"Pre-trusted Codex workspace: {keys_to_trust}")
-                else:
-                    logger.debug(f"Codex workspace already trusted: {project_key}")
-            except Exception as e:
-                logger.warning(f"Failed to pre-trust Codex workspace: {e}")
-
-            cmd_parts = [_codex_path or "codex"]
-
-            # Add permission bypass if requested (equivalent to Claude's --dangerously-skip-permissions)
-            if instance.get("bypass_isolation"):
-                cmd_parts.append("--dangerously-bypass-approvals-and-sandbox")
-
-            # Add sandbox mode if specified (only if not bypassing)
-            elif sandbox_mode := instance.get("sandbox_mode"):
-                cmd_parts.extend(["--sandbox", sandbox_mode])
-
-            # Add profile if specified
-            if profile := instance.get("profile"):
-                cmd_parts.extend(["--profile", profile])
-
-            # Add model if specified
-            if model := instance.get("model"):
-                cmd_parts.extend(["--model", model])
-        else:
-            # Claude CLI command (interactive mode)
-            # NOTE: --output-format stream-json only works with --print (non-interactive)
-            # For interactive tmux sessions, we must parse the terminal output directly
-            cmd_parts = [
-                "claude",
-                "--permission-mode",
-                "bypassPermissions",
-                "--dangerously-skip-permissions",
-            ]
-
-            # Add MCP config if configured
-            if mcp_config_path := instance.get("_mcp_config_path"):
-                cmd_parts.extend(["--mcp-config", mcp_config_path])
-
-            # Prevent inheriting custom statusline from parent's ~/.claude/settings.json
-            # Only load 'local' and 'project' settings, skip 'user' settings
-            cmd_parts.extend(["--setting-sources", "local,project"])
-
-            # Add model if specified
-            if model := instance.get("model"):
-                cmd_parts.extend(["--model", model])
-
-            # Add initial_prompt as CLI argument to avoid paste detection
-            # Claude CLI accepts prompts directly - bypasses paste detection entirely
-            if initial_prompt := instance.get("initial_prompt"):
-                # Escape single quotes for shell
-                escaped_prompt = initial_prompt.replace("'", "'\\''")
-                cmd_parts.append(f"'{escaped_prompt}'")
-                logger.info(
-                    f"Added initial prompt to CLI command ({len(initial_prompt)} chars, "
-                    f"{len(initial_prompt) / 1024:.2f}KB)"
-                )
-
-        # Start CLI
+        cmd_parts = (
+            harness.build_resume_command(instance)
+            if resume
+            else harness.build_launch_command(instance)
+        )
         cmd = " ".join(cmd_parts)
         pane.send_keys(cmd, enter=True)
-        logger.debug(f"Started {instance_type} CLI in tmux session: {cmd}")
+        logger.debug(f"{prefix}Started {harness.name} CLI in tmux session: {cmd}")
 
-        # Adaptive wait - poll until CLI is ready
-        # Performance-optimized: fast polling with early exit detection
-        max_init_wait = (
-            10  # Allow time for trust prompt + CLI init (2-4s normal, +4s for trust dialog)
-        )
-        init_start = time.time()
-        cli_ready = False
+        cli_ready = await self._wait_for_cli_ready(pane, harness)
 
-        while time.time() - init_start < max_init_wait:
-            await asyncio.sleep(
-                0.15
-            )  # Optimized polling: 150ms balance between responsiveness and CPU
-            output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
+        if resume:
+            # Conversation context comes back with the resume flags — sending the
+            # bootstrap again would duplicate it.
+            logger.info(
+                f"Recovery: tmux session initialized for {harness.name} instance {instance_id}"
+            )
+            return
 
-            # Auto-accept workspace trust prompt if it appears
-            # This occurs when Claude/Codex opens a new/unfamiliar directory
-            # Claude prompt: "Yes, I trust this folder" / "No, exit"
-            # Codex prompt: "Do you trust the contents of this directory?" with options 1=Yes, 2=No
-            if ("Yes, I trust this folder" in output and "No, exit" in output) or (
-                "trust" in output.lower()
-                and ("Yes" in output or "No, quit" in output)
-                and instance_type == "codex"
-            ):
-                pane.send_keys("1", enter=True)
-                logger.debug("Auto-accepted workspace trust prompt")
-                await asyncio.sleep(0.5)  # Wait for CLI to proceed past trust dialog
-                continue
+        await self._bootstrap_instance(pane, instance, harness, cli_ready)
+        logger.info(f"Tmux session initialized for {harness.name} instance {instance_id}")
 
-            # Detect ready state by checking for interactive indicators
-            # Claude CLI shows various prompts, Codex shows ready state
-            if instance_type == "codex":
-                # Codex ready when it shows prompt or waits for input
-                if any(
-                    indicator in output
-                    for indicator in [
-                        "codex>",
-                        "Working on:",
-                        "Thinking...",
-                        "OpenAI Codex",  # Codex v0.117+ banner
-                        "›",  # Codex interactive prompt character
-                    ]
-                ):
-                    cli_ready = True
-                    break
-            else:
-                # Claude ready when it shows interactive prompt indicators
-                # CRITICAL: Must see the actual ready message, not just initialization output
-                if any(
-                    indicator in output
-                    for indicator in [
-                        'Try "',  # Claude Code v2 ready prompt: 'Try "...'
-                        "⏵⏵",  # Interactive prompt indicator
-                        "bypass permissions",  # Permission mode indicator (ready)
-                        "What would you like",  # Legacy prompt
-                        "How can I help",  # Alternative prompt
-                    ]
-                ):
-                    cli_ready = True
-                    logger.debug("Claude CLI ready - detected ready prompt")
-                    break
+    # ------------------------------------------------------------------
+    # First-contact bootstrap
+    # ------------------------------------------------------------------
+    async def _bootstrap_instance(
+        self, pane, instance: dict[str, Any], harness: type[Harness], cli_ready: bool
+    ) -> None:
+        """Give a freshly started instance its identity and first prompt."""
+        if harness.prompt_delivery == "cli_arg":
+            # The initial prompt already went out as a command-line argument.
+            # The system prompt rides along with the first user message, which
+            # guarantees the CLI is fully ready for multiline input by then.
+            await asyncio.sleep(0.15)
+            if instance.get("system_prompt"):
+                instance["_system_prompt_pending"] = True
+                instance["_pending_system_prompt"] = self._build_system_prompt(instance)
+                logger.debug("System prompt stored for sending with first user message")
+            return
 
+        # Pane-delivered harnesses type the bootstrap into the CLI, so it must
+        # really be up — otherwise the text lands in the shell and executes.
         if not cli_ready:
             logger.warning(
-                f"CLI initialization may not be complete after {time.time() - init_start:.1f}s, proceeding anyway"
+                f"{harness.label} CLI not ready - waiting additional time before bootstrap"
             )
-        else:
-            logger.debug(f"CLI initialized in {time.time() - init_start:.1f}s")
-
-        # CRITICAL: Additional safety wait to ensure CLI is FULLY ready for multiline input
-        # Even after showing ready prompt, Claude needs time to be ready for C-j sequences
-        if instance_type != "codex":
-            logger.debug("Additional safety wait for multiline input readiness...")
-            await asyncio.sleep(0.15)  # Optimized: 150ms sufficient for full readiness
-            logger.debug("Ready for multiline input")
-        else:
-            # Codex also needs a safety wait before receiving bootstrap messages.
-            # Without this, if the ready-check loop timed out (cli_ready=False),
-            # the bootstrap message would be typed into the bare shell instead of
-            # the Codex CLI.  Give Codex extra time to finish starting.
+            cli_ready = await self._wait_for_cli_ready(pane, harness, max_wait=10.0)
             if not cli_ready:
-                logger.warning(
-                    "Codex CLI not detected as ready - waiting additional time before bootstrap"
+                # Raise rather than return: the caller marks the instance failed
+                # and reports it. Returning quietly left the spawn looking
+                # healthy while every later message went to the bare shell.
+                raise RuntimeError(
+                    f"{harness.label} CLI failed to start within timeout - "
+                    f"skipped bootstrap to avoid shell execution"
                 )
-                extra_wait_start = time.time()
-                while time.time() - extra_wait_start < 10:
-                    await asyncio.sleep(0.5)
-                    output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
-                    if any(
-                        indicator in output
-                        for indicator in [
-                            "codex>",
-                            "Working on:",
-                            "Thinking...",
-                            "OpenAI Codex",
-                            "›",
-                        ]
-                    ):
-                        cli_ready = True
-                        logger.debug("Codex CLI became ready during extended wait")
-                        break
-                if not cli_ready:
-                    logger.error(
-                        "Codex CLI not ready after extended wait - skipping bootstrap to avoid shell execution"
-                    )
-                    instance["state"] = "error"
-                    instance["error"] = "Codex CLI failed to start within timeout"
-                    return instance
-            await asyncio.sleep(0.3)  # Brief settle time for Codex input readiness
 
-        # Handle initial prompts based on instance type
-        if instance_type == "codex":
-            # BUILD instance_id information for Codex
-            workspace_path = instance["workspace_dir"]
+        await asyncio.sleep(0.3)  # Brief settle time for input readiness
 
-            # Add instance ID information for parent communication
-            instance_id_info = (
-                f"Your instance ID: {instance['id']}\n"
-                f"This ID is also stored in {workspace_path}/.madrox_instance_id\n"
+        await self._send_multiline_message_to_pane(
+            pane, f"SYSTEM INFORMATION:\n{self._build_identity_briefing(instance)}\n"
+        )
+        logger.debug(f"Sent instance_id information to {harness.label} instance")
+        await asyncio.sleep(2)  # Let the CLI process the briefing
+
+        if initial_prompt := instance.get("initial_prompt"):
+            pane.send_keys(initial_prompt, enter=True)
+            logger.debug(f"Sent initial prompt to {harness.label} instance")
+            await asyncio.sleep(2)
+
+    @staticmethod
+    def _reply_protocol_block(instance_id: str) -> str:
+        """The reply_to_caller contract, shared by every harness."""
+        return (
+            f"RESPONDING TO MESSAGES:\n"
+            f"When you receive messages formatted as:\n"
+            f"  [MSG:correlation-id] message content here\n\n"
+            f"You MUST use the reply_to_caller tool to respond:\n"
+            f"  reply_to_caller(\n"
+            f"    instance_id='{instance_id}',\n"
+            f"    reply_message='your response here',\n"
+            f"    correlation_id='correlation-id-from-message'\n"
+            f"  )\n"
+        )
+
+    def _build_identity_briefing(self, instance: dict[str, Any]) -> str:
+        """Identity + messaging contract typed into pane-driven CLIs at startup."""
+        workspace_path = instance["workspace_dir"]
+        instance_id = instance["id"]
+
+        briefing = (
+            f"Your instance ID: {instance_id}\n"
+            f"This ID is also stored in {workspace_path}/.madrox_instance_id\n"
+        )
+
+        if parent_id := instance.get("parent_instance_id"):
+            briefing += (
+                f"Your parent instance ID: {parent_id}\n"
+                f"If send_to_instance is available, you can message your parent using: "
+                f"send_to_instance(parent_instance_id='{parent_id}', message='your message')\n"
+                f"\n{self._reply_protocol_block(instance_id)}"
+                f"IMPORTANT: Simply outputting text will NOT deliver your response to the parent.\n"
+                f"You must use reply_to_caller for the parent to receive your answer.\n"
+            )
+        else:
+            briefing += (
+                f"\nYou are a ROOT INSTANCE (spawned by the coordinator).\n"
+                f"Your workspace: {workspace_path}\n\n"
+                f"{self._reply_protocol_block(instance_id)}"
+                f"This delivers your response instantly to the coordinator.\n"
             )
 
-            if instance.get("parent_instance_id"):
-                parent_info = (
-                    f"Your parent instance ID: {instance['parent_instance_id']}\n"
-                    f"If send_to_instance is available, you can message your parent using: send_to_instance(parent_instance_id='{instance['parent_instance_id']}', message='your message')\n"
-                )
-                instance_id_info += parent_info
+        return briefing
 
-                # Add instructions for Codex child instances
-                # STDIO proxy ensures MCP tools are available via parent HTTP server
-                spawn_info = (
-                    f"\nRESPONDING TO MESSAGES:\n"
-                    f"When you receive messages, they will be formatted as:\n"
-                    f"  [MSG:correlation-id] message content here\n\n"
-                    f"You MUST use the reply_to_caller tool to respond. This is how the parent receives your reply.\n"
-                    f"Call it like this:\n"
-                    f"  reply_to_caller(\n"
-                    f"    instance_id='{instance['id']}',\n"
-                    f"    reply_message='your response here',\n"
-                    f"    correlation_id='correlation-id-from-message'\n"
-                    f"  )\n"
-                    f"IMPORTANT: Simply outputting text will NOT deliver your response to the parent.\n"
-                    f"You must use reply_to_caller for the parent to receive your answer.\n"
-                )
-                instance_id_info += spawn_info
-            else:
-                root_info = (
-                    f"\nYou are a ROOT INSTANCE (spawned by the coordinator).\n"
-                    f"Your workspace: {workspace_path}\n\n"
-                    f"RESPONDING TO MESSAGES:\n"
-                    f"When you receive messages formatted as:\n"
-                    f"  [MSG:correlation-id] message content here\n\n"
-                    f"You MUST use the reply_to_caller tool to respond:\n"
-                    f"  reply_to_caller(\n"
-                    f"    instance_id='{instance['id']}',\n"
-                    f"    reply_message='your response here',\n"
-                    f"    correlation_id='correlation-id-from-message'\n"
-                    f"  )\n"
-                    f"This delivers your response instantly to the coordinator.\n"
-                )
-                instance_id_info += root_info
+    def _build_system_prompt(self, instance: dict[str, Any]) -> str:
+        """Assemble the deferred system prompt sent with the first user message."""
+        instance_id = instance["id"]
+        workspace_path = instance["workspace_dir"]
+        has_custom_prompt = instance.get("has_custom_prompt", False)
+        system_prompt = instance.get("system_prompt", "")
 
-            # Send instance_id information first
-            initialization_message = f"SYSTEM INFORMATION:\n{instance_id_info}\n"
-            self._send_multiline_message_to_pane(pane, initialization_message)
-            logger.debug("Sent instance_id information to Codex instance")
-            await asyncio.sleep(2)  # Wait for Codex to process
+        prompt_prefix = "" if has_custom_prompt else "You are a specialized Claude instance. "
 
-            # Then send initial_prompt if provided
-            if initial_prompt := instance.get("initial_prompt"):
-                pane.send_keys(initial_prompt, enter=True)
-                logger.debug("Sent initial prompt to Codex instance")
-                await asyncio.sleep(
-                    2
-                )  # Optimized: 2s sufficient for Codex to process initial prompt
-        else:
-            # For Claude, DEFER system prompt until first message
-            # This ensures Claude is fully ready and avoids shell execution
-            system_prompt = instance.get("system_prompt")
-            if system_prompt:
-                logger.debug("System prompt will be sent with first user message")
-                # Flag that system prompt is pending
-                instance["_system_prompt_pending"] = True
-
-                # BUILD the system prompt now for later use
-                # Send context as first message
-                workspace_path = instance["workspace_dir"]
-                has_custom_prompt = instance.get("has_custom_prompt", False)
-
-                prompt_prefix = (
-                    "" if has_custom_prompt else "You are a specialized Claude instance. "
-                )
-
-                # Add instance ID information for parent communication
-                instance_id_info = (
-                    f"\n\nYour instance ID: {instance['id']}\n"
-                    f"This ID is also stored in {workspace_path}/.madrox_instance_id\n"
-                )
-
-                if instance.get("parent_instance_id"):
-                    parent_info = (
-                        f"Your parent instance ID: {instance['parent_instance_id']}\n"
-                        f"You can send messages to your parent using: send_to_instance(parent_instance_id='{instance['parent_instance_id']}', message='your message')\n"
-                    )
-                    instance_id_info += parent_info
-
-                    # Add instructions for spawning children with parent tracking
-                    spawn_info = (
-                        f"\nWhen spawning child instances, pass your instance_id as parent_instance_id:\n"
-                        f"  spawn_claude(name='child', role='general', parent_instance_id='{instance['id']}')\n"
-                        f"This enables bidirectional communication between parent and child.\n\n"
-                        f"PERFORMANCE TIP: When spawning children, use timeout_seconds=10 for single instance spawns,\n"
-                        f"and timeout_seconds=20 for multiple instances (spawn_multiple_instances with 2+ children).\n\n"
-                        f"HIERARCHICAL MESSAGE PASSING PATTERN:\n"
-                        f"- Children send messages to you (their parent) using: send_to_instance(parent_instance_id='{instance['id']}', message='...')\n"
-                        f"- You coordinate and decide how to route messages between children\n"
-                        f"- Use get_children(parent_id='{instance['id']}') to see all your children\n"
-                        f"- Use broadcast_to_children(parent_id='{instance['id']}', message='...') to message all children\n"
-                        f"- You control what information (IDs, tasks) flows up to your parent or down to your children\n\n"
-                        f"PEER-TO-PEER COMMUNICATION:\n"
-                        f"- Use get_peers(instance_id='{instance['id']}') to discover your teammates (siblings with the same parent)\n"
-                        f"- Use send_to_instance(instance_id='peer_id', message='...') to message them directly\n"
-                        f"- Messages to busy peers are automatically queued and delivered when they become idle\n\n"
-                        f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
-                        f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
-                        f"  [MSG:correlation-id] message content here\n\n"
-                        f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
-                        f"  reply_to_caller(\n"
-                        f"    instance_id='{instance['id']}',\n"
-                        f"    reply_message='your response here',\n"
-                        f"    correlation_id='correlation-id-from-message'\n"
-                        f"  )\n\n"
-                        f"Benefits of using reply_to_caller:\n"
-                        f"- Instant delivery (no polling delay)\n"
-                        f"- Proper request-response correlation\n"
-                        f"- More efficient than text output\n\n"
-                        f"If you don't use reply_to_caller, the system will fall back to polling your output (slower but works)."
-                    )
-                    instance_id_info += spawn_info
-                else:
-                    root_info = (
-                        f"\nYou are a ROOT INSTANCE (spawned by the coordinator).\n"
-                        f"Your workspace: {workspace_path}\n\n"
-                        f"RESPONDING TO MESSAGES:\n"
-                        f"When you receive messages formatted as:\n"
-                        f"  [MSG:correlation-id] message content here\n\n"
-                        f"You MUST use the reply_to_caller tool to respond:\n"
-                        f"  reply_to_caller(\n"
-                        f"    instance_id='{instance['id']}',\n"
-                        f"    reply_message='your response here',\n"
-                        f"    correlation_id='correlation-id-from-message'\n"
-                        f"  )\n"
-                        f"This delivers your response instantly to the coordinator.\n"
-                    )
-                    instance_id_info += root_info
-
-                if instance.get("bypass_isolation", False):
-                    workspace_info = (
-                        f"\n\nIMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
-                        f"Your workspace directory is at: {workspace_path}\n"
-                        f"You can write files to any absolute path."
-                        f"{instance_id_info}"
-                    )
-                else:
-                    workspace_info = (
-                        f"\n\nIMPORTANT: You have a workspace directory at: {workspace_path}\n"
-                        f"You can read and write files within this directory. When asked to write files, "
-                        f"write them to your workspace directory unless specifically asked to write elsewhere."
-                        f"{instance_id_info}"
-                    )
-
-                # Append bidirectional messaging instructions ONLY if instance has a parent
-                if instance.get("parent_instance_id"):
-                    bidirectional_instructions = (
-                        f"\n\n{'─' * 80}\n"
-                        f"BIDIRECTIONAL MESSAGING PROTOCOL (REQUIRED):\n"
-                        f"When you receive messages formatted as [MSG:correlation-id] content,\n"
-                        f"you MUST respond using the reply_to_caller tool:\n\n"
-                        f"  reply_to_caller(\n"
-                        f"    instance_id='{instance['id']}',\n"
-                        f"    reply_message='your response here',\n"
-                        f"    correlation_id='correlation-id-from-message'\n"
-                        f"  )\n\n"
-                        f"IMPORTANT: Always use reply_to_caller for every response to messages.\n"
-                        f"This enables instant bidirectional communication and proper correlation.\n"
-                        f"{'─' * 80}\n"
-                    )
-                else:
-                    bidirectional_instructions = ""
-
-                full_prompt = f"{prompt_prefix}{system_prompt}{workspace_info if not has_custom_prompt else ''}{bidirectional_instructions}"
-
-                # Store the system prompt for later (send with first message)
-                instance["_pending_system_prompt"] = full_prompt
-                logger.debug("System prompt stored for sending with first user message")
-
-        logger.info(f"Tmux session initialized for {instance_type} instance {instance_id}")
-
-    async def _initialize_tmux_session_for_recovery(self, instance_id: str):
-        """Initialize a tmux session for recovery using --continue to resume conversation."""
-        instance = self.instances[instance_id]
-        workspace_dir = instance["workspace_dir"]
-        instance_type = instance.get("instance_type", "claude")
-        session_name = f"madrox-{instance_id}"
-
-        logger.info(f"Recovery: creating tmux session {session_name} with --continue")
-
-        # Kill existing session if any (shouldn't exist, but be safe)
-        try:
-            existing = self.tmux_server.find_where({"session_name": session_name})
-            if existing:
-                existing.kill_session()
-        except Exception:
-            pass
-
-        # Prepare environment variables (same as _initialize_tmux_session)
-        session_env = {}
-        if self.shared_state:
-            import base64
-
-            manager_address = self.shared_state.manager_address
-            if isinstance(manager_address, tuple):
-                manager_host, manager_port = manager_address
-                session_env["MADROX_MANAGER_HOST"] = str(manager_host)
-                session_env["MADROX_MANAGER_PORT"] = str(manager_port)
-            else:
-                session_env["MADROX_MANAGER_SOCKET"] = str(manager_address)
-            session_env["MADROX_MANAGER_AUTHKEY"] = base64.b64encode(
-                self.shared_state.manager_authkey
-            ).decode("ascii")
-
-        # Create tmux session
-        session = self.tmux_server.new_session(
-            session_name=session_name,
-            window_name=instance_type,
-            start_directory=workspace_dir,
-            x=160,
-            y=50,
-            environment=session_env if session_env else None,
-        )
-        self.tmux_sessions[instance_id] = session
-
-        window = session.windows[0]
-        pane = window.panes[0]
-
-        # Set and export environment variables
-        if session_env:
-            for key, value in session_env.items():
-                try:
-                    session.set_environment(key, value)
-                except Exception:
-                    pass
-            for key, value in session_env.items():
-                escaped_value = value.replace("'", "'\\''")
-                pane.send_keys(f"export {key}='{escaped_value}'", enter=True)
-
-        # Reconfigure MCP servers
-        self._configure_mcp_servers(pane, instance)
-
-        if instance_type == "codex":
-            # Codex resume --last: auto-picks the most recent session in this workspace
-            # -a never and --dangerously-bypass-approvals-and-sandbox are mutually exclusive
-            if instance.get("bypass_isolation"):
-                cmd_parts = [
-                    _codex_path or "codex",
-                    "resume",
-                    "--last",
-                    "--dangerously-bypass-approvals-and-sandbox",
-                ]
-            else:
-                cmd_parts = [_codex_path or "codex", "resume", "--last", "-a", "never"]
-            if model := instance.get("model"):
-                cmd_parts.extend(["--model", model])
-        else:
-            # Claude CLI with --continue to resume last conversation
-            cmd_parts = [
-                "claude",
-                "--continue",
-                "--permission-mode",
-                "bypassPermissions",
-                "--dangerously-skip-permissions",
-            ]
-
-            if mcp_config_path := instance.get("_mcp_config_path"):
-                cmd_parts.extend(["--mcp-config", mcp_config_path])
-
-            cmd_parts.extend(["--setting-sources", "local,project"])
-
-            if model := instance.get("model"):
-                cmd_parts.extend(["--model", model])
-
-        cmd = " ".join(cmd_parts)
-        pane.send_keys(cmd, enter=True)
-        logger.debug(f"Recovery: started {instance_type} CLI: {cmd}")
-
-        # Same ready-detection polling as _initialize_tmux_session
-        max_init_wait = 10
-        init_start = time.time()
-        cli_ready = False
-
-        while time.time() - init_start < max_init_wait:
-            await asyncio.sleep(0.15)
-            output = "\n".join(pane.cmd("capture-pane", "-p").stdout)
-
-            if "Yes, I trust this folder" in output and "No, exit" in output:
-                pane.send_keys("1", enter=True)
-                await asyncio.sleep(0.5)
-                continue
-
-            if instance_type == "codex":
-                if any(ind in output for ind in ["codex>", "Working on:", "OpenAI Codex", "›"]):
-                    cli_ready = True
-                    break
-            else:
-                if any(
-                    ind in output for ind in ['Try "', "⏵⏵", "bypass permissions", "How can I help"]
-                ):
-                    cli_ready = True
-                    break
-
-        if not cli_ready:
-            logger.warning(f"Recovery: CLI may not be ready after {time.time() - init_start:.1f}s")
-        else:
-            logger.info(f"Recovery: CLI ready in {time.time() - init_start:.1f}s")
-
-        # Brief safety wait
-        await asyncio.sleep(0.15)
-
-        # Skip system prompt injection — conversation context is preserved via --continue
-        logger.info(
-            f"Recovery: tmux session initialized for {instance_type} instance {instance_id}"
+        instance_id_info = (
+            f"\n\nYour instance ID: {instance_id}\n"
+            f"This ID is also stored in {workspace_path}/.madrox_instance_id\n"
         )
 
-    def _send_multiline_message_to_pane(self, pane, message: str) -> None:
+        if parent_id := instance.get("parent_instance_id"):
+            instance_id_info += (
+                f"Your parent instance ID: {parent_id}\n"
+                f"You can send messages to your parent using: "
+                f"send_to_instance(parent_instance_id='{parent_id}', message='your message')\n"
+                f"\nWhen spawning child instances, pass your instance_id as parent_instance_id:\n"
+                f"  spawn_claude(name='child', role='general', parent_instance_id='{instance_id}')\n"
+                f"This enables bidirectional communication between parent and child.\n\n"
+                f"PERFORMANCE TIP: When spawning children, use timeout_seconds=10 for single instance spawns,\n"
+                f"and timeout_seconds=20 for multiple instances (spawn_multiple_instances with 2+ children).\n\n"
+                f"HIERARCHICAL MESSAGE PASSING PATTERN:\n"
+                f"- Children send messages to you (their parent) using: send_to_instance(parent_instance_id='{instance_id}', message='...')\n"
+                f"- You coordinate and decide how to route messages between children\n"
+                f"- Use get_children(parent_id='{instance_id}') to see all your children\n"
+                f"- Use broadcast_to_children(parent_id='{instance_id}', message='...') to message all children\n"
+                f"- You control what information (IDs, tasks) flows up to your parent or down to your children\n\n"
+                f"PEER-TO-PEER COMMUNICATION:\n"
+                f"- Use get_peers(instance_id='{instance_id}') to discover your teammates (siblings with the same parent)\n"
+                f"- Use send_to_instance(instance_id='peer_id', message='...') to message them directly\n"
+                f"- Messages to busy peers are automatically queued and delivered when they become idle\n\n"
+                f"BIDIRECTIONAL MESSAGING PROTOCOL:\n"
+                f"When you receive messages from the coordinator or parent instance, they will be formatted as:\n"
+                f"  [MSG:correlation-id] message content here\n\n"
+                f"To respond efficiently using the bidirectional protocol, use the reply_to_caller tool:\n"
+                f"  reply_to_caller(\n"
+                f"    instance_id='{instance_id}',\n"
+                f"    reply_message='your response here',\n"
+                f"    correlation_id='correlation-id-from-message'\n"
+                f"  )\n\n"
+                f"Benefits of using reply_to_caller:\n"
+                f"- Instant delivery (no polling delay)\n"
+                f"- Proper request-response correlation\n"
+                f"- More efficient than text output\n\n"
+                f"If you don't use reply_to_caller, the system will fall back to polling your output (slower but works)."
+            )
+        else:
+            instance_id_info += (
+                f"\nYou are a ROOT INSTANCE (spawned by the coordinator).\n"
+                f"Your workspace: {workspace_path}\n\n"
+                f"{self._reply_protocol_block(instance_id)}"
+                f"This delivers your response instantly to the coordinator.\n"
+            )
+
+        if instance.get("bypass_isolation", False):
+            workspace_info = (
+                f"\n\nIMPORTANT: You have FULL FILESYSTEM ACCESS. You can read and write files anywhere.\n"
+                f"Your workspace directory is at: {workspace_path}\n"
+                f"You can write files to any absolute path."
+                f"{instance_id_info}"
+            )
+        else:
+            workspace_info = (
+                f"\n\nIMPORTANT: You have a workspace directory at: {workspace_path}\n"
+                f"You can read and write files within this directory. When asked to write files, "
+                f"write them to your workspace directory unless specifically asked to write elsewhere."
+                f"{instance_id_info}"
+            )
+
+        if instance.get("parent_instance_id"):
+            bidirectional_instructions = (
+                f"\n\n{'─' * 80}\n"
+                f"BIDIRECTIONAL MESSAGING PROTOCOL (REQUIRED):\n"
+                f"When you receive messages formatted as [MSG:correlation-id] content,\n"
+                f"you MUST respond using the reply_to_caller tool:\n\n"
+                f"  reply_to_caller(\n"
+                f"    instance_id='{instance_id}',\n"
+                f"    reply_message='your response here',\n"
+                f"    correlation_id='correlation-id-from-message'\n"
+                f"  )\n\n"
+                f"IMPORTANT: Always use reply_to_caller for every response to messages.\n"
+                f"This enables instant bidirectional communication and proper correlation.\n"
+                f"{'─' * 80}\n"
+            )
+        else:
+            bidirectional_instructions = ""
+
+        return (
+            f"{prompt_prefix}{system_prompt}"
+            f"{workspace_info if not has_custom_prompt else ''}"
+            f"{bidirectional_instructions}"
+        )
+
+    async def _send_multiline_message_to_pane(self, pane, message: str) -> None:
         """Send multiline message to tmux pane without triggering paste detection.
 
         Uses line-by-line send_keys with C-j (newline without submit) and adaptive timing.
         CRITICAL: Adds delay AFTER each send_keys call to prevent instant keystroke bursts.
+        The pacing yields to the event loop, so a long message to one instance
+        does not stall every other instance.
 
         Args:
             pane: libtmux pane object
             message: Message content (may contain newlines)
         """
-        import time
-
         # Health check: verify Claude CLI is running (not at shell prompt)
         # Only check visible screen (not scroll buffer which contains export commands)
         pane_lines = pane.cmd("capture-pane", "-p").stdout
@@ -2507,17 +2256,17 @@ class TmuxInstanceManager:
             # Send the line content
             if line:  # Only send non-empty lines
                 pane.send_keys(line, enter=False, literal=True)
-                time.sleep(delay_per_keystroke)  # CRITICAL: Delay after line
+                await asyncio.sleep(delay_per_keystroke)  # CRITICAL: Delay after line
                 keystroke_count += 1
 
             # Add newline between lines (not after last line)
             if i < total_lines - 1:
                 pane.send_keys("C-j", enter=False, literal=False)
-                time.sleep(delay_per_keystroke)  # CRITICAL: Delay after C-j
+                await asyncio.sleep(delay_per_keystroke)  # CRITICAL: Delay after C-j
                 keystroke_count += 1
 
         # Small delay before Enter
-        time.sleep(0.05)
+        await asyncio.sleep(0.05)
 
         # Send Enter keystroke
         pane.send_keys("Enter", literal=False)
