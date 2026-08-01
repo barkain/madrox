@@ -15,6 +15,7 @@ Current: 28% (230/813 statements)
 import asyncio
 import threading
 from datetime import datetime, timedelta
+from pathlib import Path
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
@@ -1387,6 +1388,48 @@ class TestCriticalFunctions:
 # ============================================================================
 # Backend Error Detection Tests (issue #28)
 # ============================================================================
+
+
+class TestRolePrompts:
+    """Role prompts live in <repo>/resources/prompts/<role>.txt."""
+
+    def test_role_prompt_is_loaded_from_file_not_fallback(self, tmux_manager):
+        prompt = tmux_manager._get_role_prompt("security_analyst")
+        expected = (
+            (Path(__file__).parent.parent.parent / "resources" / "prompts" / "security_analyst.txt")
+            .read_text(encoding="utf-8")
+            .strip()
+        )
+
+        assert prompt == expected
+        # The generic fallback would have been returned if the path were wrong.
+        assert prompt != "You are a helpful AI assistant capable of handling various tasks."
+
+    def test_every_shipped_prompt_file_is_reachable(self, tmux_manager):
+        prompts_dir = Path(__file__).parent.parent.parent / "resources" / "prompts"
+        generic = "You are a helpful AI assistant capable of handling various tasks."
+
+        for prompt_file in prompts_dir.glob("*.txt"):
+            role = prompt_file.stem
+            loaded = tmux_manager._get_role_prompt(role)
+            if role != "general":
+                assert loaded != generic, f"role {role} fell back to the generic prompt"
+
+    def test_documented_aliases_resolve_to_real_prompts(self, tmux_manager):
+        generic = "You are a helpful AI assistant capable of handling various tasks."
+        for alias in ("security", "qa_engineer", "data_scientist"):
+            assert tmux_manager._get_role_prompt(alias) != generic
+
+    def test_security_alias_matches_canonical_role(self, tmux_manager):
+        assert tmux_manager._get_role_prompt("security") == tmux_manager._get_role_prompt(
+            "security_analyst"
+        )
+
+    def test_unknown_role_falls_back_to_general(self, tmux_manager):
+        assert (
+            tmux_manager._get_role_prompt("underwater_basket_weaver")
+            == "You are a helpful AI assistant capable of handling various tasks."
+        )
 
 
 class TestPaneRoleInstructions:

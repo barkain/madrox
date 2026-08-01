@@ -14,7 +14,7 @@ import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import libtmux
 
@@ -41,6 +41,19 @@ _PANE_COMMAND_PACING_SECONDS = 0.05
 
 class TmuxInstanceManager:
     """Manages Claude instances via tmux sessions."""
+
+    #: Role spellings that have long been documented but never had a prompt
+    #: file, mapped to the canonical role they clearly mean. Without these a
+    #: caller asking for "security" silently gets the generic assistant.
+    ROLE_PROMPT_ALIASES: ClassVar[dict[str, str]] = {
+        "security": "security_analyst",
+        "qa_engineer": "testing_specialist",
+        "tester": "testing_specialist",
+        "data_scientist": "data_analyst",
+        "reviewer": "code_reviewer",
+        "docs": "documentation_writer",
+        "technical_writer": "documentation_writer",
+    }
 
     def __init__(self, config: dict[str, Any], logging_manager=None, shared_state_manager=None):
         """Initialize the tmux instance manager.
@@ -2687,10 +2700,17 @@ class TmuxInstanceManager:
         """
         from pathlib import Path
 
-        # Get the project root directory (parent of src/orchestrator)
+        # This file is <root>/src/orchestrator/tmux_instance_manager/core.py, so
+        # the repository root is four levels up. Three levels landed on src/,
+        # where resources/ does not exist — every role silently fell back to the
+        # generic prompt.
         current_file = Path(__file__)
-        project_root = current_file.parent.parent.parent
+        project_root = current_file.parent.parent.parent.parent
         prompts_dir = project_root / "resources" / "prompts"
+
+        # Accept the friendlier spellings callers actually reach for; the file
+        # names are the canonical role ids.
+        role = self.ROLE_PROMPT_ALIASES.get(role, role)
 
         # Try to load from file
         prompt_file = prompts_dir / f"{role}.txt"

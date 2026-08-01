@@ -177,17 +177,24 @@ Instances follow a state machine pattern:
 
 ### Role System
 
-10 predefined roles with specialized system prompts:
+10 predefined roles, each backed by a prompt file in `resources/prompts/<role>.txt`.
+The file names are the canonical role ids:
 - `architect`: System design and architecture
 - `frontend_developer`: React/Vue/Angular expertise
 - `backend_developer`: API and server development
-- `data_scientist`: ML/AI and data analysis
-- `devops`: Infrastructure and deployment
-- `designer`: UI/UX design
-- `qa_engineer`: Testing and quality
-- `security`: Security analysis
-- `project_manager`: Project coordination
+- `code_reviewer`: Code review and best practices
+- `testing_specialist`: Testing and quality
+- `security_analyst`: Security analysis
+- `debugger`: Diagnosing and fixing complex issues
+- `data_analyst`: Data processing, analysis, and visualization
+- `documentation_writer`: Technical documentation
 - `general`: Default general purpose
+
+A few friendlier spellings are accepted as aliases (`security` →
+`security_analyst`, `qa_engineer`/`tester` → `testing_specialist`,
+`data_scientist` → `data_analyst`, `reviewer` → `code_reviewer`,
+`docs`/`technical_writer` → `documentation_writer`). Any other unknown role
+logs a warning and falls back to the `general` prompt.
 
 ### Resource Management
 
