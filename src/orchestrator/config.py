@@ -16,6 +16,7 @@ import logging
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -23,14 +24,18 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def _load_model_config() -> dict:
+def _load_model_config() -> Any:
     """Load model configuration from YAML.
 
     The path can be overridden with ``MADROX_MODELS_CONFIG`` so operators can
     keep their own defaults outside the repository.
 
     Returns:
-        Model configuration dict
+        Whatever the YAML document contains. This is deliberately not typed as
+        ``dict``: the file is operator-supplied, and a valid document whose top
+        level is a list or a bare string parses fine. Callers must check the
+        shape — claiming ``dict`` here made the guard in ``get_harness_config``
+        look unreachable to mypy while still firing at runtime.
 
     Raises:
         FileNotFoundError: If the config file doesn't exist
