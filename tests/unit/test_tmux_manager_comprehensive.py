@@ -14,6 +14,7 @@ Current: 28% (230/813 statements)
 
 import asyncio
 import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from queue import Queue
@@ -1388,6 +1389,66 @@ class TestCriticalFunctions:
 # ============================================================================
 # Backend Error Detection Tests (issue #28)
 # ============================================================================
+
+
+class TestBootstrapErrorScan:
+    """_record_bootstrap_error must catch real rejections without failing
+    healthy spawns, and must not add noticeable latency to the happy path."""
+
+    def _pane(self, text):
+        pane = MagicMock()
+        pane.cmd = MagicMock(return_value=MagicMock(stdout=text.split("\n")))
+        return pane
+
+    @pytest.mark.asyncio
+    async def test_hard_api_rejection_is_recorded(self, tmux_manager):
+        instance = {"id": "i-1"}
+        pane = self._pane(
+            '■ {"type":"error","status":400,"error":{"type":"invalid_request_error",'
+            '"message":"The \'gpt-9\' model requires a newer version of Codex."}}'
+        )
+
+        await tmux_manager._record_bootstrap_error(pane, instance, baseline="", max_wait=0)
+
+        assert "invalid_request_error" in instance["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_metadata_warning_alone_is_not_a_failure(self, tmux_manager):
+        """Codex prints this for valid models too, then carries on."""
+        instance = {"id": "i-2"}
+        pane = self._pane(
+            "⚠ Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata; "
+            "this can degrade performance and cause issues."
+        )
+
+        await tmux_manager._record_bootstrap_error(pane, instance, baseline="", max_wait=0)
+
+        assert "error_message" not in instance
+
+    @pytest.mark.asyncio
+    async def test_real_error_after_advisory_still_recorded(self, tmux_manager):
+        instance = {"id": "i-3"}
+        pane = self._pane(
+            "⚠ Model metadata for `gpt-9` not found. Defaulting to fallback metadata.\n"
+            "■ unexpected status 404 Not Found: model unavailable"
+        )
+
+        await tmux_manager._record_bootstrap_error(pane, instance, baseline="", max_wait=0)
+
+        assert "404" in instance["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_healthy_spawn_is_not_delayed_for_long(self, tmux_manager):
+        """The scan is paid by every spawn with an initial prompt."""
+        instance = {"id": "i-4"}
+        pane = self._pane("• Working on it...")
+
+        start = time.monotonic()
+        await tmux_manager._record_bootstrap_error(pane, instance, baseline="")
+        elapsed = time.monotonic() - start
+
+        assert "error_message" not in instance
+        assert elapsed < 4.0, f"healthy spawn delayed {elapsed:.1f}s by the error scan"
 
 
 class TestRolePrompts:

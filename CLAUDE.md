@@ -283,7 +283,9 @@ Environment variables:
 - `ORCHESTRATOR_HOST`: HTTP server host (default: localhost, HTTP mode only)
 - `MAX_INSTANCES`: Concurrent instance limit (default: 10)
 - `WORKSPACE_DIR`: Base workspace path (default: /tmp/claude_orchestrator)
-- `LOG_DIR`: Log directory (default: /tmp/madrox_logs). State files stored in `{LOG_DIR}/state/`
+- `LOG_DIR`: Log directory (default: /tmp/madrox_logs). State files stored in `{LOG_DIR}/state/`. `MADROX_LOG_DIR` is accepted as an override and takes precedence when both are set.
+
+**Running two backends at once:** instance state lives in `{LOG_DIR}/state/instances.json`, and on startup a backend kills any tmux session not matching a live record there. Two backends sharing that file will therefore reap each other's sessions. To run an isolated second backend (e.g. for testing), give it both its own `LOG_DIR` **and** its own tmux server via `TMUX_TMPDIR` — note macOS caps socket paths near 104 characters, so keep that directory short.
 - `LOG_LEVEL`: Logging verbosity (default: INFO)
 - `OPENROUTER_API_KEY`: Optional API key for LLM-based activity summarization (OpenRouter)
 - `ARTIFACTS_DIR`: Base artifacts directory (default: /tmp/madrox_logs/artifacts)

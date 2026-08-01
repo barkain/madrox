@@ -2115,12 +2115,19 @@ class TmuxInstanceManager:
         )
 
     async def _record_bootstrap_error(
-        self, pane, instance: dict[str, Any], baseline: str, max_wait: float = 8.0
+        self, pane, instance: dict[str, Any], baseline: str, max_wait: float = 2.5
     ) -> None:
         """Store any backend error the CLI printed in response to the first prompt.
 
         Polls briefly rather than checking once: a rejection round-trips through
-        the backend, so it usually lands a second or two after the prompt.
+        the backend, so it usually lands a moment after the prompt. The window
+        is deliberately short — it is paid by *every* healthy spawn that has an
+        initial prompt, and a rejection that arrives later is still caught by
+        the first real message, which scans the same way.
+
+        Advisory lines are ignored: Codex warns about missing model metadata for
+        valid models and carries on, so treating that as a spawn failure would
+        report healthy instances as broken.
         """
         deadline = time.monotonic() + max_wait
         while True:
@@ -2130,7 +2137,8 @@ class TmuxInstanceManager:
                 logger.debug(f"Could not capture pane for bootstrap error scan: {e}")
                 return
 
-            if error := self._detect_backend_error(output, baseline):
+            error = self._detect_backend_error(output, baseline, ignore=self._ADVISORY_ONLY)
+            if error:
                 instance["error_message"] = error
                 logger.warning(
                     f"Backend error during spawn of {instance['id']}: {error}",
@@ -2140,7 +2148,7 @@ class TmuxInstanceManager:
 
             if time.monotonic() >= deadline:
                 return
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.4)
 
     @staticmethod
     def _pane_role_instructions(instance: dict[str, Any]) -> str | None:
@@ -2615,9 +2623,21 @@ class TmuxInstanceManager:
         r"|engine bad request"
         r"|task submission failed"
         r"|job registration failed"
-        r"|model metadata for .* not found",
+        r"|model metadata for .* not found"
+        # Hard API rejections arrive as a JSON blob rather than prose, e.g.
+        # {"type":"error","status":400,"error":{"type":"invalid_request_error",
+        #  "message":"The 'x' model requires a newer version of Codex."}}
+        # None of the prose patterns above match those.
+        r"|\"type\"\s*:\s*\"invalid_request_error\""
+        r"|\"status\"\s*:\s*[45]\d{2}",
         re.IGNORECASE,
     )
+
+    # Advisory lines that match a signature above but do not mean the request
+    # failed. Codex prints the metadata warning for any model it lacks local
+    # metadata for — including perfectly valid ones — and then continues with
+    # fallback metadata. Fatal at spawn time only if something else follows.
+    _ADVISORY_ONLY = re.compile(r"model metadata for .* not found", re.IGNORECASE)
 
     # WEAK signatures: prose-like phrases that also appear in legitimate replies.
     # Only treated as errors when the line is glyph-marked as a CLI error.
@@ -2630,7 +2650,12 @@ class TmuxInstanceManager:
         re.IGNORECASE,
     )
 
-    def _detect_backend_error(self, output: str, initial_output: str | None = None) -> str | None:
+    def _detect_backend_error(
+        self,
+        output: str,
+        initial_output: str | None = None,
+        ignore: re.Pattern[str] | None = None,
+    ) -> str | None:
         """Scan NEW tmux pane output for a backend/CLI error message.
 
         The interactive Codex/Claude CLIs surface backend failures (model 404s,
@@ -2673,6 +2698,10 @@ class TmuxInstanceManager:
             line = raw_line.strip()
             if not line:
                 continue
+            if ignore is not None and ignore.search(line):
+                # Advisory line: keep scanning rather than returning it, so a
+                # real error printed after it is still found.
+                continue
             glyph_marked = line[0] in self._ERROR_GLYPHS
             if self._BACKEND_ERROR_STRONG.search(line) or (
                 glyph_marked and self._BACKEND_ERROR_WEAK.search(line)
@@ -2709,11 +2738,13 @@ class TmuxInstanceManager:
         prompts_dir = project_root / "resources" / "prompts"
 
         # Accept the friendlier spellings callers actually reach for; the file
-        # names are the canonical role ids.
-        role = self.ROLE_PROMPT_ALIASES.get(role, role)
-
-        # Try to load from file
+        # names are the canonical role ids. A real prompt file always wins, so
+        # adding resources/prompts/security.txt later cannot be masked by the
+        # security -> security_analyst alias.
         prompt_file = prompts_dir / f"{role}.txt"
+        if not prompt_file.exists() and role in self.ROLE_PROMPT_ALIASES:
+            role = self.ROLE_PROMPT_ALIASES[role]
+            prompt_file = prompts_dir / f"{role}.txt"
 
         try:
             if prompt_file.exists():
