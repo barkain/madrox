@@ -40,9 +40,47 @@ def _clean_config(monkeypatch):
     _load_model_config.cache_clear()
 
 
+class _RejectingSpawner(_Spawner):
+    """Mimics the bootstrap noticing the backend reject the first prompt."""
+
+    ERROR = "The 'gpt-9-nonexistent' model requires a newer version of Codex."
+
+    async def spawn_instance(self, **kwargs):
+        instance_id = await super().spawn_instance(**kwargs)
+        self.instances[instance_id]["error_message"] = self.ERROR
+        return instance_id
+
+
 @pytest.fixture
 def spawner():
     return _Spawner()
+
+
+class TestBackendErrorSurfacing:
+    """A backend rejection must reach the caller, not just the terminal."""
+
+    @pytest.mark.asyncio
+    async def test_rejected_model_reports_failed_without_wait_for_response(self):
+        spawner = _RejectingSpawner()
+
+        result = await SpawningMixin.spawn_codex.fn(
+            spawner,
+            name="doomed",
+            model="gpt-9-nonexistent",
+            initial_prompt="hello",
+        )
+
+        # wait_for_response defaults to False — the path that used to report a
+        # cheerful "spawned" while the 400 sat unread in the tmux pane.
+        assert result["status"] == "failed"
+        assert result["error_message"] == _RejectingSpawner.ERROR
+
+    @pytest.mark.asyncio
+    async def test_clean_spawn_still_reports_spawned(self, spawner):
+        result = await SpawningMixin.spawn_codex.fn(spawner, name="fine", initial_prompt="hello")
+
+        assert result["status"] == "spawned"
+        assert "error_message" not in result
 
 
 class TestDefaultModels:

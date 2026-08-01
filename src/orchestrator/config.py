@@ -72,6 +72,15 @@ def get_harness_config(harness: str) -> dict:
         logger.warning(f"Could not load model configuration: {e}")
         return {}
 
+    # A syntactically valid YAML document whose top level is not a mapping (a
+    # list, a bare string, …) is truthy, so it survives the `or {}` above and
+    # would raise AttributeError on .get() — outside the handler.
+    if not isinstance(config, dict):
+        logger.warning(
+            f"Model configuration must be a mapping, got {type(config).__name__}; ignoring it"
+        )
+        return {}
+
     section = config.get(harness)
     return section if isinstance(section, dict) else {}
 

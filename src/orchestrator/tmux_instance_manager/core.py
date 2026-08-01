@@ -2063,16 +2063,28 @@ class TmuxInstanceManager:
 
         await asyncio.sleep(0.3)  # Brief settle time for input readiness
 
-        await self._send_multiline_message_to_pane(
-            pane, f"SYSTEM INFORMATION:\n{self._build_identity_briefing(instance)}\n"
-        )
+        bootstrap = f"SYSTEM INFORMATION:\n{self._build_identity_briefing(instance)}\n"
+
+        # Pane-delivered harnesses have no --system-prompt flag, so role and
+        # custom system prompts have to ride along with the briefing. Without
+        # this they were accepted by spawn_* and then silently dropped.
+        if role_instructions := self._pane_role_instructions(instance):
+            bootstrap += f"\nYOUR ROLE AND INSTRUCTIONS:\n{role_instructions}\n"
+
+        await self._send_multiline_message_to_pane(pane, bootstrap)
         logger.debug(f"Sent instance_id information to {harness.label} instance")
         await asyncio.sleep(2)  # Let the CLI process the briefing
 
         if initial_prompt := instance.get("initial_prompt"):
+            baseline = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
             pane.send_keys(initial_prompt, enter=True)
             logger.debug(f"Sent initial prompt to {harness.label} instance")
             await asyncio.sleep(2)
+            # The backend can reject the request outright (unknown model, auth
+            # failure). Nobody is waiting on a reply here, so scan the pane
+            # ourselves — otherwise the spawn reports "spawned" and the error
+            # is only ever visible to someone looking at the terminal.
+            await self._record_bootstrap_error(pane, instance, baseline)
 
     @staticmethod
     def _reply_protocol_block(instance_id: str) -> str:
@@ -2088,6 +2100,52 @@ class TmuxInstanceManager:
             f"    correlation_id='correlation-id-from-message'\n"
             f"  )\n"
         )
+
+    async def _record_bootstrap_error(
+        self, pane, instance: dict[str, Any], baseline: str, max_wait: float = 8.0
+    ) -> None:
+        """Store any backend error the CLI printed in response to the first prompt.
+
+        Polls briefly rather than checking once: a rejection round-trips through
+        the backend, so it usually lands a second or two after the prompt.
+        """
+        deadline = time.monotonic() + max_wait
+        while True:
+            try:
+                output = "\n".join(pane.cmd("capture-pane", "-p", "-S", "-").stdout)
+            except Exception as e:  # pragma: no cover - pane vanished mid-spawn
+                logger.debug(f"Could not capture pane for bootstrap error scan: {e}")
+                return
+
+            if error := self._detect_backend_error(output, baseline):
+                instance["error_message"] = error
+                logger.warning(
+                    f"Backend error during spawn of {instance['id']}: {error}",
+                    extra={"instance_id": instance["id"]},
+                )
+                return
+
+            if time.monotonic() >= deadline:
+                return
+            await asyncio.sleep(0.5)
+
+    @staticmethod
+    def _pane_role_instructions(instance: dict[str, Any]) -> str | None:
+        """Role / custom system prompt to type into a pane-delivered CLI.
+
+        Returns None for a plain default instance, whose generic "helpful
+        assistant" boilerplate carries no instruction worth spending the
+        CLI's first turn on.
+        """
+        system_prompt = (instance.get("system_prompt") or "").strip()
+        if not system_prompt:
+            return None
+
+        role = instance.get("role")
+        if not instance.get("has_custom_prompt") and role in (None, "", "general"):
+            return None
+
+        return system_prompt
 
     def _build_identity_briefing(self, instance: dict[str, Any]) -> str:
         """Identity + messaging contract typed into pane-driven CLIs at startup."""

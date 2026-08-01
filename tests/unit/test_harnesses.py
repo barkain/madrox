@@ -1,5 +1,7 @@
 """Unit tests for the harness registry (Claude / Codex / Grok)."""
 
+import shlex
+
 import pytest
 
 from orchestrator.config import _load_model_config, resolve_model
@@ -161,6 +163,28 @@ class TestLaunchCommands:
         assert GrokHarness.executable() == "/usr/local/bin/grok-build"
 
 
+class TestShellQuoting:
+    """Command parts are joined with spaces and run by a shell (core.py:2013),
+    so operator-supplied config values must survive that round trip intact."""
+
+    def test_extra_args_keep_multiword_values_as_one_argv(self, monkeypatch, tmp_path):
+        config = tmp_path / "models.yaml"
+        config.write_text("grok:\n  extra_args: ['--rules', 'Use pytest only']\n")
+        monkeypatch.setenv("MADROX_MODELS_CONFIG", str(config))
+        _load_model_config.cache_clear()
+
+        joined = " ".join(GrokHarness.extra_args())
+        assert joined == "--rules 'Use pytest only'"
+        assert shlex.split(joined) == ["--rules", "Use pytest only"]
+
+    def test_executable_path_with_spaces_stays_one_argv(self, monkeypatch):
+        monkeypatch.setenv("MADROX_GROK_BIN", "/opt/my tools/grok")
+        _load_model_config.cache_clear()
+
+        executable = GrokHarness.executable()
+        assert shlex.split(executable) == ["/opt/my tools/grok"]
+
+
 class TestMcpRegistration:
     def test_claude_uses_a_json_config_file(self):
         assert ClaudeHarness.mcp_config_filename == ".claude_mcp_config.json"
@@ -179,12 +203,20 @@ class TestMcpRegistration:
         assert CodexHarness.mcp_http_config_path().name == "config.toml"
 
     def test_grok_registers_both_transports_via_cli(self):
+        # Per https://docs.x.ai/build/features/mcp-servers the stdio form takes
+        # no transport flag and separates the server command with `--`.
         stdio = " ".join(GrokHarness.mcp_add_stdio_command("db", "npx", ["srv"], {"K": "v"}))
-        assert "mcp add --scope project -t stdio db npx srv" in stdio
-        assert "-e K=v" in stdio
+        assert "mcp add --scope project db -- " in stdio
+        assert "-t stdio" not in stdio
+        # Grok has no CLI flag for env vars, so they ride in via `env`.
+        assert "env K=v npx srv" in stdio
 
         http = " ".join(GrokHarness.mcp_add_http_command("madrox", "http://localhost:8001/mcp"))
-        assert "mcp add --scope project -t http madrox http://localhost:8001/mcp" in http
+        assert "mcp add --scope project --transport http madrox http://localhost:8001/mcp" in http
+
+    def test_grok_stdio_omits_env_wrapper_when_no_env(self):
+        stdio = " ".join(GrokHarness.mcp_add_stdio_command("db", "npx", ["srv"], {}))
+        assert stdio.endswith("mcp add --scope project db -- npx srv")
 
 
 class TestTerminalMarkers:

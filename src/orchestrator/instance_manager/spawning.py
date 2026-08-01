@@ -80,6 +80,14 @@ class SpawningMixin:
                 timeout_seconds=timeout_seconds,
             )
             self._apply_response_status(result, response)
+        else:
+            # Nobody waited for a reply, but the bootstrap may still have seen
+            # the backend reject the request (unknown model, auth failure).
+            # Report that instead of a misleading "spawned".
+            spawn_error = (self.instances.get(instance_id) or {}).get("error_message")
+            if spawn_error:
+                result["status"] = "failed"
+                result["error_message"] = spawn_error
 
         return result
 

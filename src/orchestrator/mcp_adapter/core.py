@@ -375,31 +375,51 @@ Begin execution now. Spawn your team and start the workflow."""
                             )
 
                         spawn_kwargs = {
-                            "name": tool_args.get("name", "unnamed"),
                             "role": tool_args.get("role", "general"),
                             "system_prompt": tool_args.get("system_prompt"),
-                            # None resolves to the harness default in spawn_instance
-                            "model": tool_args.get("model"),
                             "bypass_isolation": tool_args.get("bypass_isolation", True),
                             "wait_for_ready": tool_args.get("wait_for_ready", True),
-                            "instance_type": harness.name,
                             "parent_instance_id": parent_id,
                             "mcp_servers": tool_args.get("mcp_servers", {}),
-                            "initial_prompt": tool_args.get("initial_prompt"),
                         }
                         # Codex-only knobs, passed through when present.
                         for optional in ("sandbox_mode", "profile"):
                             if optional in tool_args:
                                 spawn_kwargs[optional] = tool_args[optional]
 
-                        instance_id = await self.manager.spawn_instance(**spawn_kwargs)
+                        # Go through the same helper as the MCP tools so this
+                        # transport gets identical model resolution, reply
+                        # waiting and failure reporting. Calling spawn_instance
+                        # directly silently dropped all of it.
+                        spawn_result = await self.manager._spawn_harness_instance(
+                            instance_type=harness.name,
+                            name=tool_args.get("name", "unnamed"),
+                            # None resolves to the harness default
+                            model=tool_args.get("model"),
+                            initial_prompt=tool_args.get("initial_prompt"),
+                            wait_for_response=tool_args.get("wait_for_response", False),
+                            timeout_seconds=tool_args.get("timeout_seconds", 180),
+                            **spawn_kwargs,
+                        )
+
+                        instance_id = spawn_result.get("instance_id")
+                        if spawn_result.get("status") == "failed":
+                            summary = (
+                                f"Failed to spawn {harness.label} instance "
+                                f"'{tool_args.get('name')}' (ID: {instance_id}): "
+                                f"{spawn_result.get('error_message')}"
+                            )
+                        else:
+                            summary = (
+                                f"Spawned {harness.label} instance "
+                                f"'{tool_args.get('name')}' with ID: {instance_id}"
+                            )
 
                         result = {
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Spawned {harness.label} instance "
-                                    f"'{tool_args.get('name')}' with ID: {instance_id}",
+                                    "text": f"{summary}\n{json.dumps(spawn_result, default=str)}",
                                 }  # type: ignore[list-item]
                             ]
                         }

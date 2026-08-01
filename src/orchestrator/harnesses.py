@@ -75,13 +75,17 @@ class Harness:
         Precedence: ``MADROX_<NAME>_BIN`` env var, ``command:`` in
         ``config/models.yaml``, PATH lookup, then the bare binary name (so the
         failure surfaces from the shell with a useful message).
+
+        The result is shell-quoted: every caller joins the command parts with
+        spaces and hands the string to a shell, so an operator-supplied path
+        containing spaces would otherwise split into several argv words.
         """
         override = os.getenv(f"MADROX_{cls.name.upper()}_BIN") or get_harness_config(cls.name).get(
             "command"
         )
         if override:
-            return str(override)
-        return shutil.which(cls.binary) or cls.binary
+            return shlex.quote(str(override))
+        return shlex.quote(shutil.which(cls.binary) or cls.binary)
 
     @classmethod
     def default_model(cls) -> str | None:
@@ -90,11 +94,16 @@ class Harness:
 
     @classmethod
     def extra_args(cls) -> list[str]:
-        """Operator-supplied flags appended to every launch (from YAML)."""
+        """Operator-supplied flags appended to every launch (from YAML).
+
+        Each argument is shell-quoted so that a value which is one logical
+        argv entry stays one: ``extra_args: ["--rules", "Use pytest only"]``
+        must not become four words once the parts are joined for the shell.
+        """
         extra = get_harness_config(cls.name).get("extra_args") or []
         if isinstance(extra, str):
-            return shlex.split(extra)
-        return [str(arg) for arg in extra]
+            return [shlex.quote(arg) for arg in shlex.split(extra)]
+        return [shlex.quote(str(arg)) for arg in extra]
 
     # ------------------------------------------------------------------
     # Command construction
@@ -354,6 +363,9 @@ class GrokHarness(Harness):
     def mcp_add_stdio_command(
         cls, name: str, command: str, args: list[str], env: dict[str, str]
     ) -> list[str]:
+        # Grok's stdio form takes no transport flag and needs a `--` separator
+        # before the server command:
+        #   grok mcp add [--scope project] <name> -- <command> [args...]
         # --scope project keeps the registration inside the instance workspace.
         cmd = [
             cls.executable(),
@@ -361,14 +373,18 @@ class GrokHarness(Harness):
             "add",
             "--scope",
             "project",
-            "-t",
-            "stdio",
             shlex.quote(name),
-            shlex.quote(command),
+            "--",
         ]
+        if env:
+            # Grok has no CLI flag for env vars (they live in config.toml), so
+            # run the server under `env` rather than dropping them. A bare
+            # `KEY=value cmd` would not work: the registered command is exec'd
+            # as argv, not interpreted by a shell.
+            cmd.append("env")
+            cmd.extend(shlex.quote(f"{key}={value}") for key, value in env.items())
+        cmd.append(shlex.quote(command))
         cmd.extend(shlex.quote(str(arg)) for arg in args)
-        for key, value in env.items():
-            cmd.extend(["-e", shlex.quote(f"{key}={value}")])
         return cmd
 
     @classmethod
@@ -379,7 +395,7 @@ class GrokHarness(Harness):
             "add",
             "--scope",
             "project",
-            "-t",
+            "--transport",
             "http",
             shlex.quote(name),
             shlex.quote(url),

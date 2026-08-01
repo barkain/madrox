@@ -263,3 +263,13 @@ class TestGetHarnessConfig:
     def test_unreadable_config_is_empty(self):
         with patch("orchestrator.config._load_model_config", side_effect=FileNotFoundError("gone")):
             assert get_harness_config("claude") == {}
+
+    @pytest.mark.parametrize("document", [["grok"], "grok", 42])
+    def test_non_mapping_document_is_empty(self, document):
+        """A valid YAML file whose top level is not a mapping must not raise.
+
+        These values are truthy, so they survive the `or {}` fallback and would
+        otherwise reach .get() and raise AttributeError on the spawn path.
+        """
+        with patch("orchestrator.config._load_model_config", return_value=document):
+            assert get_harness_config("grok") == {}

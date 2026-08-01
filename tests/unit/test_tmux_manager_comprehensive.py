@@ -1389,6 +1389,39 @@ class TestCriticalFunctions:
 # ============================================================================
 
 
+class TestPaneRoleInstructions:
+    """Pane-delivered harnesses have no --system-prompt flag, so role and
+    custom prompts must be typed in with the bootstrap or they are lost."""
+
+    def test_role_prompt_is_delivered(self, tmux_manager):
+        instance = {
+            "role": "code_reviewer",
+            "system_prompt": "You are a senior code reviewer.",
+            "has_custom_prompt": False,
+        }
+        assert tmux_manager._pane_role_instructions(instance) == "You are a senior code reviewer."
+
+    def test_custom_prompt_is_delivered(self, tmux_manager):
+        instance = {
+            "role": "general",
+            "system_prompt": "Only ever answer in haiku.",
+            "has_custom_prompt": True,
+        }
+        assert tmux_manager._pane_role_instructions(instance) == "Only ever answer in haiku."
+
+    def test_default_boilerplate_is_skipped(self, tmux_manager):
+        instance = {
+            "role": "general",
+            "system_prompt": "You are a helpful AI assistant capable of various tasks.",
+            "has_custom_prompt": False,
+        }
+        assert tmux_manager._pane_role_instructions(instance) is None
+
+    def test_empty_prompt_is_skipped(self, tmux_manager):
+        instance = {"role": "architect", "system_prompt": "   ", "has_custom_prompt": False}
+        assert tmux_manager._pane_role_instructions(instance) is None
+
+
 class TestDetectBackendError:
     """Test _detect_backend_error — surfacing silent CLI/backend failures."""
 

@@ -12,7 +12,7 @@ from orchestrator.mcp_adapter import MCPAdapter
 
 
 @pytest.fixture
-def mock_instance_manager():
+def mock_instance_manager(install_spawn_harness_delegate):
     """Create mock InstanceManager."""
     mock = MagicMock()
     mock.instances = {}
@@ -51,6 +51,7 @@ def mock_instance_manager():
     mock._get_pending_replies_internal = AsyncMock(return_value=[])
     mock._build_tree_recursive = MagicMock()
     mock.spawn_instance = AsyncMock(return_value="inst-123")
+    install_spawn_harness_delegate(mock)
     mock.handle_reply_to_caller = AsyncMock(return_value={"success": True})
     mock._execute_coordination = AsyncMock()
 

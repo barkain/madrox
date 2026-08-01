@@ -25,7 +25,7 @@ from orchestrator.mcp_adapter import MCPAdapter
 
 
 @pytest.fixture
-def mock_instance_manager():
+def mock_instance_manager(install_spawn_harness_delegate):
     """Create comprehensive mock instance manager."""
     manager = MagicMock()
     manager.instances = {}
@@ -53,6 +53,7 @@ def mock_instance_manager():
 
     # Internal methods
     manager.spawn_instance = AsyncMock(return_value="inst-123")
+    install_spawn_harness_delegate(manager)
     manager._terminate_instance_internal = AsyncMock(return_value=True)
     manager._interrupt_instance_internal = AsyncMock(return_value={"success": True})
     manager._get_output_messages = AsyncMock(return_value=[])
