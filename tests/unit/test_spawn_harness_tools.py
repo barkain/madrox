@@ -84,32 +84,32 @@ class TestBackendErrorSurfacing:
 
 
 class TestDefaultModels:
-    """Omitting `model` gives the harness default, and reports it back."""
+    """Omitting `model` pins nothing — the CLI picks — and the result says so."""
 
     @pytest.mark.asyncio
-    async def test_spawn_claude_defaults_to_configured_model(self, spawner):
+    async def test_spawn_claude_pins_no_model(self, spawner):
         result = await SpawningMixin.spawn_claude.fn(spawner, name="alpha")
 
-        assert spawner.calls[0]["model"] == "claude-opus-5"
+        assert spawner.calls[0]["model"] is None
         assert spawner.calls[0]["instance_type"] == "claude"
-        assert result["model"] == "claude-opus-5"
+        assert result["model"] is None
         assert result["instance_type"] == "claude"
 
     @pytest.mark.asyncio
-    async def test_spawn_codex_defaults_to_configured_model(self, spawner):
+    async def test_spawn_codex_pins_no_model(self, spawner):
         result = await SpawningMixin.spawn_codex.fn(spawner, name="beta")
 
-        assert spawner.calls[0]["model"] == "gpt-5.6-sol"
+        assert spawner.calls[0]["model"] is None
         assert spawner.calls[0]["instance_type"] == "codex"
-        assert result["model"] == "gpt-5.6-sol"
+        assert result["model"] is None
 
     @pytest.mark.asyncio
-    async def test_spawn_grok_defaults_to_configured_model(self, spawner):
+    async def test_spawn_grok_pins_no_model(self, spawner):
         result = await SpawningMixin.spawn_grok.fn(spawner, name="gamma")
 
-        assert spawner.calls[0]["model"] == "grok-build-0.1"
+        assert spawner.calls[0]["model"] is None
         assert spawner.calls[0]["instance_type"] == "grok"
-        assert result["model"] == "grok-build-0.1"
+        assert result["model"] is None
         assert result["status"] == "spawned"
 
     @pytest.mark.asyncio
