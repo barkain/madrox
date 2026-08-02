@@ -3,12 +3,48 @@
 import base64
 import os
 from datetime import datetime
+from pathlib import Path
 from queue import Empty
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from orchestrator.shared_state_manager import SharedStateManager
+from orchestrator.shared_state_manager import SharedStateManager, _ensure_usable_cwd
+
+
+class TestDeletedWorkingDirectory:
+    """The spawn start method records os.getcwd() for the child, so a deleted
+    working directory breaks every Manager/Process spawn. Sessions run inside
+    throwaway worktrees that get removed underneath them, so this is routine."""
+
+    def test_recovers_when_cwd_has_been_deleted(self, tmp_path):
+        doomed = tmp_path / "worktree"
+        doomed.mkdir()
+        original = os.getcwd()
+        try:
+            os.chdir(doomed)
+            doomed.rmdir()
+
+            with pytest.raises(OSError):
+                os.getcwd()  # precondition: we really are in the broken state
+
+            _ensure_usable_cwd()
+
+            # A usable cwd is the thing spawn needs; without this it raises
+            # FileNotFoundError from get_preparation_data.
+            assert Path(os.getcwd()).is_dir()
+        finally:
+            os.chdir(original)
+
+    def test_leaves_a_healthy_cwd_alone(self, tmp_path):
+        original = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            before = os.getcwd()
+            _ensure_usable_cwd()
+            assert os.getcwd() == before
+        finally:
+            os.chdir(original)
 
 
 class TestInitialization:

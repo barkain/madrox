@@ -9,10 +9,12 @@ limitation of asyncio.Queue which is local to a single process.
 """
 
 import logging
+import os
 from collections import deque
 from datetime import UTC, datetime, timedelta
 from multiprocessing import Manager, Queue
 from multiprocessing.managers import DictProxy
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,38 @@ logger = logging.getLogger(__name__)
 MESSAGE_RETENTION_HOURS = 24  # Keep messages for 24 hours
 MAX_MESSAGES_PER_INSTANCE = 1000  # Max messages to keep per instance
 MAX_INCOMING_QUEUE_SIZE = 100  # Max queued messages per busy instance
+
+
+def _ensure_usable_cwd() -> None:
+    """Move off a deleted working directory before spawning a child process.
+
+    The spawn start method records ``os.getcwd()`` for the child, so if the
+    directory the process was launched in has since been removed, *every*
+    Manager/Process spawn dies with:
+
+        File ".../multiprocessing/spawn.py", in get_preparation_data
+            dir=os.getcwd(),
+        FileNotFoundError: [Errno 2] No such file or directory
+
+    This is routine rather than exotic: sessions run inside throwaway git
+    worktrees that get cleaned up underneath a still-live process.
+    """
+    try:
+        os.getcwd()
+        return
+    except OSError:
+        pass
+
+    for candidate in (Path(__file__).resolve().parent.parent.parent, Path.home(), Path("/")):
+        try:
+            os.chdir(candidate)
+            logger.warning(
+                f"Working directory no longer exists; changed to {candidate} "
+                f"so child processes can be spawned"
+            )
+            return
+        except OSError:
+            continue
 
 
 # SECURITY FIX (CWE-532): Helper function to redact authkeys in logs
@@ -129,6 +163,7 @@ class SharedStateManager:
                 logger.info("Successfully connected to parent Manager daemon")
             else:
                 # Parent process: create new Manager daemon
+                _ensure_usable_cwd()
                 self.manager = Manager()  # type: ignore[assignment]
                 self.is_child_connection = False
                 logger.info("Multiprocessing Manager daemon started (parent)")

@@ -9,6 +9,7 @@ import asyncio
 import inspect
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -106,17 +107,101 @@ class OrchestrationMCPServer:
             "MADROX_PARENT_URL", f"http://localhost:{default_port}"
         )
         self.mcp = FastMCP("claude-orchestrator-stdio-proxy")
+        self._dashboard_started = False
 
         # Register local-only tools (not proxied to parent)
         @self.mcp.tool
         async def get_dashboard_url() -> str:
             """Get the URL for the Madrox Monitor dashboard.
 
+            Starts the dashboard if it is not already running — it is not
+            launched at session startup, so a session that never opens it does
+            not pay for a Next.js dev server.
+
             Returns:
                 The dashboard URL with the correct port for this session.
             """
             port = os.getenv("MADROX_FRONTEND_PORT", "3002")
+            await self._ensure_dashboard_running(port)
             return f"http://localhost:{port}"
+
+    @staticmethod
+    def _port_is_open(port: str) -> bool:
+        """True if something is already listening on the dashboard port."""
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.3)
+            return probe.connect_ex(("127.0.0.1", int(port))) == 0
+
+    async def _ensure_dashboard_running(self, port: str) -> None:
+        """Start the Next.js dashboard once, on first request.
+
+        Launching it eagerly for every session was the single largest cost of a
+        Madrox session: a `next dev` server each, whether or not the dashboard
+        was ever opened.
+
+        The child is spawned from this process so the existing cleanup, which
+        kills whole process trees, still reaps it when the session ends.
+        """
+        if self._dashboard_started or self._port_is_open(port):
+            self._dashboard_started = True
+            return
+
+        frontend_dir = os.getenv("MADROX_FRONTEND_DIR")
+        if not frontend_dir or not Path(frontend_dir).is_dir():
+            logger.warning("Dashboard requested but frontend directory is missing")
+            return
+
+        # Mark before awaiting so two concurrent calls cannot both spawn one.
+        self._dashboard_started = True
+
+        # start_plugin.sh points this at the session log dir; with no launcher
+        # there is nowhere session-scoped to write, so discard rather than
+        # scattering files in a world-writable directory.
+        log_path = os.getenv("MADROX_FRONTEND_LOG") or os.devnull
+        env = {
+            **os.environ,
+            "PORT": port,
+            "NEXT_PUBLIC_BACKEND_PORT": os.getenv("MADROX_BACKEND_PORT", ""),
+        }
+
+        try:
+            log_file = open(log_path, "ab")  # noqa: SIM115 - handed to the child
+        except OSError as e:
+            logger.warning(f"Could not open dashboard log {log_path}: {e}")
+            return
+
+        try:
+            if not (Path(frontend_dir) / "node_modules").is_dir():
+                logger.info("Installing dashboard dependencies (first run)")
+                install = await asyncio.create_subprocess_exec(
+                    "npm",
+                    "install",
+                    "--prefix",
+                    frontend_dir,
+                    stdout=log_file,
+                    stderr=log_file,
+                )
+                await install.wait()
+
+            await asyncio.create_subprocess_exec(
+                "npx",
+                "next",
+                "dev",
+                "-p",
+                port,
+                cwd=frontend_dir,
+                env=env,
+                stdout=log_file,
+                stderr=log_file,
+            )
+            logger.info(f"Started Madrox dashboard on port {port}")
+        except (OSError, ValueError) as e:
+            self._dashboard_started = False
+            logger.warning(f"Could not start dashboard: {e}")
+        finally:
+            log_file.close()
 
     async def _register_proxy_tools(self):
         """Fetch tool schemas from the parent HTTP server and register proxies.

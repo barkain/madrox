@@ -75,10 +75,43 @@ trap 'exit 130' INT
 # lets the backend's parent-death watchdog fire if this shell is killed — which it
 # could NOT do behind a `uv run` wrapper (only `uv` would reparent to PID 1).
 VENV_PYTHON="$PLUGIN_ROOT/.venv/bin/python"
-echo "Syncing dependencies (uv sync)..." >&2
-if ! uv sync --directory "$PLUGIN_ROOT" >"$LOG_DIR/uv-sync.log" 2>&1; then
-  echo "WARNING: 'uv sync' failed; see $LOG_DIR/uv-sync.log" >&2
-  tail -20 "$LOG_DIR/uv-sync.log" >&2
+SYNC_STAMP="$PLUGIN_ROOT/.venv/.madrox-sync-stamp"
+
+# Identity of the dependency set: if this is unchanged and the venv exists, the
+# sync would be a no-op, so skip it entirely. Every session syncs the *same*
+# PLUGIN_ROOT, and uv takes a project lock — so with several sessions starting
+# at once the redundant syncs serialize, and a later session can block past
+# Claude Code's 30s MCP handshake and be killed before the backend ever starts.
+sync_id() {
+  cat "$PLUGIN_ROOT/uv.lock" "$PLUGIN_ROOT/pyproject.toml" 2>/dev/null \
+    | shasum 2>/dev/null | cut -d' ' -f1
+}
+WANT_SYNC_ID="$(sync_id)"
+
+if [ -x "$VENV_PYTHON" ] && [ -n "$WANT_SYNC_ID" ] &&
+   [ "$(cat "$SYNC_STAMP" 2>/dev/null)" = "$WANT_SYNC_ID" ]; then
+  echo "Dependencies unchanged — skipping uv sync." >&2
+else
+  echo "Syncing dependencies (uv sync)..." >&2
+  # Bounded: a sync blocked on another session's lock must not consume the
+  # whole handshake budget. macOS ships no timeout(1), so watchdog by hand.
+  uv sync --directory "$PLUGIN_ROOT" >"$LOG_DIR/uv-sync.log" 2>&1 &
+  sync_pid=$!
+  waited=0
+  while kill -0 "$sync_pid" 2>/dev/null && [ "$waited" -lt "${MADROX_SYNC_TIMEOUT:-20}" ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$sync_pid" 2>/dev/null; then
+    kill -TERM "$sync_pid" 2>/dev/null || true
+    echo "WARNING: 'uv sync' exceeded ${MADROX_SYNC_TIMEOUT:-20}s (likely contending with" >&2
+    echo "         another session) — continuing with the existing venv." >&2
+  elif wait "$sync_pid"; then
+    printf '%s' "$WANT_SYNC_ID" >"$SYNC_STAMP" 2>/dev/null || true
+  else
+    echo "WARNING: 'uv sync' failed; see $LOG_DIR/uv-sync.log" >&2
+    tail -20 "$LOG_DIR/uv-sync.log" >&2
+  fi
 fi
 
 # --- 1. Start HTTP backend ---
@@ -114,20 +147,17 @@ for i in $(seq 1 "$HEALTHCHECK_ITERATIONS"); do
   sleep 0.5
 done
 
-# --- 2. Start frontend dashboard ---
-FRONTEND_DIR="$PLUGIN_ROOT/frontend"
-if [ -d "$FRONTEND_DIR" ]; then
-  # Install deps on first run
-  if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
-    echo "Installing frontend dependencies..." >&2
-    npm install --prefix "$FRONTEND_DIR" >"$LOG_DIR/frontend-install.log" 2>&1
-  fi
-
-  echo "Starting Madrox dashboard on port $FE_PORT..." >&2
-  (cd "$FRONTEND_DIR" && PORT=$FE_PORT NEXT_PUBLIC_BACKEND_PORT=$BE_PORT npx next dev -p "$FE_PORT") \
-    >"$LOG_DIR/frontend.log" 2>&1 &
-  FE_PID=$!
-fi
+# --- 2. Dashboard: started on demand, not here ---
+# `next dev` is a development server (JIT compile, file watchers, HMR) and used
+# to be launched once per session whether or not anyone opened it. With many
+# concurrent sessions that dominated the machine's process and memory load, and
+# the contention it created was enough to stop later sessions starting at all.
+# The proxy now starts it the first time get_dashboard_url is called, so only
+# sessions that actually use the dashboard pay for one. It is spawned as a child
+# of the proxy, so the existing cleanup (which kills whole process trees) still
+# tears it down.
+export MADROX_FRONTEND_DIR="$PLUGIN_ROOT/frontend"
+export MADROX_FRONTEND_LOG="$LOG_DIR/frontend.log"
 
 # --- 3. Run STDIO MCP proxy (child, NOT exec) ---
 # Running it as a child (rather than `exec`-ing) keeps this shell — and the
@@ -138,8 +168,9 @@ fi
 # stdin (Claude's pipe). In a non-interactive shell, a backgrounded command's
 # stdin would otherwise be redirected from /dev/null; the explicit `0<&0`
 # redirection suppresses that default and forwards our stdin to the proxy.
-echo "Madrox dashboard available at: http://localhost:$FE_PORT" >&2
+echo "Madrox dashboard (starts on first use): http://localhost:$FE_PORT" >&2
 export MADROX_FRONTEND_PORT="$FE_PORT"
+export MADROX_BACKEND_PORT="$BE_PORT"
 if [ -x "$VENV_PYTHON" ]; then
   "$VENV_PYTHON" "$PLUGIN_ROOT/run_orchestrator.py" 0<&0 &
 else
