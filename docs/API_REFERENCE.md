@@ -102,7 +102,7 @@ Spawn a new Claude instance with specific role and configuration.
 | `name` | string | Yes | - | Human-readable name for the instance |
 | `role` | string | No | `"general"` | Predefined role (see [Instance Roles](#instance-roles)) |
 | `system_prompt` | string | No | `null` | Custom system prompt (overrides role defaults) |
-| `model` | string | No | CLI default | Claude model to use (e.g., `claude-4-sonnet-20250514`) |
+| `model` | string | No | Harness default (`claude-opus-5`) | Claude model to use. Any model id is accepted — no allowlist. Omit it to get the default from `config/models.yaml`. |
 | `bypass_isolation` | boolean | No | `false` | Allow full filesystem access (disables workspace isolation) |
 | `parent_instance_id` | string | No | Auto-detected | Parent instance ID (for hierarchical networks) - see [Parent Instance ID Auto-Detection](#parent-instance-id-auto-detection) |
 | `mcp_servers` | object | No | `{}` | Additional MCP servers to configure (see [MCP Server Configuration](#mcp-server-configuration)) |
@@ -258,7 +258,7 @@ worker = await spawn_claude(
   "instance_id": "abc123-456def-789ghi",
   "name": "data-analyst",
   "role": "data_analyst",
-  "model": "claude-4-sonnet-20250514",
+  "model": "claude-opus-5",
   "message": "Successfully spawned Claude instance 'data-analyst'"
 }
 ```
@@ -371,18 +371,71 @@ result = await spawn_multiple_instances(
 
 #### spawn_codex
 
-Spawn a new OpenAI Codex instance (similar to `spawn_claude` but for Codex CLI).
+Spawn a new OpenAI Codex instance (similar to `spawn_claude` but for the Codex CLI).
 
 **Parameters:**
 
-Same as `spawn_claude`, with Codex-specific considerations:
-- Uses `codex` CLI instead of `claude` CLI
-- Codex only supports stdio transport for MCP
-- Different model options (GPT-4, O1, etc.)
+Same as `spawn_claude`, plus `sandbox_mode` and `profile`, with Codex-specific
+considerations:
+- Uses the `codex` CLI instead of `claude`
+- Runs with `--dangerously-bypass-approvals-and-sandbox` when `bypass_isolation` is true
+- Codex only supports stdio transport for MCP servers registered via the CLI
+  (HTTP servers are written to `~/.codex/config.toml`)
+- `model` defaults to the harness default (`gpt-5.6-sol`)
 
 **Returns:**
 
 Same format as `spawn_claude`.
+
+---
+
+#### spawn_grok
+
+Spawn a new xAI Grok Build instance.
+
+**Parameters:**
+
+Same as `spawn_claude`, with Grok-specific considerations:
+- Uses the `grok` CLI
+- Runs in yolo mode (`--always-approve`, the flag behind the `/yolo` slash
+  command) when `bypass_isolation` is true, matching Claude and Codex
+- MCP servers are registered with `grok mcp add --scope project` for both stdio
+  and HTTP transports, so registrations stay inside the instance workspace
+- `model` defaults to the harness default (`grok-build-0.1`)
+
+**Returns:**
+
+Same format as `spawn_claude`.
+
+---
+
+#### Model selection (all harnesses)
+
+Model ids are **never** validated against an allowlist — any string is passed to
+the CLI as-is, so a model released today works without a Madrox update. When
+`model` is omitted, the harness default from `config/models.yaml` is used:
+
+| Harness | Tool | Default model |
+|---------|------|---------------|
+| Claude Code | `spawn_claude` | `claude-opus-5` |
+| Codex | `spawn_codex` | `gpt-5.6-sol` |
+| Grok Build | `spawn_grok` | `grok-build-0.1` |
+
+Defaults can be changed without touching code:
+
+```bash
+# per-harness default model
+MADROX_MODEL_CLAUDE=claude-sonnet-5
+
+# a different config file entirely
+MADROX_MODELS_CONFIG=/etc/madrox/models.yaml
+
+# a different executable for a harness
+MADROX_GROK_BIN=/opt/xai/bin/grok
+```
+
+The spawn result includes the resolved `model`, so callers can see what was
+actually launched.
 
 ---
 

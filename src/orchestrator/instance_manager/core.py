@@ -90,15 +90,15 @@ class InstanceManager(
         instance_type: str = "claude",
         **kwargs,
     ) -> str:
-        """Spawn a new Claude instance.
+        """Spawn a new harness instance.
 
         Args:
             name: Human-readable name for the instance
             role: Predefined role (general, frontend_developer, etc.)
             system_prompt: Custom system prompt
-            model: Claude model to use (None = use CLI default)
+            model: Model to run (None = the harness default from config/models.yaml)
             bypass_isolation: Allow full filesystem access
-            instance_type: Type of instance (always "claude", handled by tmux)
+            instance_type: Harness to run - "claude", "codex" or "grok"
             **kwargs: Additional configuration options (including parent_instance_id)
 
         Returns:

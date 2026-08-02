@@ -132,6 +132,40 @@ uv run mypy src/
    - `models.py`: SQLAlchemy models for database persistence (future capability)
    - `simple_models.py`: Lightweight Pydantic-free models for current runtime use
 
+5. **Harness registry** (`src/orchestrator/harnesses.py`) - One class per CLI agent
+   (`ClaudeHarness`, `CodexHarness`, `GrokHarness`) holding everything that differs
+   between them: executable, yolo/full-autonomy flags, model flag, launch and resume
+   commands, MCP registration style, and the terminal markers that mean "ready" /
+   "idle" / "trust prompt". The manager code is harness-agnostic — there are no
+   `if instance_type == "codex"` branches outside this module.
+
+### Harnesses and Models
+
+Supported harnesses (the `instance_type` / spawn tool):
+
+| Harness | Tool | CLI | Yolo mode | Default model |
+|---------|------|-----|-----------|---------------|
+| Claude Code | `spawn_claude` | `claude` | `--permission-mode bypassPermissions --dangerously-skip-permissions` | `claude-opus-5` |
+| Codex | `spawn_codex` | `codex` | `--dangerously-bypass-approvals-and-sandbox` | `gpt-5.6-sol` |
+| Grok Build | `spawn_grok` | `grok` | `--always-approve` (the `/yolo` switch) | `grok-build-0.1` |
+
+Model ids are never validated against an allowlist — any string is forwarded to the
+CLI, so newly released models work without a code change. When a caller omits
+`model`, the harness default is resolved in `spawn_instance` (a single choke point
+shared by the MCP tools, the HTTP adapter and direct calls) from:
+
+1. `MADROX_MODEL_<HARNESS>` env var (e.g. `MADROX_MODEL_CLAUDE`)
+2. `<harness>.default` in `config/models.yaml`
+3. nothing — the CLI picks its own default
+
+`config/models.yaml` also accepts `command:` (executable override) and `extra_args:`
+per harness; `MADROX_MODELS_CONFIG` points at a different config file and
+`MADROX_<HARNESS>_BIN` overrides one executable.
+
+**Adding a harness**: subclass `Harness`, add it to `_HARNESS_CLASSES`, and add a
+`spawn_<name>` tool in `instance_manager/spawning.py` (the MCP adapter derives its
+spawn routing from the registry automatically).
+
 ### Instance Lifecycle
 
 Instances follow a state machine pattern:
@@ -139,21 +173,28 @@ Instances follow a state machine pattern:
 - Error states: `error`, `timeout`
 - Resource enforcement triggers automatic termination (only if explicit limits configured)
 
-**Persistent Instances**: Instances survive backend restarts by default. State is persisted to `{log_dir}/state/instances.json` via atomic writes. On startup, live tmux sessions are reconnected; dead sessions are recovered using `claude --continue` or `codex resume -a never` to preserve conversation context.
+**Persistent Instances**: Instances survive backend restarts by default. State is persisted to `{log_dir}/state/instances.json` via atomic writes. On startup, live tmux sessions are reconnected; dead sessions are recovered with the harness's resume command (`claude --continue`, `codex resume --last`, `grok --resume`) to preserve conversation context.
 
 ### Role System
 
-10 predefined roles with specialized system prompts:
+10 predefined roles, each backed by a prompt file in `resources/prompts/<role>.txt`.
+The file names are the canonical role ids:
 - `architect`: System design and architecture
 - `frontend_developer`: React/Vue/Angular expertise
 - `backend_developer`: API and server development
-- `data_scientist`: ML/AI and data analysis
-- `devops`: Infrastructure and deployment
-- `designer`: UI/UX design
-- `qa_engineer`: Testing and quality
-- `security`: Security analysis
-- `project_manager`: Project coordination
+- `code_reviewer`: Code review and best practices
+- `testing_specialist`: Testing and quality
+- `security_analyst`: Security analysis
+- `debugger`: Diagnosing and fixing complex issues
+- `data_analyst`: Data processing, analysis, and visualization
+- `documentation_writer`: Technical documentation
 - `general`: Default general purpose
+
+A few friendlier spellings are accepted as aliases (`security` →
+`security_analyst`, `qa_engineer`/`tester` → `testing_specialist`,
+`data_scientist` → `data_analyst`, `reviewer` → `code_reviewer`,
+`docs`/`technical_writer` → `documentation_writer`). Any other unknown role
+logs a warning and falls back to the `general` prompt.
 
 ### Resource Management
 
@@ -181,17 +222,17 @@ Instance state is persisted to disk for reliability across backend restarts:
 - **Saved on**: every state mutation (spawn, idle/busy transitions, terminate)
 - **Server state**: stable `session_id` reused across restarts to keep workspace paths consistent
 - **On startup**: `_reconnect_or_cleanup_sessions()` reconnects live tmux sessions, recovers dead ones, kills orphans
-- **Recovery**: dead sessions respawned with `claude --continue` / `codex resume -a never`
+- **Recovery**: dead sessions respawned with the harness resume command (`claude --continue` / `codex resume --last` / `grok --resume`)
 - **Shutdown**: `shutdown()` saves state but does NOT terminate instances — tmux sessions survive for reconnection
 
 **MCP Tools for persistence:**
 - `list_persisted_instances`: discover previous instances available to resume
 - `resume_instance(instance_id, name?, model?)`: spawn new instance continuing a previous one's conversation
 
-### Claude CLI Process Communication
+### CLI Process Communication
 
-Each Claude/Codex instance runs as a separate interactive tmux session:
-- **Command**: `claude --permission-mode bypassPermissions --dangerously-skip-permissions` (interactive mode)
+Each instance runs as a separate interactive tmux session:
+- **Command**: built by its harness, always in full-autonomy mode when `bypass_isolation` is set (e.g. `claude --permission-mode bypassPermissions --dangerously-skip-permissions`)
 - **Communication**: Terminal I/O via tmux panes, not JSON streaming
 - **Output Capture**: Use `get_tmux_pane_content()` for detailed terminal output
 - **Limitation**: Tool event tracking via JSON not available in interactive mode
@@ -242,7 +283,9 @@ Environment variables:
 - `ORCHESTRATOR_HOST`: HTTP server host (default: localhost, HTTP mode only)
 - `MAX_INSTANCES`: Concurrent instance limit (default: 10)
 - `WORKSPACE_DIR`: Base workspace path (default: /tmp/claude_orchestrator)
-- `LOG_DIR`: Log directory (default: /tmp/madrox_logs). State files stored in `{LOG_DIR}/state/`
+- `LOG_DIR`: Log directory (default: /tmp/madrox_logs). State files stored in `{LOG_DIR}/state/`. `MADROX_LOG_DIR` is accepted as an override and takes precedence when both are set.
+
+**Running two backends at once:** instance state lives in `{LOG_DIR}/state/instances.json`, and on startup a backend kills any tmux session not matching a live record there. Two backends sharing that file will therefore reap each other's sessions. To run an isolated second backend (e.g. for testing), give it both its own `LOG_DIR` **and** its own tmux server via `TMUX_TMPDIR` — note macOS caps socket paths near 104 characters, so keep that directory short.
 - `LOG_LEVEL`: Logging verbosity (default: INFO)
 - `OPENROUTER_API_KEY`: Optional API key for LLM-based activity summarization (OpenRouter)
 - `ARTIFACTS_DIR`: Base artifacts directory (default: /tmp/madrox_logs/artifacts)

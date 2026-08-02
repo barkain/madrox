@@ -59,8 +59,8 @@ def mock_shared_state_manager():
 @pytest.fixture
 async def instance_manager(mock_config):
     """Create InstanceManager with mocked dependencies."""
-    with patch("orchestrator.instance_manager.spawning.validate_model") as mock_validate:
-        mock_validate.side_effect = lambda provider, model: model or "claude-sonnet-4-5"
+    with patch("orchestrator.instance_manager.spawning.resolve_model") as mock_validate:
+        mock_validate.side_effect = lambda harness, model: model or "claude-opus-5"
         with patch("orchestrator.instance_manager.core.LoggingManager") as mock_log_mgr_class:
             with patch(
                 "orchestrator.shared_state_manager.SharedStateManager"
@@ -861,24 +861,21 @@ class TestErrorHandling:
             instance_manager.get_instance_status.fn(instance_manager, "nonexistent")
 
     @pytest.mark.asyncio
-    async def test_invalid_model_name(self, instance_manager):
-        """Test spawning with invalid model name."""
+    async def test_unknown_model_name_is_forwarded_not_rejected(self, instance_manager):
+        """Any model id spawns — models are never checked against an allowlist.
 
-        # Override the fixture's validate_model mock to actually validate
-        def validate_model_strict(provider, model):
-            valid_models = ["claude-sonnet-4-5", "claude-opus-4", "claude-haiku-4-5"]
-            if model and model not in valid_models:
-                raise ValueError(f"Invalid model: {model}")
-            return model or "claude-sonnet-4-5"
-
+        New models ship constantly; rejecting unknown ids here would make Madrox
+        the reason a brand-new model cannot be used.
+        """
         with patch(
-            "orchestrator.instance_manager.spawning.validate_model",
-            side_effect=validate_model_strict,
+            "orchestrator.instance_manager.spawning.resolve_model",
+            side_effect=lambda harness, model: model,
         ):
-            with pytest.raises(ValueError, match="Invalid model"):
-                await instance_manager.spawn_claude.fn(
-                    instance_manager, name="test", model="invalid-model-name"
-                )
+            result = await instance_manager.spawn_claude.fn(
+                instance_manager, name="test", model="claude-model-from-the-future"
+            )
+
+        assert result["model"] == "claude-model-from-the-future"
 
 
 # ============================================================================

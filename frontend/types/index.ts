@@ -1,7 +1,7 @@
 export interface AgentInstance {
   id: string
   name: string
-  type: "claude" | "codex"
+  type: "claude" | "codex" | "grok"
   status: "initializing" | "running" | "idle" | "busy" | "pending" | "terminated" | "error" | "suspended"
   role: string
   parentId: string | null

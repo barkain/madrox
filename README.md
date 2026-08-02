@@ -1,4 +1,4 @@
-# Madrox - Multi-Agent Orchestrator for Claude & Codex
+# Madrox - Multi-Agent Orchestrator for Claude, Codex & Grok
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -9,14 +9,14 @@
   <img src="resources/assets/madrox-hero.png" alt="Madrox - One becomes many. Many become unstoppable." width="800"/>
 </p>
 
-An MCP server that lets AI instances spawn and manage hierarchical networks of Claude and Codex agents. Build recursive multi-level teams with bidirectional communication, role specialization, task interruption, and real-time monitoring — all orchestrated through tmux sessions.
+An MCP server that lets AI instances spawn and manage hierarchical networks of Claude, Codex and Grok agents. Build recursive multi-level teams with bidirectional communication, role specialization, task interruption, and real-time monitoring — all orchestrated through tmux sessions.
 
 ## Why Madrox?
 
 | Capability | Claude Subagent | Madrox |
 |------------|----------------|--------|
 | Hierarchy depth | 2 levels (flat) | 3+ levels (recursive) |
-| Models | Claude only | Claude + Codex |
+| Models | Claude only | Claude + Codex + Grok, any model id |
 | Interruption | Must terminate & restart | Stop & redirect, keep context |
 | Visibility | Black box | Full tree view, metrics, dashboard |
 | Parallel ops | Sequential only | Batch spawn/message/interrupt |

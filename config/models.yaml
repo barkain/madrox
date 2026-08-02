@@ -1,37 +1,51 @@
-# Madrox Model Configuration
-# Configures the DEFAULT model for each provider.
+# Madrox Harness / Model Configuration
 #
-# NOTE: Model names are no longer validated against an allowlist. Any model
-# string passed to spawn_claude / spawn_codex is forwarded to the underlying
-# CLI/backend as-is. The `known_models` lists below are purely informational
-# (e.g. for documentation and dashboards) and are NOT enforced.
+# Each top-level key is a harness (the `instance_type` used when spawning).
+# Everything here is optional and hot-swappable — Madrox never validates model
+# ids against an allowlist, because vendors ship new models constantly and the
+# backends serving them change independently of Madrox. Any model string passed
+# to spawn_claude / spawn_codex / spawn_grok is forwarded to the CLI as-is.
 #
-# Codex models in particular route through an AWS Bedrock proxy whose available
-# model ids change independently of Madrox — see docs/TROUBLESHOOTING.md.
+# Keys per harness:
+#   default      Model used when the caller does not name one.
+#                Set it to `null` (or delete it) to let the CLI pick its own.
+#   command      Optional path/name of the executable (default: the harness binary).
+#   extra_args   Optional list of flags appended to every launch of that harness.
+#   known_models Informational only (docs/dashboards) — NOT enforced.
+#
+# Overrides without editing this file:
+#   MADROX_MODELS_CONFIG=/path/to/models.yaml   use a different config entirely
+#   MADROX_MODEL_CLAUDE=claude-opus-5           override one harness default
+#   MADROX_CLAUDE_BIN=/usr/local/bin/claude     override one harness binary
+#   (same pattern for CODEX / GROK, and for any harness added later)
 
-# Codex provider (OpenAI GPT models, via the Codex CLI / Bedrock proxy)
-codex:
-  # Default model when none is specified
-  default: gpt-5.5
+# Claude Code CLI (Anthropic)
+claude:
+  # Latest Opus — most capable model, the default for new instances.
+  default: claude-opus-5
 
-  # Informational list of commonly available Codex models (NOT enforced)
   known_models:
+    - claude-opus-5       # Default: latest Opus, most capable
+    - claude-sonnet-5     # Balanced speed/quality for daily use
+    - claude-haiku-4-5    # Fastest: best for simple, quick tasks
+    - claude-opus-4-6     # Previous Opus generation
+
+# Codex CLI (OpenAI GPT models)
+codex:
+  default: gpt-5.6-sol
+
+  known_models:
+    - gpt-5.6-sol         # Default
     - gpt-5.5
     - gpt-5.4
     - gpt-5.4-mini
     - gpt-5.3-codex
-    - gpt-5.3-codex-spark
-    - gpt-5.2
 
-# Claude provider (Anthropic Claude models)
-claude:
-  # Default model when none is specified
-  # claude-sonnet-4-5 is recommended for daily use - smartest model with best performance
-  default: claude-sonnet-4-5
+# Grok Build CLI (xAI)
+grok:
+  default: grok-build-0.1
 
-  # Informational list of commonly available Claude models (NOT enforced)
   known_models:
-    - claude-sonnet-4-5   # Recommended: Smartest model for daily use
-    - claude-opus-4-6     # Latest Opus: Most capable model
-    - claude-opus-4-1     # Legacy: Reaches usage limits faster, use sparingly
-    - claude-haiku-4-5    # Fastest: Best for simple, quick tasks
+    - grok-build-0.1      # Default: purpose-built coding model
+    - grok-4.5
+    - grok-4.3

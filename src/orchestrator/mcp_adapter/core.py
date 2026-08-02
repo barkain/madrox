@@ -7,11 +7,16 @@ import logging
 from fastapi import APIRouter, Request, Response
 from sse_starlette.sse import EventSourceResponse
 
+from ..harnesses import get_harness, harness_names, is_supported_harness
+
 logger = logging.getLogger(__name__)
 
 
 class MCPAdapter:
     """Adapter to expose FastAPI endpoints as MCP-compliant SSE endpoints."""
+
+    #: Tool name -> harness, so a new harness gets its spawn tool for free.
+    SPAWN_TOOLS = {f"spawn_{name}": name for name in harness_names()}
 
     def __init__(self, instance_manager):
         """Initialize the MCP adapter with instance manager."""
@@ -357,31 +362,64 @@ Begin execution now. Spawn your team and start the workflow."""
                     caller_instance_id = self._detect_caller_instance()
 
                     # Execute the tool
-                    if tool_name == "spawn_claude":
+                    if tool_name in self.SPAWN_TOOLS:
+                        harness = get_harness(self.SPAWN_TOOLS[tool_name])
+
                         # AUTO-INJECT parent_instance_id if not provided and caller detected
                         parent_id = tool_args.get("parent_instance_id")
                         if not parent_id and caller_instance_id:
                             parent_id = caller_instance_id
                             logger.info(
-                                f"Auto-injected parent_instance_id={caller_instance_id} for spawn_claude call from managed instance"
+                                f"Auto-injected parent_instance_id={caller_instance_id} "
+                                f"for {tool_name} call from managed instance"
                             )
 
-                        instance_id = await self.manager.spawn_instance(
+                        spawn_kwargs = {
+                            "role": tool_args.get("role", "general"),
+                            "system_prompt": tool_args.get("system_prompt"),
+                            "bypass_isolation": tool_args.get("bypass_isolation", True),
+                            "wait_for_ready": tool_args.get("wait_for_ready", True),
+                            "parent_instance_id": parent_id,
+                            "mcp_servers": tool_args.get("mcp_servers", {}),
+                        }
+                        # Codex-only knobs, passed through when present.
+                        for optional in ("sandbox_mode", "profile"):
+                            if optional in tool_args:
+                                spawn_kwargs[optional] = tool_args[optional]
+
+                        # Go through the same helper as the MCP tools so this
+                        # transport gets identical model resolution, reply
+                        # waiting and failure reporting. Calling spawn_instance
+                        # directly silently dropped all of it.
+                        spawn_result = await self.manager._spawn_harness_instance(
+                            instance_type=harness.name,
                             name=tool_args.get("name", "unnamed"),
-                            role=tool_args.get("role", "general"),
-                            system_prompt=tool_args.get("system_prompt"),
-                            model=tool_args.get("model"),  # None = use CLI default
-                            bypass_isolation=tool_args.get("bypass_isolation", True),
-                            wait_for_ready=tool_args.get("wait_for_ready", True),
-                            parent_instance_id=parent_id,
-                            mcp_servers=tool_args.get("mcp_servers", {}),
+                            # None resolves to the harness default
+                            model=tool_args.get("model"),
                             initial_prompt=tool_args.get("initial_prompt"),
+                            wait_for_response=tool_args.get("wait_for_response", False),
+                            timeout_seconds=tool_args.get("timeout_seconds", 180),
+                            **spawn_kwargs,
                         )
+
+                        instance_id = spawn_result.get("instance_id")
+                        if spawn_result.get("status") == "failed":
+                            summary = (
+                                f"Failed to spawn {harness.label} instance "
+                                f"'{tool_args.get('name')}' (ID: {instance_id}): "
+                                f"{spawn_result.get('error_message')}"
+                            )
+                        else:
+                            summary = (
+                                f"Spawned {harness.label} instance "
+                                f"'{tool_args.get('name')}' with ID: {instance_id}"
+                            )
+
                         result = {
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Spawned instance '{tool_args.get('name')}' with ID: {instance_id}",
+                                    "text": f"{summary}\n{json.dumps(spawn_result, default=str)}",
                                 }  # type: ignore[list-item]
                             ]
                         }
@@ -477,7 +515,7 @@ Begin execution now. Spawn your team and start the workflow."""
                         instance = self.manager.instances[instance_id]
 
                         # Delegate to TmuxInstanceManager
-                        if instance.get("instance_type") in ["claude", "codex"]:
+                        if is_supported_harness(instance.get("instance_type")):
                             response = await self.manager.tmux_manager.send_message(
                                 instance_id=instance_id,
                                 message=tool_args["message"],
@@ -542,7 +580,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                 raise ValueError(f"Instance {inst_id} not found")
 
                             instance = self.manager.instances[inst_id]
-                            if instance.get("instance_type") in ["claude", "codex"]:
+                            if is_supported_harness(instance.get("instance_type")):
                                 result = await self.manager.tmux_manager.send_message(
                                     instance_id=inst_id,
                                     message=message,
@@ -1148,7 +1186,7 @@ Begin execution now. Spawn your team and start the workflow."""
                                     raise ValueError(f"Instance {instance_id} not found")
 
                                 instance = self.manager.instances[instance_id]
-                                if instance.get("instance_type") in ["claude", "codex"]:
+                                if is_supported_harness(instance.get("instance_type")):
                                     result = await self.manager.tmux_manager.send_message(
                                         instance_id=instance_id,
                                         message=message,
@@ -1261,33 +1299,6 @@ Begin execution now. Spawn your team and start the workflow."""
                                     "text": json.dumps(files, indent=2)
                                     if files
                                     else "No files found or instance not found",
-                                }  # type: ignore[list-item]
-                            ]
-                        }
-
-                    elif tool_name == "spawn_codex":
-                        # Call internal spawn_instance with codex type
-                        instance_id = await self.manager.tmux_manager.spawn_instance(
-                            name=tool_args.get("name", "unnamed"),
-                            model=tool_args.get("model"),
-                            bypass_isolation=tool_args.get("bypass_isolation", True),
-                            sandbox_mode=tool_args.get("sandbox_mode", "workspace-write"),
-                            profile=tool_args.get("profile"),
-                            initial_prompt=tool_args.get("initial_prompt"),
-                            instance_type="codex",
-                            parent_instance_id=tool_args.get("parent_instance_id"),
-                        )
-                        # Copy to main instances dict
-                        self.manager.instances[instance_id] = self.manager.tmux_manager.instances[
-                            instance_id
-                        ]
-                        self.manager.instances[instance_id]["instance_type"] = "codex"
-
-                        result = {
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": f"Spawned Codex instance '{tool_args.get('name')}' with ID: {instance_id}",
                                 }  # type: ignore[list-item]
                             ]
                         }

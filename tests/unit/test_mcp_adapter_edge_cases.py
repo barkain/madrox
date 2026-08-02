@@ -33,7 +33,7 @@ from orchestrator.mcp_adapter import MCPAdapter
 
 
 @pytest.fixture
-async def mock_instance_manager():
+async def mock_instance_manager(install_spawn_harness_delegate):
     """Create a mock instance manager for MCP adapter testing."""
     manager = Mock()
     manager.instances = {}
@@ -42,6 +42,7 @@ async def mock_instance_manager():
     manager.mcp.get_tools = AsyncMock(return_value={})
     manager.get_and_clear_main_inbox = Mock(return_value=[])
     manager.spawn_instance = AsyncMock(return_value="test-instance-123")
+    install_spawn_harness_delegate(manager)
     manager._get_instance_status_internal = Mock(
         return_value={
             "instance_id": "test-instance-123",

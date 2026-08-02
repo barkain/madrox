@@ -5,14 +5,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from ..config import validate_model
+from ..config import resolve_model
 from ._mcp import mcp
 
 logger = logging.getLogger(__name__)
 
 
 class SpawningMixin:
-    """MCP tools for spawning Claude and Codex instances."""
+    """MCP tools for spawning harness instances (Claude, Codex, Grok)."""
 
     # Declared by InstanceManager; present here for type checking only
     instances: dict[str, dict[str, Any]]
@@ -35,6 +35,62 @@ class SpawningMixin:
             result["status"] = "completed"
         return result
 
+    async def _spawn_harness_instance(
+        self,
+        instance_type: str,
+        name: str,
+        model: str | None,
+        initial_prompt: str | None,
+        wait_for_response: bool,
+        timeout_seconds: int,
+        **spawn_kwargs: Any,
+    ) -> dict[str, Any]:
+        """Spawn one instance of any harness and shape the tool response.
+
+        Shared by spawn_claude / spawn_codex / spawn_grok so every harness gets
+        the same model-default resolution, response handling and result shape.
+        """
+        resolved_model = resolve_model(instance_type, model)
+
+        # When the caller waits for the reply, the prompt is sent as a message
+        # afterwards so the response can be captured.
+        spawn_prompt = None if wait_for_response else initial_prompt
+
+        instance_id = await self.spawn_instance(
+            name=name,
+            model=resolved_model,
+            instance_type=instance_type,
+            initial_prompt=spawn_prompt,
+            **spawn_kwargs,
+        )
+
+        result: dict[str, Any] = {
+            "instance_id": instance_id,
+            "status": "spawned",
+            "name": name,
+            "instance_type": instance_type,
+            "model": resolved_model,
+        }
+
+        if wait_for_response and initial_prompt:
+            response = await self.tmux_manager.send_message(
+                instance_id=instance_id,
+                message=initial_prompt,
+                wait_for_response=True,
+                timeout_seconds=timeout_seconds,
+            )
+            self._apply_response_status(result, response)
+        else:
+            # Nobody waited for a reply, but the bootstrap may still have seen
+            # the backend reject the request (unknown model, auth failure).
+            # Report that instead of a misleading "spawned".
+            spawn_error = (self.instances.get(instance_id) or {}).get("error_message")
+            if spawn_error:
+                result["status"] = "failed"
+                result["error_message"] = spawn_error
+
+        return result
+
     @mcp.tool
     async def spawn_claude(
         self,
@@ -52,17 +108,19 @@ class SpawningMixin:
         wait_for_response: bool = False,
         timeout_seconds: int = 180,
     ) -> dict[str, Any]:
-        """Spawn a new Claude instance with specific role and configuration.
+        """Spawn a new Claude Code instance with specific role and configuration.
 
         Args:
             name: Instance name
             role: Predefined role for the instance
             system_prompt: Custom system prompt (overrides role)
-            model: Claude model to use. Options:
-                   - claude-sonnet-4-5 (default, recommended, smartest model for daily use)
-                   - claude-opus-4-6 (latest Opus, most capable)
-                   - claude-opus-4-1 (legacy, reaches usage limits faster)
-                   - claude-haiku-4-5 (fastest model for simple tasks)
+            model: Claude model to use. Omit it to get the configured default
+                   (config/models.yaml, currently claude-opus-5). Any model id
+                   is accepted and forwarded to the CLI as-is — model names are
+                   NOT checked against an allowlist, so newly released models
+                   work without a Madrox update. If the CLI rejects the model,
+                   the spawn returns status "failed" with the backend error in
+                   error_message.
             bypass_isolation: Allow full filesystem access (default: true)
             parent_instance_id: Parent instance ID for tracking bidirectional communication
             wait_for_ready: Wait for instance to initialize (default: true)
@@ -77,51 +135,40 @@ class SpawningMixin:
             timeout_seconds: Timeout for waiting for response (default: 180)
 
         Returns:
-            Dictionary with instance_id and status (and response when wait_for_response=True)
+            Dictionary with instance_id, status and resolved model (and response
+            when wait_for_response=True)
         """
-        validated_model = validate_model("claude", model)
-
-        spawn_prompt = initial_prompt if not wait_for_response else None
-
-        instance_id = await self.spawn_instance(
+        return await self._spawn_harness_instance(
+            instance_type="claude",
             name=name,
+            model=model,
+            initial_prompt=initial_prompt,
+            wait_for_response=wait_for_response,
+            timeout_seconds=timeout_seconds,
             role=role,
             system_prompt=system_prompt,
-            model=validated_model,
             bypass_isolation=bypass_isolation,
             parent_instance_id=parent_instance_id,
             wait_for_ready=wait_for_ready,
-            initial_prompt=spawn_prompt,
             mcp_servers=mcp_servers,
             use_worktree=use_worktree,
             git_repo=git_repo,
         )
-
-        result: dict[str, Any] = {"instance_id": instance_id, "status": "spawned", "name": name}
-
-        if wait_for_response and initial_prompt:
-            response = await self.tmux_manager.send_message(
-                instance_id=instance_id,
-                message=initial_prompt,
-                wait_for_response=True,
-                timeout_seconds=timeout_seconds,
-            )
-            self._apply_response_status(result, response)
-
-        return result
 
     @mcp.tool
     async def spawn_multiple_instances(
         self,
         instances: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Spawn multiple Claude or Codex instances in parallel for better performance.
+        """Spawn multiple instances in parallel for better performance.
 
         Args:
             instances: List of instance configurations to spawn.
-                       Each config supports: name, type ("claude" or "codex"),
-                       role, system_prompt, model, initial_prompt, bypass_isolation,
-                       sandbox_mode (codex only), parent_instance_id, use_worktree, git_repo.
+                       Each config supports: name, type ("claude", "codex" or
+                       "grok"), role, system_prompt, model, initial_prompt,
+                       bypass_isolation, sandbox_mode (codex only),
+                       parent_instance_id, use_worktree, git_repo.
+                       Omitting "model" uses that harness's configured default.
 
         Returns:
             Dictionary with spawned instance IDs and any errors
@@ -155,17 +202,22 @@ class SpawningMixin:
         wait_for_response: bool = False,
         timeout_seconds: int = 180,
     ) -> dict[str, Any]:
-        """Spawn a new Codex CLI instance (OpenAI GPT models only).
+        """Spawn a new Codex CLI instance (OpenAI GPT models).
+
+        Runs with Codex's full-autonomy mode when bypass_isolation is true
+        (--dangerously-bypass-approvals-and-sandbox).
 
         Args:
             name: Instance name
-            model: OpenAI GPT model to use (default: gpt-5.5). Any model string is
-                   accepted and forwarded to the Codex CLI as-is — Codex routes
-                   through an AWS Bedrock proxy whose valid model ids change
-                   independently of Madrox, so model names are NOT validated
-                   against an allowlist. If the backend does not recognise the
-                   model, the spawn returns status "failed" with the backend
-                   error in error_message (see docs/TROUBLESHOOTING.md).
+            model: OpenAI GPT model to use. Omit it to get the configured
+                   default (config/models.yaml, currently gpt-5.6-sol). Any
+                   model string is accepted and forwarded to the Codex CLI
+                   as-is — Codex routes through a proxy whose valid model ids
+                   change independently of Madrox, so model names are NOT
+                   validated against an allowlist. If the backend does not
+                   recognise the model, the spawn returns status "failed" with
+                   the backend error in error_message (see
+                   docs/TROUBLESHOOTING.md).
             sandbox_mode: Sandbox policy for shell commands (read-only, workspace-write, danger-full-access)
             profile: Configuration profile from config.toml
             initial_prompt: Initial prompt to start the session
@@ -181,44 +233,88 @@ class SpawningMixin:
             timeout_seconds: Timeout for waiting for response (default: 180)
 
         Returns:
-            Dictionary with instance_id and status (and response when wait_for_response=True)
+            Dictionary with instance_id, status and resolved model (and response
+            when wait_for_response=True)
         """
-        validated_model = validate_model("codex", model)
-
-        spawn_prompt = initial_prompt if not wait_for_response else None
-
-        instance_id = await self.spawn_instance(
+        return await self._spawn_harness_instance(
+            instance_type="codex",
             name=name,
-            model=validated_model,
+            model=model,
+            initial_prompt=initial_prompt,
+            wait_for_response=wait_for_response,
+            timeout_seconds=timeout_seconds,
             bypass_isolation=bypass_isolation,
             sandbox_mode=sandbox_mode,
             profile=profile,
-            initial_prompt=spawn_prompt,
-            instance_type="codex",
             parent_instance_id=parent_instance_id,
             mcp_servers=mcp_servers,
             use_worktree=use_worktree,
             git_repo=git_repo,
         )
-        self.instances[instance_id]["instance_type"] = "codex"
 
-        result: dict[str, Any] = {
-            "instance_id": instance_id,
-            "status": "spawned",
-            "name": name,
-            "instance_type": "codex",
-        }
+    @mcp.tool
+    async def spawn_grok(
+        self,
+        name: str,
+        model: str | None = None,
+        role: str = "general",
+        system_prompt: str | None = None,
+        initial_prompt: str | None = None,
+        bypass_isolation: bool = True,
+        parent_instance_id: str | None = None,
+        mcp_servers: str | None = None,
+        use_worktree: bool = False,
+        git_repo: str | None = None,
+        wait_for_response: bool = False,
+        timeout_seconds: int = 180,
+    ) -> dict[str, Any]:
+        """Spawn a new Grok Build CLI instance (xAI Grok models).
 
-        if wait_for_response and initial_prompt:
-            response = await self.tmux_manager.send_message(
-                instance_id=instance_id,
-                message=initial_prompt,
-                wait_for_response=True,
-                timeout_seconds=timeout_seconds,
-            )
-            self._apply_response_status(result, response)
+        Runs with Grok's yolo mode when bypass_isolation is true
+        (--always-approve, the flag behind the /yolo slash command), matching
+        how Claude and Codex instances are launched.
 
-        return result
+        Args:
+            name: Instance name
+            model: Grok model to use. Omit it to get the configured default
+                   (config/models.yaml, currently grok-build-0.1). Any model
+                   string is accepted and forwarded to the Grok CLI as-is —
+                   model names are NOT validated against an allowlist. If the
+                   CLI does not recognise the model, the spawn returns status
+                   "failed" with the backend error in error_message.
+            role: Predefined role for the instance
+            system_prompt: Custom system prompt (overrides role)
+            initial_prompt: Initial prompt to start the session
+            bypass_isolation: Allow full filesystem access / auto-approve tools
+            parent_instance_id: Parent instance ID for tracking
+            mcp_servers: JSON string of MCP server configurations. Format:
+                        '{"server_name": {"transport": "http", "url": "http://localhost:8002/mcp"}}'
+            use_worktree: Create a git worktree for workspace isolation (default: false)
+            git_repo: Path to git repository for worktree creation (required if use_worktree is true)
+            wait_for_response: Wait for the initial_prompt response and return it (default: false).
+                              When true and initial_prompt is provided, the response is captured
+                              and included in the return value instead of fire-and-forget.
+            timeout_seconds: Timeout for waiting for response (default: 180)
+
+        Returns:
+            Dictionary with instance_id, status and resolved model (and response
+            when wait_for_response=True)
+        """
+        return await self._spawn_harness_instance(
+            instance_type="grok",
+            name=name,
+            model=model,
+            initial_prompt=initial_prompt,
+            wait_for_response=wait_for_response,
+            timeout_seconds=timeout_seconds,
+            role=role,
+            system_prompt=system_prompt,
+            bypass_isolation=bypass_isolation,
+            parent_instance_id=parent_instance_id,
+            mcp_servers=mcp_servers,
+            use_worktree=use_worktree,
+            git_repo=git_repo,
+        )
 
     def list_persisted_instances(self) -> dict[str, Any]:
         """List all persisted instances from previous sessions that can be resumed.

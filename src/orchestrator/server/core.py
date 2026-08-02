@@ -52,8 +52,24 @@ class ClaudeOrchestratorServer:
         )
         self.artifact_patterns = [p.strip() for p in artifact_patterns_str.split(",")]
 
-        # Initialize logging manager
-        log_dir = os.getenv("MADROX_LOG_DIR", "/tmp/madrox_logs")
+        # Initialize logging manager.
+        # This is the single source of truth for the log directory, and the
+        # state store below derives from it. It used to read only
+        # MADROX_LOG_DIR, ignoring config.log_dir (which is where the
+        # documented LOG_DIR lands), so setting LOG_DIR moved the logs but
+        # left instance state in /tmp/madrox_logs — two backends pointed at
+        # different directories would silently share one state file, and each
+        # would treat the other's tmux sessions as orphans to kill.
+        # MADROX_LOG_DIR still wins for anyone already setting it.
+        log_dir = (
+            os.getenv("MADROX_LOG_DIR") or getattr(config, "log_dir", None) or "/tmp/madrox_logs"
+        )
+        # Write the resolution back so there is exactly one log directory in
+        # play: the audit/instance/communication log *readers* below consult
+        # self.config.log_dir, and InstanceManager takes its own from
+        # config.to_dict(). Leaving those on the unresolved value split writes
+        # and reads across two directories whenever MADROX_LOG_DIR was set.
+        config.log_dir = log_dir
         log_level = os.getenv("LOG_LEVEL", "INFO")
         self.logging_manager = LoggingManager(log_dir=log_dir, log_level=log_level)
 
@@ -91,6 +107,10 @@ class ClaudeOrchestratorServer:
             {
                 "workspace_base_dir": session_workspace_dir,  # Instances work in artifacts dir
                 "artifacts_dir": session_workspace_dir,  # Same location
+                # to_dict() omits log_dir, so InstanceManager would otherwise
+                # default its own LoggingManager to /tmp/madrox_logs and write
+                # per-instance logs somewhere other than the state it shares.
+                "log_dir": log_dir,
                 "preserve_artifacts": self.preserve_artifacts,
                 "artifact_patterns": self.artifact_patterns,
                 "session_id": self.session_id,
@@ -844,7 +864,7 @@ class ClaudeOrchestratorServer:
         auto_generate_name: bool = False,
         role: str = "general",
         system_prompt: str | None = None,
-        model: str = "claude-4-sonnet-20250514",
+        model: str | None = None,  # None = harness default (config/models.yaml)
         max_tokens: int = 4096,
         temperature: float = 0.0,
         workspace_dir: str | None = None,
@@ -1485,6 +1505,7 @@ async def main():
         server_port=int(os.getenv("ORCHESTRATOR_PORT", "8001")),
         max_concurrent_instances=int(os.getenv("MAX_INSTANCES", "10")),
         workspace_base_dir=os.getenv("WORKSPACE_DIR", "/tmp/claude_orchestrator"),
+        log_dir=os.getenv("LOG_DIR", "/tmp/madrox_logs"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )
 

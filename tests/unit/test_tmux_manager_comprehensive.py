@@ -14,7 +14,9 @@ Current: 28% (230/813 statements)
 
 import asyncio
 import threading
+import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
@@ -737,6 +739,11 @@ class TestInstanceLifecycle:
     @pytest.mark.asyncio
     async def test_spawn_codex_instance(self, tmux_manager):
         """Test spawning Codex instance type."""
+        # Pane reports Codex as ready so the bootstrap reaches the CLI
+        tmux_manager._mock_pane.cmd = MagicMock(
+            return_value=MagicMock(stdout=["OpenAI Codex", "›"])
+        )
+
         # Execute
         instance_id = await tmux_manager.spawn_instance(
             name="codex-test",
@@ -747,6 +754,20 @@ class TestInstanceLifecycle:
         # Assert
         assert tmux_manager.instances[instance_id]["instance_type"] == "codex"
         assert tmux_manager.instances[instance_id]["sandbox_mode"] == "workspace-write"
+
+    @pytest.mark.asyncio
+    async def test_spawn_codex_instance_fails_when_cli_never_ready(self, tmux_manager):
+        """A CLI that never starts must fail the spawn, not look healthy.
+
+        The bootstrap is typed into the pane; if the CLI is not up it lands in
+        the shell, so the instance is useless and must be reported as failed.
+        """
+        # Default mock pane output never shows a Codex ready marker.
+        with pytest.raises(RuntimeError, match="failed to start"):
+            await tmux_manager.spawn_instance(name="codex-dead", instance_type="codex")
+
+        states = [inst["state"] for inst in tmux_manager.instances.values()]
+        assert states == ["error"]
 
     @pytest.mark.asyncio
     async def test_spawn_instance_with_initial_prompt(self, tmux_manager):
@@ -788,7 +809,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert - config file path should be set
         assert "_mcp_config_path" in instance
@@ -811,7 +832,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert
         assert "_mcp_config_path" in instance
@@ -827,12 +848,14 @@ class TestMCPServerConfiguration:
         }
 
         # Execute - should handle gracefully (logs error but doesn't crash)
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
-        # Assert - method completes without raising exception
-        # Note: Implementation doesn't update instance["mcp_servers"] when invalid
-        # It only updates the local mcp_servers variable
-        assert instance["mcp_servers"] == "invalid-json-string"  # Unchanged
+        # Assert - the unusable string is replaced by a normalized mapping that
+        # still carries the auto-injected madrox server, so the instance stays
+        # connected to the orchestrator.
+        assert instance["mcp_servers"] == {
+            "madrox": {"transport": "http", "url": "http://localhost:8001/mcp"}
+        }
 
     @pytest.mark.asyncio
     async def test_configure_mcp_servers_auto_madrox(self, tmux_manager):
@@ -845,7 +868,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert
         assert "madrox" in instance["mcp_servers"]
@@ -889,7 +912,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert - Codex uses direct commands, no _mcp_config_path
         assert "_mcp_config_path" not in instance
@@ -912,7 +935,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert
         assert "_mcp_config_path" in instance
@@ -933,7 +956,7 @@ class TestMCPServerConfiguration:
         }
 
         # Execute - should handle gracefully
-        tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
+        await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
         # Assert - should still create config file
         assert "_mcp_config_path" in instance
@@ -1254,7 +1277,7 @@ class TestCriticalFunctions:
         message = "Line 1\nLine 2\nLine 3"
 
         # Execute
-        tmux_manager._send_multiline_message_to_pane(pane, message)
+        await tmux_manager._send_multiline_message_to_pane(pane, message)
 
         # Assert - send_keys should be called multiple times
         assert pane.send_keys.call_count > 3  # At least once per line + Enter
@@ -1366,6 +1389,141 @@ class TestCriticalFunctions:
 # ============================================================================
 # Backend Error Detection Tests (issue #28)
 # ============================================================================
+
+
+class TestBootstrapErrorScan:
+    """_record_bootstrap_error must catch real rejections without failing
+    healthy spawns, and must not add noticeable latency to the happy path."""
+
+    def _pane(self, text):
+        pane = MagicMock()
+        pane.cmd = MagicMock(return_value=MagicMock(stdout=text.split("\n")))
+        return pane
+
+    @pytest.mark.asyncio
+    async def test_hard_api_rejection_is_recorded(self, tmux_manager):
+        instance = {"id": "i-1"}
+        pane = self._pane(
+            '■ {"type":"error","status":400,"error":{"type":"invalid_request_error",'
+            '"message":"The \'gpt-9\' model requires a newer version of Codex."}}'
+        )
+
+        await tmux_manager._record_bootstrap_error(pane, instance, baseline="", max_wait=0)
+
+        assert "invalid_request_error" in instance["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_metadata_warning_alone_is_not_a_failure(self, tmux_manager):
+        """Codex prints this for valid models too, then carries on."""
+        instance = {"id": "i-2"}
+        pane = self._pane(
+            "⚠ Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata; "
+            "this can degrade performance and cause issues."
+        )
+
+        await tmux_manager._record_bootstrap_error(pane, instance, baseline="", max_wait=0)
+
+        assert "error_message" not in instance
+
+    @pytest.mark.asyncio
+    async def test_real_error_after_advisory_still_recorded(self, tmux_manager):
+        instance = {"id": "i-3"}
+        pane = self._pane(
+            "⚠ Model metadata for `gpt-9` not found. Defaulting to fallback metadata.\n"
+            "■ unexpected status 404 Not Found: model unavailable"
+        )
+
+        await tmux_manager._record_bootstrap_error(pane, instance, baseline="", max_wait=0)
+
+        assert "404" in instance["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_healthy_spawn_is_not_delayed_for_long(self, tmux_manager):
+        """The scan is paid by every spawn with an initial prompt."""
+        instance = {"id": "i-4"}
+        pane = self._pane("• Working on it...")
+
+        start = time.monotonic()
+        await tmux_manager._record_bootstrap_error(pane, instance, baseline="")
+        elapsed = time.monotonic() - start
+
+        assert "error_message" not in instance
+        assert elapsed < 4.0, f"healthy spawn delayed {elapsed:.1f}s by the error scan"
+
+
+class TestRolePrompts:
+    """Role prompts live in <repo>/resources/prompts/<role>.txt."""
+
+    def test_role_prompt_is_loaded_from_file_not_fallback(self, tmux_manager):
+        prompt = tmux_manager._get_role_prompt("security_analyst")
+        expected = (
+            (Path(__file__).parent.parent.parent / "resources" / "prompts" / "security_analyst.txt")
+            .read_text(encoding="utf-8")
+            .strip()
+        )
+
+        assert prompt == expected
+        # The generic fallback would have been returned if the path were wrong.
+        assert prompt != "You are a helpful AI assistant capable of handling various tasks."
+
+    def test_every_shipped_prompt_file_is_reachable(self, tmux_manager):
+        prompts_dir = Path(__file__).parent.parent.parent / "resources" / "prompts"
+        generic = "You are a helpful AI assistant capable of handling various tasks."
+
+        for prompt_file in prompts_dir.glob("*.txt"):
+            role = prompt_file.stem
+            loaded = tmux_manager._get_role_prompt(role)
+            if role != "general":
+                assert loaded != generic, f"role {role} fell back to the generic prompt"
+
+    def test_documented_aliases_resolve_to_real_prompts(self, tmux_manager):
+        generic = "You are a helpful AI assistant capable of handling various tasks."
+        for alias in ("security", "qa_engineer", "data_scientist"):
+            assert tmux_manager._get_role_prompt(alias) != generic
+
+    def test_security_alias_matches_canonical_role(self, tmux_manager):
+        assert tmux_manager._get_role_prompt("security") == tmux_manager._get_role_prompt(
+            "security_analyst"
+        )
+
+    def test_unknown_role_falls_back_to_general(self, tmux_manager):
+        assert (
+            tmux_manager._get_role_prompt("underwater_basket_weaver")
+            == "You are a helpful AI assistant capable of handling various tasks."
+        )
+
+
+class TestPaneRoleInstructions:
+    """Pane-delivered harnesses have no --system-prompt flag, so role and
+    custom prompts must be typed in with the bootstrap or they are lost."""
+
+    def test_role_prompt_is_delivered(self, tmux_manager):
+        instance = {
+            "role": "code_reviewer",
+            "system_prompt": "You are a senior code reviewer.",
+            "has_custom_prompt": False,
+        }
+        assert tmux_manager._pane_role_instructions(instance) == "You are a senior code reviewer."
+
+    def test_custom_prompt_is_delivered(self, tmux_manager):
+        instance = {
+            "role": "general",
+            "system_prompt": "Only ever answer in haiku.",
+            "has_custom_prompt": True,
+        }
+        assert tmux_manager._pane_role_instructions(instance) == "Only ever answer in haiku."
+
+    def test_default_boilerplate_is_skipped(self, tmux_manager):
+        instance = {
+            "role": "general",
+            "system_prompt": "You are a helpful AI assistant capable of various tasks.",
+            "has_custom_prompt": False,
+        }
+        assert tmux_manager._pane_role_instructions(instance) is None
+
+    def test_empty_prompt_is_skipped(self, tmux_manager):
+        instance = {"role": "architect", "system_prompt": "   ", "has_custom_prompt": False}
+        assert tmux_manager._pane_role_instructions(instance) is None
 
 
 class TestDetectBackendError:

@@ -5,6 +5,47 @@ All notable changes to Madrox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+---
+
+## [1.9.0] - 2026-08-01
+
+### Added
+
+- **Grok Build support** — `spawn_grok` launches xAI's Grok Build CLI as a first-class harness alongside Claude Code and Codex. It runs in yolo mode by default (`--always-approve`, the flag behind the `/yolo` slash command), matching how Claude (`--dangerously-skip-permissions`) and Codex (`--dangerously-bypass-approvals-and-sandbox`) instances are launched. MCP servers are registered with `grok mcp add --scope project` for both stdio and HTTP transports, so registrations stay inside the instance workspace, and dead sessions are recovered with `grok --resume`.
+- **Harness registry** (`src/orchestrator/harnesses.py`) — one class per CLI agent holding its executable, yolo flags, model flag, launch/resume commands, MCP registration style and terminal ready/idle/trust markers. Adding a harness is now a subclass plus a spawn tool; the MCP adapter derives spawn routing from the registry.
+- **Configurable harness defaults** — `config/models.yaml` gained per-harness `command` (executable override) and `extra_args`, plus env overrides: `MADROX_MODEL_<HARNESS>` (default model), `MADROX_<HARNESS>_BIN` (executable) and `MADROX_MODELS_CONFIG` (alternate config file). Defaults can change without touching code.
+
+### Changed
+
+- **Default models refreshed and always applied** — Claude defaults to `claude-opus-5`, Codex to `gpt-5.6-sol`, Grok to `grok-build-0.1`. Defaults are now resolved inside `spawn_instance`, a single choke point shared by the MCP tools, the HTTP/SSE adapter and direct calls; previously the HTTP adapter path spawned with `model=None` and silently got the CLI's own default. Spawn results now report the resolved `model`. Model ids are still never validated against an allowlist, so a model released today works without a Madrox update.
+- **Stale hardcoded model ids removed** — `claude-4-sonnet-20250514` no longer appears as a default in the REST spawn path, `SpawnInstanceRequest` or `OrchestratorConfig`; these default to `None`, meaning "use the harness default".
+- **`config.validate_model()` replaced by `config.resolve_model()`** — one resolution function instead of two with different failure modes. `resolve_model()` never raises: a missing or malformed `config/models.yaml` degrades to the CLI's own default instead of failing the spawn.
+
+### Fixed
+
+- **Failed CLI startup no longer reports a healthy instance** — when a pane-driven CLI (Codex, Grok) never became ready, bootstrap was skipped but the spawn still marked the instance `idle`, so every later message was typed into a bare shell. Startup now raises, and the instance is marked `error` with the reason.
+- **Grok MCP registration used the wrong CLI syntax** — registrations were built as `grok mcp add --scope project -t stdio <name> <cmd>`, but the documented syntax takes no transport flag for stdio and requires a `--` separator, while HTTP uses `--transport` rather than `-t`. Since this call registers the auto-injected `madrox` server, every Grok instance started with no orchestrator tools — unable to call `reply_to_caller` or spawn children. Grok also has no CLI flag for environment variables, so stdio servers now run under `env` instead of having their environment dropped.
+- **Backend rejections are reported on the default spawn path** — error surfacing only ran when both `wait_for_response` and `initial_prompt` were given, but `wait_for_response` defaults to `false`; in that case the prompt was typed into the pane and never checked. Spawning with a model the backend rejects returned `status: "spawned"` while the error sat unread in the terminal. The bootstrap now scans the pane and the spawn result reports `status: "failed"` with `error_message`.
+- **HTTP/SSE spawns get the same result shape as the MCP tools** — the adapter called `spawn_instance()` directly instead of the shared `_spawn_harness_instance()` helper, so that transport silently dropped `status`, `error_message`, the resolved `model` and `wait_for_response`. Both transports now go through one path.
+- **`spawn_grok` no longer discards `role` and `system_prompt`** — pane-delivered harnesses have no `--system-prompt` flag and only ever received the identity briefing, so both parameters were accepted and thrown away. Role and custom prompts are now delivered with the briefing.
+- **Role prompts are actually loaded** — `_get_role_prompt()` resolved `resources/prompts` one directory short of the repository root, so *every* role silently fell back to the generic assistant prompt. Friendlier spellings (`security`, `qa_engineer`, `data_scientist`, `reviewer`, `docs`, …) now map to the canonical role ids, and `CLAUDE.md` lists the roles that actually ship — it previously documented six that never existed.
+- **Operator-supplied config values are shell-quoted** — the new `command`/`extra_args` settings were interpolated into a shell-joined command unquoted, so `extra_args: ["--rules", "Use pytest only"]` split into four arguments and an executable path containing a space broke the invocation.
+- **Malformed model config degrades instead of crashing** — a syntactically valid `config/models.yaml` whose top level is not a mapping (a list, a bare string) raised `AttributeError` from `get_harness_config()`, outside the handler meant to catch it.
+
+### Performance
+
+- **Spawns no longer block the event loop** — MCP-server registration and multiline message delivery paced themselves with blocking `time.sleep()` inside async code, stalling every other instance for the duration (up to seconds for a large message). Both now yield with `await asyncio.sleep()`, and the per-MCP-server pause dropped from 200ms to 50ms.
+- **Codex config written once per spawn** — workspace pre-trust and HTTP MCP servers each did their own `~/.codex/config.toml` load/dump (once *per server*); they now share a single batched read-modify-write that skips the write entirely when nothing changed.
+- **Cheaper response polling** — the idle-prompt scan over the full pane ran on every 300ms poll; it now runs only after output has settled, and stops at the last content line instead of building a filtered list of every line.
+
+### Internal
+
+- Session startup and crash recovery were two near-identical 250-line methods; they are now one harness-driven path (`_start_cli_session`), cutting ~290 lines from `tmux_instance_manager/core.py`. Duplicated bootstrap prompt blocks, session-env setup, CLI-ready polling and the three spawn tools were deduplicated the same way. Module-level imports replaced repeated function- and loop-level imports.
+
+---
+
 ## [1.8.2] - 2026-06-20
 
 ### Fixed

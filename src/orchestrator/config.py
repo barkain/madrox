@@ -1,8 +1,22 @@
-"""Model configuration for Madrox orchestrator."""
+"""Model configuration for Madrox harnesses.
+
+Model ids are intentionally *not* validated against an allowlist: vendors ship
+new models continuously and the backends serving them change independently of
+Madrox, so an allowlist only produces false rejections.  Any non-empty model
+string is forwarded to the CLI as-is.
+
+When no model is requested, the harness default is resolved in this order:
+
+1. ``MADROX_MODEL_<HARNESS>`` environment variable (e.g. ``MADROX_MODEL_CLAUDE``)
+2. ``<harness>.default`` in ``config/models.yaml``
+3. nothing — the CLI picks its own default
+"""
 
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -10,17 +24,29 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def _load_model_config() -> dict:
-    """Load model configuration from YAML file.
+def _load_model_config() -> Any:
+    """Load model configuration from YAML.
+
+    The path can be overridden with ``MADROX_MODELS_CONFIG`` so operators can
+    keep their own defaults outside the repository.
 
     Returns:
-        Model configuration dict
+        Whatever the YAML document contains. This is deliberately not typed as
+        ``dict``: the file is operator-supplied, and a valid document whose top
+        level is a list or a bare string parses fine. Callers must check the
+        shape — claiming ``dict`` here made the guard in ``get_harness_config``
+        look unreachable to mypy while still firing at runtime.
 
     Raises:
-        FileNotFoundError: If config file doesn't exist
-        yaml.YAMLError: If YAML parsing fails
+        FileNotFoundError: If the config file doesn't exist
+        ValueError: If YAML parsing fails
     """
-    config_path = Path(__file__).parent.parent.parent / "config" / "models.yaml"
+    config_override = os.getenv("MADROX_MODELS_CONFIG")
+    config_path = (
+        Path(config_override)
+        if config_override
+        else Path(__file__).parent.parent.parent / "config" / "models.yaml"
+    )
 
     if not config_path.exists():
         raise FileNotFoundError(
@@ -39,38 +65,57 @@ def _load_model_config() -> dict:
         raise ValueError(f"Failed to parse model configuration YAML: {e}") from e
 
 
-def validate_model(provider: str, model: str | None) -> str:
-    """Resolve a model name for the given provider.
+def get_harness_config(harness: str) -> dict:
+    """Return the YAML section for a harness ({} when missing or unreadable).
 
-    Model names are intentionally NOT validated against a static allowlist.
-    The backends that actually serve these models (e.g. the Codex Bedrock
-    proxy) change their available model ids independently of Madrox, so a
-    hard-coded allowlist only produces false rejections — or worse, silently
-    accepts names the backend then 404s on. Any non-empty model string is
-    passed through as-is; when no model is given, the provider's configured
-    default from ``config/models.yaml`` is used.
+    Never raises: harness lookups happen on the spawn path, where a missing or
+    malformed config should degrade to CLI defaults rather than kill the spawn.
+    """
+    try:
+        config = _load_model_config() or {}
+    except (FileNotFoundError, ValueError, OSError) as e:
+        logger.warning(f"Could not load model configuration: {e}")
+        return {}
+
+    # A syntactically valid YAML document whose top level is not a mapping (a
+    # list, a bare string, …) is truthy, so it survives the `or {}` above and
+    # would raise AttributeError on .get() — outside the handler.
+    if not isinstance(config, dict):
+        logger.warning(
+            f"Model configuration must be a mapping, got {type(config).__name__}; ignoring it"
+        )
+        return {}
+
+    section = config.get(harness)
+    return section if isinstance(section, dict) else {}
+
+
+def _configured_default(harness: str) -> str | None:
+    """Default model for a harness from env or YAML, if any."""
+    env_override = os.getenv(f"MADROX_MODEL_{harness.upper()}")
+    if env_override and env_override.strip():
+        return env_override.strip()
+
+    default = get_harness_config(harness).get("default")
+    return str(default) if default else None
+
+
+def resolve_model(harness: str, model: str | None) -> str | None:
+    """Resolve the model to launch a harness with.
 
     Args:
-        provider: Provider name ("codex" or "claude")
-        model: Model name to use (None/empty to use the provider default)
+        harness: Harness name ("claude", "codex", "grok", ...)
+        model: Explicitly requested model, or None/empty for the default
 
     Returns:
-        The model name to use
-
-    Raises:
-        ValueError: If no model is given and the provider has no default
-        FileNotFoundError: If the config file doesn't exist
+        The model id, or None when the harness has no configured default (the
+        CLI then picks its own — never a hard failure).
     """
-    # Pass an explicitly requested model straight through — no allowlist check.
+    # An explicitly requested model is passed through untouched — no allowlist.
     if model is not None and model.strip():
-        return model
+        return model.strip()
 
-    # Fall back to the provider's configured default.
-    model_config = _load_model_config()
-    provider_config = model_config.get(provider) if model_config else None
-    default = provider_config.get("default") if provider_config else None
-
+    default = _configured_default(harness)
     if not default:
-        raise ValueError(f"No default model configured for provider: {provider}")
-
+        logger.debug(f"No default model configured for harness '{harness}' — using CLI default")
     return default
