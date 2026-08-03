@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.1] - 2026-08-03
+
+### Fixed
+
+- **Grok spawned the wrong model and failed** — Grok documents the short model flag only (`grok -p "Hello" -m my-model`), but the harness inherited `--model`, which the CLI did not pick up. The requested model was silently ignored and the CLI ran its own default; nothing errored. The pinned default made it worse: `grok-build-0.1` is not a real model id (per [the xAI docs](https://docs.x.ai/build/overview) the model behind Grok Build is `grok-4.5`), so the fallback landed on an older model that not every account can use.
+- **No harness pins a model any longer** — when the caller does not name a model, Madrox passes no model flag and the CLI uses its own current default. A pinned id goes stale as soon as a vendor ships a new model, and a stale id breaks spawning rather than degrading. An explicit `model=` is still forwarded verbatim, and a default can still be pinned deliberately via `default:` in `config/models.yaml` or `MADROX_MODEL_<HARNESS>`. This reverses the "defaults always applied" behaviour introduced in 1.9.0.
+- **The dashboard is started on demand instead of per session** — `start_plugin.sh` launched a Next.js *development* server for every session whether or not the dashboard was ever opened. With many concurrent sessions those dominated the machine's process and memory load. The proxy now starts it on the first `get_dashboard_url` call, spawned as its own child so the existing tree-killing cleanup still reaps it.
+- **`uv sync` no longer blocks session startup** — every session synced the same `PLUGIN_ROOT`, and uv takes a project lock, so concurrent launches serialised behind one another. The call was guarded against failure but not against blocking, so a session could sit there until Claude Code abandoned the MCP handshake — leaving a log directory and `session_ports.env` but no `backend.log` and nothing on stderr to explain it. The sync is now skipped when `uv.lock` and `pyproject.toml` are unchanged since the last successful run, and bounded by a watchdog (`MADROX_SYNC_TIMEOUT`, default 20s).
+- **Spawning survives a deleted working directory** — the spawn start method records `os.getcwd()` for the child, so once the directory a session was launched from was removed (routine, since sessions run in throwaway worktrees) every `multiprocessing.Manager`/`Process` spawn died with `FileNotFoundError` from `get_preparation_data`.
+
+### Note
+
+The "severe subprocess leak" described in 1.8.2 overstates what was wrong. The cleanup trap and `reap_orphans` work correctly — the processes observed were live sessions' stacks, each parented by a live `claude`, not orphans. The real problem was the weight of a per-session stack, which the dashboard and `uv sync` changes above address.
+
+---
+
 ## [1.9.0] - 2026-08-01
 
 ### Added
