@@ -66,12 +66,14 @@ class TestRegistry:
 
 
 class TestModelDefaults:
-    """Callers that omit a model get the harness default, and nothing else."""
+    """No model is pinned: omit one and the CLI picks. A hardcoded id goes
+    stale the moment the vendor ships a new model, and a stale id does not
+    degrade — it breaks spawning."""
 
-    def test_repository_defaults(self):
-        assert ClaudeHarness.default_model() == "claude-opus-5"
-        assert CodexHarness.default_model() == "gpt-5.6-sol"
-        assert GrokHarness.default_model() == "grok-build-0.1"
+    def test_no_model_is_pinned_by_default(self):
+        assert ClaudeHarness.default_model() is None
+        assert CodexHarness.default_model() is None
+        assert GrokHarness.default_model() is None
 
     def test_explicit_model_passes_through(self):
         assert resolve_model("claude", "some-model-shipped-tomorrow") == (
@@ -79,9 +81,18 @@ class TestModelDefaults:
         )
         assert resolve_model("grok", "grok-9") == "grok-9"
 
-    def test_blank_model_falls_back_to_default(self):
-        assert resolve_model("codex", "   ") == "gpt-5.6-sol"
-        assert resolve_model("codex", None) == "gpt-5.6-sol"
+    def test_blank_model_is_treated_as_unset(self):
+        assert resolve_model("codex", "   ") is None
+        assert resolve_model("codex", None) is None
+
+    def test_configured_default_is_still_honoured(self, monkeypatch, tmp_path):
+        """Operators can still pin one deliberately."""
+        config = tmp_path / "models.yaml"
+        config.write_text("codex:\n  default: gpt-5.5\n")
+        monkeypatch.setenv("MADROX_MODELS_CONFIG", str(config))
+        _load_model_config.cache_clear()
+
+        assert resolve_model("codex", None) == "gpt-5.5"
 
     def test_env_override_wins_over_yaml(self, monkeypatch):
         monkeypatch.setenv("MADROX_MODEL_GROK", "grok-5-fast")
@@ -99,7 +110,8 @@ class TestLaunchCommands:
         assert "--permission-mode" in cmd
         assert "bypassPermissions" in cmd
         assert "--dangerously-skip-permissions" in cmd
-        assert cmd[cmd.index("--model") + 1] == "claude-opus-5"
+        # No model requested -> no flag, so the CLI uses its own current default.
+        assert "--model" not in cmd
 
     def test_claude_launch_honours_explicit_model_and_prompt(self):
         cmd = ClaudeHarness.build_launch_command(
@@ -116,7 +128,7 @@ class TestLaunchCommands:
     def test_codex_launch_bypasses_approvals_when_isolated(self):
         cmd = CodexHarness.build_launch_command({"bypass_isolation": True})
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
-        assert cmd[cmd.index("--model") + 1] == "gpt-5.6-sol"
+        assert "--model" not in cmd
 
     def test_codex_launch_uses_sandbox_when_not_bypassing(self):
         cmd = CodexHarness.build_launch_command(
@@ -131,10 +143,22 @@ class TestLaunchCommands:
         # -a never and the bypass flag are mutually exclusive
         assert "-a" in cmd and "--dangerously-bypass-approvals-and-sandbox" not in cmd
 
-    def test_grok_launch_uses_yolo_flag_and_default_model(self):
+    def test_grok_launch_uses_yolo_flag_and_no_pinned_model(self):
         cmd = GrokHarness.build_launch_command({"bypass_isolation": True})
         assert "--always-approve" in cmd
-        assert cmd[cmd.index("--model") + 1] == "grok-build-0.1"
+        assert "-m" not in cmd
+
+    def test_grok_uses_the_short_model_flag(self):
+        """Grok documents `-m` only. `--model` was not picked up, so the CLI
+        silently ran its own default model instead of the requested one —
+        a wrong-model failure with no error to point at it."""
+        cmd = GrokHarness.build_launch_command({"model": "grok-4.5"})
+        assert "-m" in cmd
+        assert "--model" not in cmd
+
+    def test_grok_explicit_model_reaches_the_command(self):
+        cmd = GrokHarness.build_launch_command({"model": "grok-4.3"})
+        assert cmd[cmd.index("-m") + 1] == "grok-4.3"
 
     def test_grok_launch_without_bypass_has_no_yolo_flag(self):
         cmd = GrokHarness.build_launch_command({"bypass_isolation": False})
@@ -155,7 +179,7 @@ class TestLaunchCommands:
 
         cmd = GrokHarness.build_launch_command({"bypass_isolation": True})
         assert cmd[0] == "/opt/grok"
-        assert cmd[cmd.index("--model") + 1] == "grok-test"
+        assert cmd[cmd.index("-m") + 1] == "grok-test"
         assert cmd[-1] == "--verbose"
 
     def test_binary_env_override(self, monkeypatch):

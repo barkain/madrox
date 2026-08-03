@@ -21,21 +21,24 @@
 
 # Claude Code CLI (Anthropic)
 claude:
-  # Latest Opus — most capable model, the default for new instances.
-  default: claude-opus-5
+  # No default: let the CLI choose. Pinning a model id here means it goes stale
+  # every time the vendor ships a new one, and a stale id breaks spawning
+  # outright. Set this (or MADROX_MODEL_CLAUDE) only to deliberately pin one.
+  default: null
 
   known_models:
-    - claude-opus-5       # Default: latest Opus, most capable
+    - claude-opus-5       # Latest Opus, most capable
     - claude-sonnet-5     # Balanced speed/quality for daily use
     - claude-haiku-4-5    # Fastest: best for simple, quick tasks
     - claude-opus-4-6     # Previous Opus generation
 
 # Codex CLI (OpenAI GPT models)
 codex:
-  default: gpt-5.6-sol
+  # No default — see the note under `claude`.
+  default: null
 
   known_models:
-    - gpt-5.6-sol         # Default
+    - gpt-5.6-sol
     - gpt-5.5
     - gpt-5.4
     - gpt-5.4-mini
@@ -43,9 +46,11 @@ codex:
 
 # Grok Build CLI (xAI)
 grok:
-  default: grok-build-0.1
+  # No default — see the note under `claude`. This harness is why: the pinned
+  # "grok-build-0.1" was not a real model id, so the CLI fell back to an older
+  # model that some accounts cannot use, and spawning failed.
+  default: null
 
   known_models:
-    - grok-build-0.1      # Default: purpose-built coding model
-    - grok-4.5
+    - grok-4.5            # The model behind Grok Build
     - grok-4.3

@@ -143,11 +143,16 @@ uv run mypy src/
 
 Supported harnesses (the `instance_type` / spawn tool):
 
-| Harness | Tool | CLI | Yolo mode | Default model |
-|---------|------|-----|-----------|---------------|
-| Claude Code | `spawn_claude` | `claude` | `--permission-mode bypassPermissions --dangerously-skip-permissions` | `claude-opus-5` |
-| Codex | `spawn_codex` | `codex` | `--dangerously-bypass-approvals-and-sandbox` | `gpt-5.6-sol` |
-| Grok Build | `spawn_grok` | `grok` | `--always-approve` (the `/yolo` switch) | `grok-build-0.1` |
+| Harness | Tool | CLI | Yolo mode | Model flag |
+|---------|------|-----|-----------|------------|
+| Claude Code | `spawn_claude` | `claude` | `--permission-mode bypassPermissions --dangerously-skip-permissions` | `--model` |
+| Codex | `spawn_codex` | `codex` | `--dangerously-bypass-approvals-and-sandbox` | `--model` |
+| Grok Build | `spawn_grok` | `grok` | `--always-approve` (the `/yolo` switch) | `-m` |
+
+No model is pinned by default. When a caller does not name one, Madrox passes no
+model flag at all and the CLI uses whatever it currently defaults to — a pinned id
+goes stale as soon as the vendor ships a new model, and a stale id breaks spawning
+rather than degrading.
 
 Model ids are never validated against an allowlist — any string is forwarded to the
 CLI, so newly released models work without a code change. When a caller omits

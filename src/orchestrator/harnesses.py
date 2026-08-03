@@ -336,6 +336,11 @@ class GrokHarness(Harness):
     prompt_delivery = "pane"
     auto_mcp_transport = "http"
 
+    #: Grok documents the short form only (`grok -p "Hello" -m my-model`); the
+    #: inherited `--model` was not picked up, so the CLI silently used its own
+    #: default model instead of the requested one.
+    model_flag: ClassVar[str] = "-m"
+
     #: Grok's yolo switch — the CLI flag behind the `/yolo` slash command.
     yolo_flags: ClassVar[tuple[str, ...]] = ("--always-approve",)
 

@@ -102,7 +102,7 @@ Spawn a new Claude instance with specific role and configuration.
 | `name` | string | Yes | - | Human-readable name for the instance |
 | `role` | string | No | `"general"` | Predefined role (see [Instance Roles](#instance-roles)) |
 | `system_prompt` | string | No | `null` | Custom system prompt (overrides role defaults) |
-| `model` | string | No | Harness default (`claude-opus-5`) | Claude model to use. Any model id is accepted — no allowlist. Omit it to get the default from `config/models.yaml`. |
+| `model` | string | No | The CLI's own default | Claude model to use. Any model id is accepted — no allowlist. Omit it and Madrox passes no model flag, so the CLI uses whatever it currently defaults to. Pin one with `default:` in `config/models.yaml` or `MADROX_MODEL_CLAUDE`. |
 | `bypass_isolation` | boolean | No | `false` | Allow full filesystem access (disables workspace isolation) |
 | `parent_instance_id` | string | No | Auto-detected | Parent instance ID (for hierarchical networks) - see [Parent Instance ID Auto-Detection](#parent-instance-id-auto-detection) |
 | `mcp_servers` | object | No | `{}` | Additional MCP servers to configure (see [MCP Server Configuration](#mcp-server-configuration)) |
@@ -381,7 +381,7 @@ considerations:
 - Runs with `--dangerously-bypass-approvals-and-sandbox` when `bypass_isolation` is true
 - Codex only supports stdio transport for MCP servers registered via the CLI
   (HTTP servers are written to `~/.codex/config.toml`)
-- `model` defaults to the harness default (`gpt-5.6-sol`)
+- `model` is omitted by default, so the Codex CLI picks its own
 
 **Returns:**
 
@@ -401,7 +401,7 @@ Same as `spawn_claude`, with Grok-specific considerations:
   command) when `bypass_isolation` is true, matching Claude and Codex
 - MCP servers are registered with `grok mcp add --scope project` for both stdio
   and HTTP transports, so registrations stay inside the instance workspace
-- `model` defaults to the harness default (`grok-build-0.1`)
+- `model` is omitted by default, so the Grok CLI picks its own
 
 **Returns:**
 
