@@ -25,9 +25,28 @@ import shutil
 from pathlib import Path
 from typing import Any, ClassVar
 
+import toml
+
 from .config import get_harness_config, resolve_model
 
 logger = logging.getLogger(__name__)
+
+
+def _toml_value(value: Any) -> str:
+    """Serialize one value exactly as Codex's ``-c key=value`` parser expects."""
+    assignment = toml.dumps({"value": value}).strip()
+    return assignment.split("=", 1)[1].strip()
+
+
+def _merge_dicts(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Return Codex-style recursively merged config values."""
+    merged = dict(base)
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 class Harness:
@@ -143,6 +162,18 @@ class Harness:
         """TOML config file used for HTTP MCP servers when there is no CLI verb."""
         return None
 
+    @classmethod
+    def mcp_launch_overrides(
+        cls, instance: dict[str, Any], mcp_servers: dict[str, Any]
+    ) -> list[str] | None:
+        """Return process-local config values for MCP servers, if supported.
+
+        A non-None result tells the manager that this harness carries the MCP
+        configuration on its launch command and needs no registration side
+        effects before startup.
+        """
+        return None
+
     # ------------------------------------------------------------------
     # Terminal markers
     # ------------------------------------------------------------------
@@ -167,6 +198,11 @@ class Harness:
     def prepare_workspace(cls, workspace_dir: str) -> None:
         """Hook for pre-launch workspace setup (e.g. pre-trusting a directory)."""
         return None
+
+    @classmethod
+    def launch_environment(cls, instance: dict[str, Any]) -> dict[str, str]:
+        """Environment values that must match this harness's inspected config."""
+        return {}
 
 
 class ClaudeHarness(Harness):
@@ -261,8 +297,20 @@ class CodexHarness(Harness):
         return []
 
     @classmethod
+    def _mcp_config_args(cls, instance: dict[str, Any]) -> list[str]:
+        return [
+            argument
+            for override in instance.get("_mcp_launch_overrides", [])
+            for argument in ("-c", shlex.quote(override))
+        ]
+
+    @classmethod
     def build_launch_command(cls, instance: dict[str, Any]) -> list[str]:
-        cmd = [cls.executable(), *cls._autonomy_args(instance, resuming=False)]
+        cmd = [
+            cls.executable(),
+            *cls._mcp_config_args(instance),
+            *cls._autonomy_args(instance, resuming=False),
+        ]
         if profile := instance.get("profile"):
             cmd.extend(["--profile", shlex.quote(str(profile))])
         cmd.extend(cls._model_args(instance))
@@ -273,10 +321,157 @@ class CodexHarness(Harness):
     def build_resume_command(cls, instance: dict[str, Any]) -> list[str]:
         # `resume --last` picks the most recent session in this workspace.
         cmd = [cls.executable(), "resume", "--last"]
+        cmd.extend(cls._mcp_config_args(instance))
+        if profile := instance.get("profile"):
+            cmd.extend(["--profile", shlex.quote(str(profile))])
         cmd.extend(cls._autonomy_args(instance, resuming=True))
         cmd.extend(cls._model_args(instance))
         cmd.extend(cls.extra_args())
         return cmd
+
+    @classmethod
+    def mcp_launch_overrides(
+        cls, instance: dict[str, Any], mcp_servers: dict[str, Any]
+    ) -> list[str]:
+        """Encode MCP servers as launch-scoped Codex ``-c`` overrides.
+
+        Codex merges these values with the user's config in memory, preserving
+        authentication, defaults, and unrelated personal MCP servers.  Unlike
+        ``codex mcp add``, this never mutates the shared config.toml.
+        """
+        cls._reject_unsafe_mcp_collisions(instance, mcp_servers)
+        overrides: list[str] = []
+        for name, config in mcp_servers.items():
+            transport = config.get("transport", "stdio" if "command" in config else "http")
+            supported_connection = (
+                {"command", "args", "env"} if transport == "stdio" else {"url", "bearer_token"}
+            )
+            connection_fields = {
+                "command",
+                "args",
+                "env",
+                "env_vars",
+                "cwd",
+                "url",
+                "bearer_token",
+                "bearer_token_env_var",
+                "http_headers",
+                "env_http_headers",
+            }
+            unsupported = sorted(
+                key
+                for key in config
+                if key in connection_fields and key not in supported_connection
+            )
+            if unsupported:
+                raise ValueError(
+                    f"Codex MCP server '{name}' includes unsupported launch-scoped settings "
+                    f"({', '.join(unsupported)}); the shared Codex config was not changed."
+                )
+            prefix = f"mcp_servers.{name}"
+            overrides.append(f"{prefix}.enabled={_toml_value(True)}")
+            if transport == "stdio":
+                command = config.get("command")
+                if not command:
+                    raise ValueError(f"MCP server '{name}' has no stdio command")
+                args = config.get("args", [])
+                args = args if isinstance(args, list) else [args]
+                overrides.append(f"{prefix}.command={_toml_value(str(command))}")
+                overrides.append(f"{prefix}.args={_toml_value([str(arg) for arg in args])}")
+                for key, value in (config.get("env", {}) or {}).items():
+                    overrides.append(f"{prefix}.env.{key}={_toml_value(str(value))}")
+            elif transport == "http":
+                url = config.get("url")
+                if not url:
+                    raise ValueError(f"MCP server '{name}' has no HTTP URL")
+                overrides.append(f"{prefix}.url={_toml_value(str(url))}")
+                if bearer_token := config.get("bearer_token"):
+                    overrides.append(f"{prefix}.bearer_token={_toml_value(str(bearer_token))}")
+            else:
+                raise ValueError(f"MCP server '{name}' uses unsupported transport '{transport}'")
+        return overrides
+
+    @classmethod
+    def _reject_unsafe_mcp_collisions(
+        cls, instance: dict[str, Any], mcp_servers: dict[str, Any]
+    ) -> None:
+        """Reject collisions whose stale connection fields survive Codex's deep merge."""
+        config_path = cls.mcp_http_config_path()
+        config_paths = [config_path]
+        if profile := instance.get("profile"):
+            if Path(str(profile)).name != str(profile):
+                raise ValueError(f"Invalid Codex profile name '{profile}'")
+            config_paths.append(config_path.with_name(f"{profile}.config.toml"))
+
+        existing: dict[str, Any] = {}
+        for path in config_paths:
+            try:
+                document = toml.load(path) if path.exists() else {}
+            except (OSError, toml.TomlDecodeError):
+                continue
+            entries = document.get("mcp_servers", {})
+            if isinstance(entries, dict):
+                existing = _merge_dicts(existing, entries)
+
+        connection_keys = {
+            "command",
+            "args",
+            "env",
+            "env_vars",
+            "cwd",
+            "url",
+            "bearer_token",
+            "bearer_token_env_var",
+            "http_headers",
+            "env_http_headers",
+        }
+        for name, desired in mcp_servers.items():
+            current = existing.get(name)
+            if not isinstance(current, dict):
+                continue
+            desired_transport = desired.get(
+                "transport", "stdio" if "command" in desired else "http"
+            )
+            current_transport = "stdio" if "command" in current else "http"
+            if desired_transport != current_transport:
+                raise ValueError(
+                    f"Codex MCP server '{name}' is already configured as {current_transport}, "
+                    f"so a process-local {desired_transport} override cannot replace it safely. "
+                    "Rename the child server or align its transport; the shared Codex config "
+                    "was not changed."
+                )
+            supported_keys = (
+                {"command", "args", "env"}
+                if desired_transport == "stdio"
+                else {"url", "bearer_token"}
+            )
+            unsupported = sorted(
+                key for key in desired if key in connection_keys and key not in supported_keys
+            )
+            if unsupported:
+                raise ValueError(
+                    f"Codex MCP server '{name}' includes unsupported launch-scoped settings "
+                    f"({', '.join(unsupported)}); the shared Codex config was not changed."
+                )
+            effective = _merge_dicts(current, desired)
+            desired_connection = {
+                key: value for key, value in desired.items() if key in supported_keys
+            }
+            effective_connection = {
+                key: value for key, value in effective.items() if key in connection_keys
+            }
+            if effective_connection != desired_connection:
+                retained = sorted(
+                    key
+                    for key, value in effective_connection.items()
+                    if desired_connection.get(key) != value
+                )
+                raise ValueError(
+                    f"Codex MCP server '{name}' has existing connection settings "
+                    f"({', '.join(retained)}) that a process-local override cannot remove safely. "
+                    "Rename the child server or remove the stale settings; the shared Codex config "
+                    "was not changed."
+                )
 
     @classmethod
     def mcp_add_stdio_command(
@@ -290,8 +485,13 @@ class CodexHarness(Harness):
 
     @classmethod
     def mcp_http_config_path(cls) -> Path:
-        # Codex has no `mcp add` verb for HTTP servers — they live in config.toml.
-        return Path.home() / ".codex" / "config.toml"
+        codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+        return codex_home / "config.toml"
+
+    @classmethod
+    def launch_environment(cls, instance: dict[str, Any]) -> dict[str, str]:
+        # Pin the child to the exact config root inspected for collision safety.
+        return {"CODEX_HOME": str(cls.mcp_http_config_path().parent)}
 
     @classmethod
     def prepare_workspace(cls, workspace_dir: str) -> None:

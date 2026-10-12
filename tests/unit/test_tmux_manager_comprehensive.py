@@ -914,9 +914,11 @@ class TestMCPServerConfiguration:
         # Execute
         await tmux_manager._configure_mcp_servers(tmux_manager._mock_pane, instance)
 
-        # Assert - Codex uses direct commands, no _mcp_config_path
+        # Assert - Codex carries MCP config on the child launch command and
+        # never types a global `codex mcp add` command into the pane.
         assert "_mcp_config_path" not in instance
-        tmux_manager._mock_pane.send_keys.assert_called()
+        assert 'mcp_servers.codex_server.command="python"' in instance["_mcp_launch_overrides"]
+        tmux_manager._mock_pane.send_keys.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_mcp_server_http_with_bearer_token(self, tmux_manager):

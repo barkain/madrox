@@ -339,6 +339,23 @@ class TmuxInstanceManager:
         mcp_servers = self._normalize_mcp_servers(instance)
         self._add_madrox_mcp_server(mcp_servers, harness, instance["id"])
 
+        # Validate shell/TOML identifiers before handing the normalized config
+        # to a harness-specific launch-scoped configuration capability.
+        for server_name, server_config in mcp_servers.items():
+            env_vars = server_config.get("env", {}) or {}
+            if not isinstance(env_vars, dict):
+                raise ValueError(f"MCP server '{server_name}' env must be an object")
+            self._validate_mcp_identifiers(server_name, env_vars)
+
+        launch_overrides = harness.mcp_launch_overrides(instance, mcp_servers)
+        if launch_overrides is not None:
+            instance["_mcp_launch_overrides"] = launch_overrides
+            logger.info(
+                f"Configured {len(mcp_servers)} launch-scoped MCP servers for "
+                f"{harness.name} instance {instance['id']}"
+            )
+            return
+
         if harness.mcp_config_filename:
             self._write_mcp_config_file(instance, harness, mcp_servers)
             return
@@ -1993,6 +2010,7 @@ class TmuxInstanceManager:
         self._kill_existing_session(session_name)
 
         session_env = self._build_session_env()
+        session_env.update(harness.launch_environment(instance))
         try:
             session = self.tmux_server.new_session(
                 session_name=session_name,
@@ -2025,7 +2043,10 @@ class TmuxInstanceManager:
         )
         cmd = " ".join(cmd_parts)
         pane.send_keys(cmd, enter=True)
-        logger.debug(f"{prefix}Started {harness.name} CLI in tmux session: {cmd}")
+        logger.debug(
+            f"{prefix}Started {harness.name} CLI in tmux session "
+            f"with {len(instance.get('_mcp_launch_overrides', []))} scoped MCP override(s)"
+        )
 
         cli_ready = await self._wait_for_cli_ready(pane, harness)
 
